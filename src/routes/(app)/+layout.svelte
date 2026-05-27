@@ -6,7 +6,7 @@
 	import { telemetry, dataStale } from '$lib/stores/telemetry.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { authStore } from '$lib/stores/auth.js';
-	import { dataAge } from '$lib/utils/units.js';
+	import { dataAge, fmtLatLon, ms2knNum } from '$lib/utils/units.js';
 	import StatusBar from '$lib/components/layout/StatusBar.svelte';
 
 	let { children, data } = $props();
@@ -18,6 +18,15 @@
 	];
 
 	let pollTimer: ReturnType<typeof setInterval>;
+	let clockTimer: ReturnType<typeof setInterval>;
+	let clockStr = $state('--:--');
+
+	function updateClock() {
+		const now = new Date();
+		const h = now.getUTCHours().toString().padStart(2, '0');
+		const m = now.getUTCMinutes().toString().padStart(2, '0');
+		clockStr = `${h}:${m} UTC`;
+	}
 
 	async function fetchTelemetry() {
 		const { data: row, error } = await supabase
@@ -49,23 +58,56 @@
 	}
 
 	onMount(() => {
+		updateClock();
 		fetchTelemetry();
 		fetchAnchorConfig();
 		pollTimer = setInterval(fetchTelemetry, 3000);
+		clockTimer = setInterval(updateClock, 10000);
 	});
 
-	onDestroy(() => clearInterval(pollTimer));
+	onDestroy(() => {
+		clearInterval(pollTimer);
+		clearInterval(clockTimer);
+	});
 
 	const currentPath = $derived(page.url.pathname);
+	const t = $derived($telemetry);
+	const stale = $derived($dataStale);
+
+	const gpsStr = $derived(() => {
+		if (!t?.nav_lat || !t?.nav_lon) return null;
+		return fmtLatLon(t.nav_lat, t.nav_lon);
+	});
+
+	const sogKn = $derived(() => {
+		if (t?.nav_sog_ms == null) return null;
+		const kn = ms2knNum(t.nav_sog_ms);
+		return kn.toFixed(1) + ' kn';
+	});
 </script>
 
 <div class="app-shell">
-	<StatusBar />
+	<!-- Header -->
+	<header class="app-header">
+		<div class="header-left">
+			<span class="vessel-name">SUKI</span>
+			<span class="vessel-sub">Neel 47 · DD4704</span>
+		</div>
+		<div class="header-center">
+			{#if gpsStr()}
+				<span class="gps-val">{gpsStr()}</span>
+			{/if}
+			{#if sogKn()}
+				<span class="sog-val">{sogKn()}</span>
+			{/if}
+		</div>
+		<div class="header-right">
+			<span class="clock">{clockStr}</span>
+			<span class="conn-dot" class:stale title={stale ? 'Keine Daten' : 'Live'}></span>
+		</div>
+	</header>
 
-	<main class="content">
-		{@render children()}
-	</main>
-
+	<!-- Tab navigation -->
 	<nav class="tab-bar">
 		{#each tabs as tab}
 			<a
@@ -78,6 +120,14 @@
 		{/each}
 		<button class="tab-item tab-signout" onclick={signOut} title="Abmelden">⏻</button>
 	</nav>
+
+	<!-- Status bar -->
+	<StatusBar />
+
+	<!-- Content -->
+	<main class="content">
+		{@render children()}
+	</main>
 </div>
 
 <style>
@@ -88,20 +138,93 @@
 		overflow: hidden;
 	}
 
-	.content {
-		flex: 1;
-		overflow-y: auto;
-		overflow-x: hidden;
-		padding: 12px;
-		padding-bottom: calc(12px + env(safe-area-inset-bottom));
+	/* ── Header ── */
+	.app-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		height: var(--header-h);
+		padding: 0 16px;
+		padding-top: env(safe-area-inset-top);
+		background: var(--bg);
+		border-bottom: 1px solid var(--border);
+		flex-shrink: 0;
+		gap: 8px;
 	}
 
+	.header-left {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		flex-shrink: 0;
+	}
+	.vessel-name {
+		font-size: 16px;
+		font-weight: 700;
+		color: var(--accent);
+		letter-spacing: 1px;
+		line-height: 1.1;
+	}
+	.vessel-sub {
+		font-size: 10px;
+		color: var(--muted);
+		letter-spacing: 0.5px;
+	}
+
+	.header-center {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1px;
+		overflow: hidden;
+	}
+	.gps-val {
+		font-size: 11px;
+		color: var(--muted);
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+	}
+	.sog-val {
+		font-size: 11px;
+		color: var(--accent);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.header-right {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 3px;
+		flex-shrink: 0;
+	}
+	.clock {
+		font-size: 11px;
+		color: var(--muted);
+		font-variant-numeric: tabular-nums;
+	}
+	.conn-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--green);
+		animation: pulse-live 2s ease-in-out infinite;
+	}
+	.conn-dot.stale {
+		background: var(--amber);
+		animation: none;
+	}
+	@keyframes pulse-live {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.4; }
+	}
+
+	/* ── Tab bar ── */
 	.tab-bar {
 		display: flex;
 		background: var(--card);
-		border-top: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
 		height: var(--tab-h);
-		padding-bottom: env(safe-area-inset-bottom);
 		flex-shrink: 0;
 	}
 
@@ -110,20 +233,33 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 12px;
+		font-size: 13px;
 		font-weight: 500;
 		color: var(--muted);
 		transition: color 0.15s;
 		text-decoration: none;
+		border-bottom: 2px solid transparent;
 	}
-
-	.tab-item.active { color: var(--accent); }
+	.tab-item.active {
+		color: var(--accent);
+		border-bottom-color: var(--accent);
+	}
 	.tab-item:hover { color: var(--text); }
 
 	.tab-signout {
 		max-width: 48px;
 		font-size: 16px;
 		color: var(--muted);
+		flex: 0 0 48px;
 	}
 	.tab-signout:hover { color: var(--red); }
+
+	/* ── Content ── */
+	.content {
+		flex: 1;
+		overflow-y: auto;
+		overflow-x: hidden;
+		padding: 12px;
+		padding-bottom: calc(12px + env(safe-area-inset-bottom));
+	}
 </style>

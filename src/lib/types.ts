@@ -76,6 +76,11 @@ export type AnchorConfig = {
 	bearing_deg: number;
 	alarm_delay_s: number;
 	alarming: boolean;
+	telegram_token: string | null;
+	telegram_chat_ids: string | null;
+	pushover_app_token: string | null;
+	pushover_user_keys: string | null;
+	cloud_enabled: boolean;
 };
 
 export type UserRole = {

@@ -81,3 +81,9 @@ export const dataAge = (updatedAt: string | null): boolean => {
 	if (!updatedAt) return true;
 	return Date.now() - new Date(updatedAt).getTime() > 15_000;
 };
+
+const CARDINALS = ['N','NNO','NO','ONO','O','OSO','SO','SSO','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+export const bearingCardinal = (deg: number | null): string => {
+	if (deg == null) return '—';
+	return CARDINALS[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+};
