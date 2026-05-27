@@ -55,9 +55,12 @@
 		addSuccess = false;
 		if (!addEmail) { addError = 'E-Mail erforderlich'; return; }
 		addLoading = true;
+		const appUrl = window.location.hostname === 'localhost'
+			? 'https://suki-dashboard-pro.pages.dev'
+			: window.location.origin;
 		const { data: result, error } = await supabase.functions.invoke('manage-users', {
 			method: 'POST',
-			body: { email: addEmail, role: addRole, redirectTo: window.location.origin },
+			body: { email: addEmail, role: addRole, redirectTo: appUrl },
 		});
 		addLoading = false;
 		if (error || result?.error) { addError = result?.error ?? error?.message ?? 'Fehler'; return; }
