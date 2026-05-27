@@ -1,43 +1,52 @@
-# sv
+# SUKI DASHBOARD PRO
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Dashboard für die **SUKI** (Neel 47 Trimaran) — SvelteKit + Supabase + Cloudflare Pages.
 
-## Creating a project
+## Stack
 
-If you're seeing this, you've probably already done this step. Congrats!
+| | |
+|---|---|
+| Frontend | SvelteKit 2 + Svelte 5 + TypeScript |
+| Datenbank | Supabase (PostgreSQL + Auth) |
+| Hosting | Cloudflare Pages |
+| Cerbo Bridge | Python `server.py` → Supabase REST |
 
-```sh
-# create a new project
-npx sv create my-app
-```
+## Lokale Entwicklung
 
-To recreate this project with the same configuration:
-
-```sh
-# recreate this project
-npx sv@0.15.3 create --template minimal --types ts --install npm SUKI DASHBOARD PRO
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
+```bash
+npm install
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
+`.env` (bereits vorhanden):
+```
+PUBLIC_SUPABASE_URL=https://mtcmxrmykvthybwrlnvz.supabase.co
+PUBLIC_SUPABASE_ANON_KEY=...
 ```
 
-You can preview the production build with `npm run preview`.
+## Deploy
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
-# SUKI-DASHBOARD-PRO
+Push auf `main` → GitHub Actions baut und deployed automatisch auf Cloudflare Pages.
+
+GitHub Secrets benötigt:
+- `PUBLIC_SUPABASE_URL`
+- `PUBLIC_SUPABASE_ANON_KEY`
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+- `SUPABASE_SERVICE_KEY` (für DB-Pruning)
+
+## Struktur
+
+```
+src/
+├── lib/
+│   ├── supabase.ts          # Supabase Client
+│   ├── types.ts             # TypeScript Typen
+│   ├── stores/              # telemetry, auth, anchor
+│   ├── utils/               # units, geo
+│   └── components/          # cards, layout, ui
+└── routes/
+    ├── (auth)/login/        # Login
+    ├── (auth)/change-password/
+    └── (app)/               # vessel, anchor, settings
+```
