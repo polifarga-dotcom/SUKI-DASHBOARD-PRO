@@ -33,7 +33,7 @@
 	let mapBoxH = $state(270);
 
 	// Local slider copies — only saved to Supabase on release / step-click
-	let localChain    = $state(30);
+	let localChain    = $state(0);
 	let localRadius   = $state(50);
 	let localBearing  = $state(0);
 	let bearingManual = $state(false);
@@ -416,8 +416,8 @@
 		<div class="srow">
 			<div class="slabel">Kettenlänge <span class="sval">{localChain} m</span></div>
 			<div class="sctrl">
-				<button class="sbtn" onclick={() => { localChain = Math.max(5, localChain-5); saveConfig({ chain_length_m: localChain }); }}>−</button>
-				<input type="range" min="5" max="120" step="5" value={localChain}
+				<button class="sbtn" onclick={() => { localChain = Math.max(0, localChain-5); saveConfig({ chain_length_m: localChain }); }}>−</button>
+				<input type="range" min="0" max="120" step="5" value={localChain}
 					oninput={(e) => { localChain = +(e.target as HTMLInputElement).value; }}
 					onchange={() => saveConfig({ chain_length_m: localChain })} />
 				<button class="sbtn" onclick={() => { localChain = Math.min(120, localChain+5); saveConfig({ chain_length_m: localChain }); }}>+</button>
