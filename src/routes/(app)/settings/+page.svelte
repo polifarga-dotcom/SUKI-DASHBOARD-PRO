@@ -188,16 +188,9 @@
 	}
 
 	onMount(async () => {
-		const { data: { session } } = await supabase.auth.getSession();
-		if (session) {
-			const { data: rd } = await supabase
-				.from('user_roles')
-				.select('role')
-				.eq('user_id', session.user.id)
-				.single();
-			fetchedRole = rd?.role ?? 'viewer';
-			if (fetchedRole === 'admin') loadUsers();
-		}
+		const { data: role } = await supabase.rpc('get_my_role');
+		fetchedRole = role ?? 'viewer';
+		if (fetchedRole === 'admin') loadUsers();
 	});
 </script>
 
