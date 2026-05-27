@@ -18,6 +18,11 @@
 	let notifSaving = $state(false);
 	let notifSaved = $state(false);
 
+	// Test notification state
+	type TestState = 'idle' | 'sending' | 'ok' | 'err';
+	let tgTest  = $state<TestState>('idle');
+	let poTest  = $state<TestState>('idle');
+
 	const userEmail = $derived($authStore.session?.user?.email ?? '—');
 	const userRole = $derived($authStore.roleData?.role ?? '—');
 	const cfg = $derived($anchorConfig);
@@ -80,6 +85,16 @@
 		}
 	}
 
+	async function sendTestNotification(channel: 'telegram' | 'pushover') {
+		const setter = channel === 'telegram' ? (v: TestState) => { tgTest = v; } : (v: TestState) => { poTest = v; };
+		setter('sending');
+		const { error } = await supabase.from('relay_commands').insert({
+			device: 'notification_test', channel, desired_state: 1
+		});
+		setter(error ? 'err' : 'ok');
+		setTimeout(() => setter('idle'), 3000);
+	}
+
 	async function toggleRelay(device: string, channel: string, current: 0 | 1 | null | undefined) {
 		const newState = current === 1 ? 0 : 1;
 		await supabase.from('relay_commands').insert({ device, channel, desired_state: newState });
@@ -99,20 +114,16 @@
 	<!-- Relay / Switches -->
 	<section class="card">
 		<h2>Schalter</h2>
-		<div class="relay-hint">Shelly: nur im Boot-LAN erreichbar</div>
 		<div class="relay-list">
 			{#each [
-				{ device: 'victron_relay', channel: '0', label: 'Relais 1', state: t?.relay_0, local: false },
-				{ device: 'victron_relay', channel: '1', label: 'Relais 2', state: t?.relay_1, local: false },
-				{ device: 'shelly', channel: '108', label: 'Hecklicht', state: t?.shelly_108, local: true },
-				{ device: 'shelly', channel: '102', label: 'Ambientelicht', state: t?.shelly_102, local: true },
-				{ device: 'shelly', channel: '118', label: 'Wasserpumpe', state: t?.shelly_118, local: true },
+				{ device: 'victron_relay', channel: '0', label: 'Water Heater',  state: t?.relay_0    },
+				{ device: 'victron_relay', channel: '1', label: 'Anchor Light',   state: t?.relay_1    },
+				{ device: 'shelly', channel: '108', label: 'Hecklicht',           state: t?.shelly_108 },
+				{ device: 'shelly', channel: '102', label: 'Ambientelicht',       state: t?.shelly_102 },
+				{ device: 'shelly', channel: '118', label: 'Wasserpumpe',         state: t?.shelly_118 },
 			] as r}
 				<div class="relay-row">
-					<div class="relay-info">
-						<span class="relay-label">{r.label}</span>
-						{#if r.local}<span class="local-badge">LAN</span>{/if}
-					</div>
+					<span class="relay-label">{r.label}</span>
 					<button
 						class="toggle-btn"
 						class:on={r.state === 1}
@@ -169,6 +180,10 @@
 				<input id="tg-chats" type="text" bind:value={tgChats} placeholder="-1001234567890,987654321,…" autocomplete="off" />
 			</div>
 		</div>
+		<button class="btn btn-ghost test-btn" onclick={() => sendTestNotification('telegram')}
+			disabled={tgTest === 'sending' || !tgToken}>
+			{tgTest === 'sending' ? 'Sende…' : tgTest === 'ok' ? '✓ Gesendet' : tgTest === 'err' ? '✗ Fehler' : 'Testnachricht senden'}
+		</button>
 	</section>
 
 	<!-- Pushover -->
@@ -184,6 +199,10 @@
 				<input id="po-keys" type="text" bind:value={poKeys} placeholder="uQiRzpo4DXghDmr9QzzfQu,…" autocomplete="off" />
 			</div>
 		</div>
+		<button class="btn btn-ghost test-btn" onclick={() => sendTestNotification('pushover')}
+			disabled={poTest === 'sending' || !poToken}>
+			{poTest === 'sending' ? 'Sende…' : poTest === 'ok' ? '✓ Gesendet' : poTest === 'err' ? '✗ Fehler' : 'Testnachricht senden'}
+		</button>
 	</section>
 
 	<!-- Save notifications button -->
@@ -243,7 +262,6 @@
 	}
 
 	/* Relay list */
-	.relay-hint { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
 	.relay-list { display: flex; flex-direction: column; gap: 0; }
 	.relay-row {
 		display: flex;
@@ -253,15 +271,10 @@
 		border-bottom: 1px solid var(--border);
 	}
 	.relay-row:last-child { border-bottom: none; }
-	.relay-info { display: flex; align-items: center; gap: 8px; }
 	.relay-label { font-size: 14px; }
-	.local-badge {
-		font-size: 9px;
-		color: var(--muted);
-		border: 1px solid var(--border);
-		border-radius: 3px;
-		padding: 1px 5px;
-	}
+
+	/* Test button */
+	.test-btn { width: 100%; margin-top: 10px; font-size: 12px; }
 
 	/* iOS-style toggle */
 	.toggle-btn {
