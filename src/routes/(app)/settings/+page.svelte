@@ -29,7 +29,6 @@
 	let usersLoading = $state(false);
 	let usersError   = $state('');
 	let addEmail     = $state('');
-	let addPassword  = $state('');
 	let addRole      = $state<'viewer' | 'admin'>('viewer');
 	let addLoading   = $state(false);
 	let addError     = $state('');
@@ -54,16 +53,15 @@
 	async function addUser() {
 		addError = '';
 		addSuccess = false;
-		if (!addEmail || !addPassword) { addError = 'E-Mail und Passwort erforderlich'; return; }
-		if (addPassword.length < 8) { addError = 'Passwort min. 8 Zeichen'; return; }
+		if (!addEmail) { addError = 'E-Mail erforderlich'; return; }
 		addLoading = true;
 		const { data: result, error } = await supabase.functions.invoke('manage-users', {
 			method: 'POST',
-			body: { email: addEmail, password: addPassword, role: addRole },
+			body: { email: addEmail, role: addRole, redirectTo: window.location.origin },
 		});
 		addLoading = false;
 		if (error || result?.error) { addError = result?.error ?? error?.message ?? 'Fehler'; return; }
-		addEmail = ''; addPassword = ''; addRole = 'viewer';
+		addEmail = ''; addRole = 'viewer';
 		addSuccess = true;
 		setTimeout(() => { addSuccess = false; }, 3000);
 		await loadUsers();
@@ -270,14 +268,10 @@
 		<div class="add-user">
 			<div class="add-title">Neuen Nutzer anlegen</div>
 			{#if addError}<div class="alert alert-error">{addError}</div>{/if}
-			{#if addSuccess}<div class="alert alert-info">Nutzer angelegt. Initiales Passwort muss geändert werden.</div>{/if}
+			{#if addSuccess}<div class="alert alert-info">Einladung gesendet. Der Nutzer erhält eine E-Mail mit dem Login-Link.</div>{/if}
 			<div class="field">
 				<label for="add-email">E-Mail</label>
 				<input id="add-email" type="email" bind:value={addEmail} placeholder="neu@example.com" autocomplete="off" />
-			</div>
-			<div class="field">
-				<label for="add-pw">Temporäres Passwort</label>
-				<input id="add-pw" type="password" bind:value={addPassword} placeholder="min. 8 Zeichen" autocomplete="new-password" />
 			</div>
 			<div class="role-row">
 				<label>Rolle</label>
@@ -286,7 +280,7 @@
 					<button class="role-opt" class:sel={addRole === 'admin'}  onclick={() => { addRole = 'admin'; }}>Admin</button>
 				</div>
 			</div>
-			<button class="btn btn-primary" onclick={addUser} disabled={addLoading || !addEmail || !addPassword}>
+			<button class="btn btn-primary" onclick={addUser} disabled={addLoading || !addEmail}>
 				{addLoading ? 'Erstelle…' : 'Nutzer hinzufügen'}
 			</button>
 		</div>
