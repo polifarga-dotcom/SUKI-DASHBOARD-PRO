@@ -8,11 +8,11 @@
 	let { data } = $props();
 
 	// ── Auth ──────────────────────────────────────────────────────────────────
-	// data.role comes from (app)/+layout.ts load(); authStore.roleData is not populated
-	const userEmail  = $derived($authStore.session?.user?.email ?? data.session?.user?.email ?? '—');
-	const userRole   = $derived((data.role as string) ?? '—');
-	const currentUid = $derived($authStore.session?.user?.id ?? data.session?.user?.id ?? '');
-	const isAdmin    = $derived(userRole === 'admin');
+	let fetchedRole = $state<string | null>(null);
+	const userEmail  = $derived($authStore.session?.user?.email ?? '—');
+	const currentUid = $derived($authStore.session?.user?.id ?? '');
+	const userRole   = $derived(fetchedRole ?? '—');
+	const isAdmin    = $derived(fetchedRole === 'admin');
 	const cfg        = $derived($anchorConfig);
 
 	// ── User management (admin only) ──────────────────────────────────────────
@@ -187,8 +187,17 @@
 		goto('/login');
 	}
 
-	onMount(() => {
-		if (isAdmin) loadUsers();
+	onMount(async () => {
+		const { data: { session } } = await supabase.auth.getSession();
+		if (session) {
+			const { data: rd } = await supabase
+				.from('user_roles')
+				.select('role')
+				.eq('user_id', session.user.id)
+				.single();
+			fetchedRole = rd?.role ?? 'viewer';
+			if (fetchedRole === 'admin') loadUsers();
+		}
 	});
 </script>
 
