@@ -8,9 +8,10 @@
 	let { data } = $props();
 
 	// ── Auth ──────────────────────────────────────────────────────────────────
-	const userEmail  = $derived($authStore.session?.user?.email ?? '—');
-	const userRole   = $derived($authStore.roleData?.role ?? '—');
-	const currentUid = $derived($authStore.session?.user?.id ?? '');
+	// data.role comes from (app)/+layout.ts load(); authStore.roleData is not populated
+	const userEmail  = $derived($authStore.session?.user?.email ?? data.session?.user?.email ?? '—');
+	const userRole   = $derived((data.role as string) ?? '—');
+	const currentUid = $derived($authStore.session?.user?.id ?? data.session?.user?.id ?? '');
 	const isAdmin    = $derived(userRole === 'admin');
 	const cfg        = $derived($anchorConfig);
 
