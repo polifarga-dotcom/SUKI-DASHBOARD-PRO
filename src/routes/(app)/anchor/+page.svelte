@@ -87,8 +87,8 @@
 	$effect(() => {
 		if (boatLat != null && boatLon != null) {
 			const last = breadcrumb.at(-1);
-			if (!last || last[0] !== boatLat || last[1] !== boatLon)
-				breadcrumb = [...breadcrumb.slice(-99), [boatLat, boatLon]];
+			if (!last || Math.abs(last[0] - boatLat) > 0.000001 || Math.abs(last[1] - boatLon) > 0.000001)
+				breadcrumb = [...breadcrumb.slice(-199), [boatLat, boatLon]];
 		}
 	});
 
@@ -252,6 +252,21 @@
 
 	// ── Leaflet init ──────────────────────────────────────────────────────────
 	onMount(async () => {
+		// Load recent track from history (last 2h, max 200 points)
+		supabase
+			.from('telemetry_history')
+			.select('nav_lat,nav_lon,recorded_at')
+			.not('nav_lat', 'is', null)
+			.not('nav_lon', 'is', null)
+			.gte('recorded_at', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())
+			.order('recorded_at', { ascending: true })
+			.limit(200)
+			.then(({ data }) => {
+				if (data && data.length > 1) {
+					breadcrumb = data.map(r => [r.nav_lat, r.nav_lon] as [number, number]);
+				}
+			});
+
 		await new Promise(r => requestAnimationFrame(r));
 		await new Promise(r => requestAnimationFrame(r));
 
@@ -320,7 +335,7 @@
 			<div class="north-pill" style="left:{nPillPx.x}px;top:{nPillPx.y}px">N</div>
 
 			<!-- AWA / wind flag: orbits to show apparent wind direction + speed -->
-			{#if awaPx && awsDeg !== undefined}
+			{#if awaPx && awsKn != null}
 			<div class="awa-marker" style="left:{awaPx.x}px;top:{awaPx.y}px">
 				<svg
 					class="awa-arrow"
