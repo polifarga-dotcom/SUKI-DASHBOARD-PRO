@@ -3,7 +3,6 @@
 	import { supabase } from '$lib/supabase.js';
 	import { authStore } from '$lib/stores/auth.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
-	import { telemetry } from '$lib/stores/telemetry.js';
 
 	let { data } = $props();
 
@@ -26,7 +25,6 @@
 	const userEmail = $derived($authStore.session?.user?.email ?? '—');
 	const userRole = $derived($authStore.roleData?.role ?? '—');
 	const cfg = $derived($anchorConfig);
-	const t = $derived($telemetry);
 
 	// Notification fields (editable local copies)
 	let tgToken = $state('');
@@ -95,11 +93,6 @@
 		setTimeout(() => setter('idle'), 3000);
 	}
 
-	async function toggleRelay(device: string, channel: string, current: 0 | 1 | null | undefined) {
-		const newState = current === 1 ? 0 : 1;
-		await supabase.from('relay_commands').insert({ device, channel, desired_state: newState });
-	}
-
 	async function signOut() {
 		await supabase.auth.signOut();
 		authStore.clear();
@@ -110,32 +103,6 @@
 <svelte:head><title>Settings · SUKI PRO</title></svelte:head>
 
 <div class="settings">
-
-	<!-- Relay / Switches -->
-	<section class="card">
-		<h2>Schalter</h2>
-		<div class="relay-list">
-			{#each [
-				{ device: 'victron_relay', channel: '0', label: 'Water Heater',  state: t?.relay_0    },
-				{ device: 'victron_relay', channel: '1', label: 'Anchor Light',   state: t?.relay_1    },
-				{ device: 'shelly', channel: '108', label: 'Hecklicht',           state: t?.shelly_108 },
-				{ device: 'shelly', channel: '102', label: 'Ambientelicht',       state: t?.shelly_102 },
-				{ device: 'shelly', channel: '118', label: 'Wasserpumpe',         state: t?.shelly_118 },
-			] as r}
-				<div class="relay-row">
-					<span class="relay-label">{r.label}</span>
-					<button
-						class="toggle-btn"
-						class:on={r.state === 1}
-						aria-label="{r.label} {r.state === 1 ? 'aus' : 'ein'}schalten"
-						onclick={() => toggleRelay(r.device, r.channel, r.state)}
-					>
-						<span class="knob"></span>
-					</button>
-				</div>
-			{/each}
-		</div>
-	</section>
 
 	<!-- Alarm delay + Cloud bridge -->
 	<section class="card">
@@ -260,18 +227,6 @@
 		letter-spacing: 0.8px;
 		margin-bottom: 12px;
 	}
-
-	/* Relay list */
-	.relay-list { display: flex; flex-direction: column; gap: 0; }
-	.relay-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 10px 0;
-		border-bottom: 1px solid var(--border);
-	}
-	.relay-row:last-child { border-bottom: none; }
-	.relay-label { font-size: 14px; }
 
 	/* Test button */
 	.test-btn { width: 100%; margin-top: 10px; font-size: 12px; }

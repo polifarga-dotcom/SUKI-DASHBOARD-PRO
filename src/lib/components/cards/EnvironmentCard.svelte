@@ -20,6 +20,8 @@
 		<ValueCell label="Kühlschrank" value={k2c(t?.temp_fridge ?? null)} />
 		<ValueCell label="Technik"     value={k2c(t?.temp_tech ?? null)} />
 		<ValueCell label="Wasser"      value={k2c(t?.temp_water ?? null)} />
+		<ValueCell label="AMA SB"      value={k2c(t?.temp_amasb ?? null)} />
+		<ValueCell label="AMA BB"      value={k2c(t?.temp_amabb ?? null)} />
 	</div>
 </div>
 

@@ -7,11 +7,11 @@
 	let { t }: Props = $props();
 
 	const relays = $derived([
-		{ device: 'victron_relay', channel: '0', label: 'Relais 1', state: t?.relay_0 },
-		{ device: 'victron_relay', channel: '1', label: 'Relais 2', state: t?.relay_1 },
-		{ device: 'shelly', channel: '108', label: 'Hecklicht', state: t?.shelly_108, localOnly: true },
-		{ device: 'shelly', channel: '102', label: 'Ambientelicht', state: t?.shelly_102, localOnly: true },
-		{ device: 'shelly', channel: '118', label: 'Wasserpumpe', state: t?.shelly_118, localOnly: true },
+		{ device: 'victron_relay', channel: '0', label: 'Water Heater',  state: t?.relay_0    },
+		{ device: 'victron_relay', channel: '1', label: 'Anchor Light',  state: t?.relay_1    },
+		{ device: 'shelly', channel: '108', label: 'Hecklicht',          state: t?.shelly_108 },
+		{ device: 'shelly', channel: '102', label: 'Ambientelicht',      state: t?.shelly_102 },
+		{ device: 'shelly', channel: '118', label: 'Wasserpumpe',        state: t?.shelly_118 },
 	]);
 
 	async function toggle(device: string, channel: string, currentState: 0 | 1 | null | undefined) {
@@ -27,17 +27,11 @@
 </script>
 
 <div class="card">
-	<div class="card-head">
-		<span class="title">Schalter</span>
-		<span class="hint">Shelly: nur im Boot-LAN</span>
-	</div>
+	<div class="title">Schalter</div>
 	<div class="relays">
 		{#each relays as r}
 			<div class="relay-row">
-				<div class="relay-info">
-					<span class="relay-label">{r.label}</span>
-					{#if r.localOnly}<span class="local-badge">LAN</span>{/if}
-				</div>
+				<span class="relay-label">{r.label}</span>
 				<button
 					class="toggle"
 					class:on={r.state === 1}
@@ -52,9 +46,7 @@
 </div>
 
 <style>
-	.card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-	.title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
-	.hint { font-size: 10px; color: var(--muted); }
+	.title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
 
 	.relays { display: flex; flex-direction: column; gap: 2px; }
 	.relay-row {
@@ -65,16 +57,7 @@
 		border-bottom: 1px solid var(--border);
 	}
 	.relay-row:last-child { border-bottom: none; }
-
-	.relay-info { display: flex; align-items: center; gap: 8px; }
 	.relay-label { font-size: 14px; }
-	.local-badge {
-		font-size: 9px;
-		color: var(--muted);
-		border: 1px solid var(--border);
-		border-radius: 3px;
-		padding: 1px 5px;
-	}
 
 	/* iOS-style toggle */
 	.toggle {
