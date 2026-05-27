@@ -12,9 +12,32 @@
 	let { children, data } = $props();
 
 	const tabs = [
-		{ href: '/vessel', label: 'Vessel' },
-		{ href: '/anchor', label: 'Anker' },
-		{ href: '/settings', label: 'Settings' }
+		{
+			href: '/vessel', label: 'Vessel',
+			icon: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<rect x="2" y="13" width="16" height="3" rx="1.5"/>
+				<path d="M5 13 L10 3 L15 13"/>
+				<line x1="10" y1="3" x2="10" y2="10"/>
+			</svg>`
+		},
+		{
+			href: '/anchor', label: 'Anker',
+			icon: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<circle cx="10" cy="5.5" r="2"/>
+				<line x1="10" y1="7.5" x2="10" y2="17"/>
+				<line x1="6" y1="10.5" x2="14" y2="10.5"/>
+				<path d="M5.5 17 a4.5 4.5 0 0 0 9 0"/>
+			</svg>`
+		},
+		{
+			href: '/settings', label: 'Settings',
+			icon: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+				<line x1="3" y1="6" x2="17" y2="6"/>
+				<circle cx="7" cy="6" r="2" fill="var(--card)"/>
+				<line x1="3" y1="14" x2="17" y2="14"/>
+				<circle cx="13" cy="14" r="2" fill="var(--card)"/>
+			</svg>`
+		},
 	];
 
 	let pollTimer: ReturnType<typeof setInterval>;
@@ -115,10 +138,18 @@
 				class="tab-item"
 				class:active={currentPath.startsWith(tab.href)}
 			>
-				{tab.label}
+				<span class="tab-icon">{@html tab.icon}</span>
+				<span class="tab-label">{tab.label}</span>
 			</a>
 		{/each}
-		<button class="tab-item tab-signout" onclick={signOut} title="Abmelden">⏻</button>
+		<button class="tab-item tab-signout" onclick={signOut} title="Abmelden">
+			<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M13 3h3a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-3"/>
+				<polyline points="9 14 13 10 9 6"/>
+				<line x1="13" y1="10" x2="3" y2="10"/>
+			</svg>
+			<span class="tab-label">Logout</span>
+		</button>
 	</nav>
 
 	<!-- Status bar -->
@@ -224,33 +255,35 @@
 		display: flex;
 		background: var(--card);
 		border-bottom: 1px solid var(--border);
-		height: var(--tab-h);
+		height: 56px;
 		flex-shrink: 0;
 	}
 
 	.tab-item {
 		flex: 1;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		font-size: 13px;
-		font-weight: 500;
-		color: var(--muted);
-		transition: color 0.15s;
+		gap: 3px;
+		color: #666;
+		transition: color 0.15s, background 0.15s;
 		text-decoration: none;
 		border-bottom: 2px solid transparent;
+		padding-bottom: 2px;
 	}
 	.tab-item.active {
 		color: var(--accent);
 		border-bottom-color: var(--accent);
+		background: rgba(0, 200, 255, 0.06);
 	}
-	.tab-item:hover { color: var(--text); }
+	.tab-item:hover:not(.active) { color: var(--text); }
+
+	.tab-icon { display: flex; align-items: center; line-height: 0; }
+	.tab-label { font-size: 10px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; }
 
 	.tab-signout {
-		max-width: 48px;
-		font-size: 16px;
-		color: var(--muted);
-		flex: 0 0 48px;
+		flex: 0 0 56px;
 	}
 	.tab-signout:hover { color: var(--red); }
 

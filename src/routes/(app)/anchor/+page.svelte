@@ -534,7 +534,7 @@
 
 	/* ── Map control buttons ── */
 	.map-btns {
-		position: absolute; right: 10px; bottom: 10px; z-index: 600;
+		position: absolute; right: 10px; top: 10px; z-index: 600;
 		display: flex; flex-direction: column; gap: 4px;
 	}
 	.map-btn {
