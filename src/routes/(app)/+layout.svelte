@@ -23,10 +23,10 @@
 		{
 			href: '/anchor', label: 'Anker',
 			icon: `<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-				<circle cx="10" cy="5.5" r="2"/>
-				<line x1="10" y1="7.5" x2="10" y2="17"/>
-				<line x1="6" y1="10.5" x2="14" y2="10.5"/>
-				<path d="M5.5 17 a4.5 4.5 0 0 0 9 0"/>
+				<circle cx="10" cy="4.5" r="1.8"/>
+				<line x1="10" y1="6.3" x2="10" y2="16"/>
+				<line x1="5.5" y1="9.5" x2="14.5" y2="9.5"/>
+				<path d="M5.5 16 a4.5 3.5 0 0 0 9 0"/>
 			</svg>`
 		},
 		{

@@ -5,6 +5,7 @@
 	import TanksCard from '$lib/components/cards/TanksCard.svelte';
 	import EnvironmentCard from '$lib/components/cards/EnvironmentCard.svelte';
 	import EngineCard from '$lib/components/cards/EngineCard.svelte';
+	import RigCard from '$lib/components/cards/RigCard.svelte';
 	import RelayCard from '$lib/components/cards/RelayCard.svelte';
 </script>
 
@@ -20,6 +21,7 @@
 	<TanksCard t={$telemetry} />
 	<EnvironmentCard t={$telemetry} />
 	<EngineCard t={$telemetry} />
+	<RigCard t={$telemetry} />
 	<RelayCard t={$telemetry} />
 </div>
 
