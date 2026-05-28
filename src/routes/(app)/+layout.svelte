@@ -113,7 +113,7 @@
 	<!-- Header -->
 	<header class="app-header">
 		<div class="header-left">
-			<span class="vessel-name">SUKI</span>
+			<img src="/logo.png" alt="SUKI" class="vessel-logo" />
 			<span class="vessel-sub">Neel 47 · DD4704</span>
 		</div>
 		<div class="header-center">
@@ -189,12 +189,11 @@
 		gap: 1px;
 		flex-shrink: 0;
 	}
-	.vessel-name {
-		font-size: 16px;
-		font-weight: 700;
-		color: var(--accent);
-		letter-spacing: 1px;
-		line-height: 1.1;
+	.vessel-logo {
+		height: 28px;
+		width: auto;
+		display: block;
+		/* white logo renders well on dark header */
 	}
 	.vessel-sub {
 		font-size: 10px;
