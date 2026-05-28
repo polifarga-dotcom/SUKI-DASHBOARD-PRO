@@ -174,9 +174,10 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		height: var(--header-h);
-		padding: 0 16px;
-		padding-top: env(safe-area-inset-top);
+		/* height grows to fit safe-area + content; never below --header-h */
+		min-height: var(--header-h);
+		height: auto;
+		padding: calc(env(safe-area-inset-top) + 8px) 16px 8px;
 		background: var(--bg);
 		border-bottom: 1px solid var(--border);
 		flex-shrink: 0;
@@ -190,10 +191,9 @@
 		flex-shrink: 0;
 	}
 	.vessel-logo {
-		height: 28px;
+		height: 24px;
 		width: auto;
 		display: block;
-		/* white logo renders well on dark header */
 	}
 	.vessel-sub {
 		font-size: 10px;

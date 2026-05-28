@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { version } from '$app/environment';
 	import { supabase } from '$lib/supabase.js';
 	import { authStore } from '$lib/stores/auth.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
@@ -404,7 +405,8 @@
 	<!-- ── System ── -->
 	<section class="card">
 		<h2>System</h2>
-		<p class="sys-info">Supabase: <code>mtcmxrmykvthybwrlnvz.supabase.co</code><br />Region: eu-central-1</p>
+		<div class="info-row"><span class="lbl">Build</span><span class="build-ver">{version}</span></div>
+		<div class="info-row"><span class="lbl">Supabase</span><code>mtcmxrmykvthybwrlnvz</code></div>
 		<button class="btn btn-danger mt" onclick={signOut}>Abmelden</button>
 	</section>
 
@@ -549,7 +551,7 @@
 	}
 
 	/* ── System ── */
-	.sys-info { font-size: 13px; color: var(--muted); line-height: 1.6; }
+	.build-ver { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 	code { font-size: 12px; color: var(--accent); }
 	.mt  { margin-top: 12px; }
 </style>
