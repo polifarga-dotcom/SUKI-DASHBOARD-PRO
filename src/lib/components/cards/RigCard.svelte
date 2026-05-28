@@ -4,10 +4,13 @@
 	interface Props { t: Telemetry | null; }
 	let { t }: Props = $props();
 
-	const MAX_T  = 4.2;
+	const MAX_T  = 6.0;
 	const WARN_T = 3.5;
-	/** warning line position as % from bottom */
-	const WARN_PCT = (WARN_T / MAX_T) * 100; // ≈ 83.3 %
+	const CRIT_T = 4.2;
+
+	// Tick positions as % of bar width
+	const WARN_PCT = (WARN_T / MAX_T) * 100;   // 58.33 %
+	const CRIT_PCT = (CRIT_T / MAX_T) * 100;   // 70.00 %
 
 	function nToT(n: number | null): number | null {
 		return n == null ? null : n / 9806.65;
@@ -16,9 +19,9 @@
 		if (tons == null) return 0;
 		return Math.min(tons / MAX_T, 1) * 100;
 	}
-	function barColor(tons: number | null): string {
-		if (tons == null) return 'var(--border)';
-		if (tons > MAX_T)   return 'var(--red)';
+	function valColor(tons: number | null): string {
+		if (tons == null) return 'var(--muted)';
+		if (tons >= CRIT_T) return 'var(--red)';
 		if (tons >= WARN_T) return 'var(--amber)';
 		return 'var(--green)';
 	}
@@ -35,37 +38,36 @@
 <div class="card">
 	<div class="title">Rigg</div>
 
-	<div class="gauges">
+	<div class="bars">
 		{#each sides as side}
-			<div class="side">
-				<!-- vertical gauge bar -->
-				<div class="track-wrap">
-					<!-- max reference tick (top) -->
-					<span class="ref-tick ref-max">4.2 t</span>
-					<!-- warn reference tick (at 3.5 t) -->
-					<span class="ref-tick ref-warn" style="bottom: {WARN_PCT}%">3.5 t</span>
+			<div class="bar-row">
+				<span class="bar-label">{side.label}</span>
 
-					<div class="track">
-						<!-- dashed warning threshold line -->
-						<div class="warn-line" style="bottom: {WARN_PCT}%"></div>
-						<!-- animated fill -->
-						<div
-							class="fill"
-							class:pulsing={side.tons != null && side.tons >= WARN_T}
-							style="height: {fillPct(side.tons)}%; background: {barColor(side.tons)};"
-						></div>
-					</div>
+				<div class="track">
+					<!-- Dark overlay covers the unfilled right portion; slides left as load increases -->
+					<div class="unfill" style="left: {fillPct(side.tons)}%"></div>
+					<!-- Threshold tick lines -->
+					<div class="tick-line" style="left: {WARN_PCT}%"></div>
+					<div class="tick-line" style="left: {CRIT_PCT}%"></div>
 				</div>
 
-				<!-- numeric value -->
-				<div class="val" style="color: {barColor(side.tons)}">
-					{side.tons != null ? side.tons.toFixed(2) : '—'}<span class="unit">{side.tons != null ? ' t' : ''}</span>
-				</div>
-
-				<!-- side label -->
-				<div class="lbl">{side.label}</div>
+				<span class="val" style="color: {valColor(side.tons)}">
+					{side.tons != null ? side.tons.toFixed(2) : '—'}{#if side.tons != null}<span class="unit"> t</span>{/if}
+				</span>
 			</div>
 		{/each}
+
+		<!-- Scale row: aligns with bar column via same grid -->
+		<div class="bar-row scale-row" aria-hidden="true">
+			<span></span>
+			<div class="scale">
+				<span class="s0">0</span>
+				<span class="sw" style="left: {WARN_PCT}%">3.5 t</span>
+				<span class="sc" style="left: {CRIT_PCT}%">4.2 t</span>
+				<span class="s6">6 t</span>
+			</div>
+			<span></span>
+		</div>
 	</div>
 </div>
 
@@ -76,109 +78,97 @@
 		color: var(--muted);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
-		margin-bottom: 20px;
+		margin-bottom: 16px;
 	}
 
-	.gauges {
-		display: flex;
-		justify-content: space-around;
-		align-items: flex-start;
-		gap: 8px;
-		padding: 0 4px 4px;
-	}
+	/* ── layout ── */
+	.bars { display: flex; flex-direction: column; gap: 10px; }
 
-	.side {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
+	.bar-row {
+		display: grid;
+		grid-template-columns: 2rem 1fr 4.5rem;
 		align-items: center;
-		gap: 8px;
+		gap: 10px;
 	}
 
-	/* ── track wrap (bar + floating tick labels) ── */
-	.track-wrap {
-		position: relative;
-		width: 44px;
-		height: 92px;
-		/* allow tick labels to overflow left */
-		overflow: visible;
-	}
-
-	.ref-tick {
-		position: absolute;
-		right: calc(100% + 5px);
-		font-size: 9px;
-		color: var(--muted);
-		white-space: nowrap;
-		line-height: 1;
-	}
-	.ref-max  { top: 0;    transform: translateY(-50%); }
-	.ref-warn { /* bottom set inline */ transform: translateY(50%); }
-
-	.track {
-		width: 100%;
-		height: 100%;
-		background: var(--card2);
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		overflow: hidden;
-		position: relative;
-	}
-
-	/* dashed warning threshold */
-	.warn-line {
-		position: absolute;
-		left: 0;
-		right: 0;
-		height: 1px;
-		background: repeating-linear-gradient(
-			to right,
-			var(--amber) 0px,
-			var(--amber) 3px,
-			transparent 3px,
-			transparent 6px
-		);
-		opacity: 0.65;
-		z-index: 2;
-		pointer-events: none;
-	}
-
-	/* animated fill bar */
-	.fill {
-		position: absolute;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		transition: height 0.9s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s;
-		border-radius: 0 0 5px 5px;
-		z-index: 1;
-	}
-	.fill.pulsing {
-		animation: rig-pulse 1.8s ease-in-out infinite;
-	}
-	@keyframes rig-pulse {
-		0%, 100% { opacity: 1; }
-		50%       { opacity: 0.5; }
-	}
-
-	/* ── numeric value ── */
-	.val {
-		font-size: 18px;
-		font-weight: 700;
-		font-variant-numeric: tabular-nums;
-		line-height: 1;
-	}
-	.unit {
-		font-size: 11px;
-		font-weight: 400;
-		color: var(--muted);
-	}
-
-	/* ── side label ── */
-	.lbl {
+	.bar-label {
 		font-size: 11px;
 		color: var(--muted);
 		text-transform: uppercase;
 		letter-spacing: 0.8px;
+		text-align: right;
 	}
+
+	/* ── bar track ── */
+	.track {
+		position: relative;
+		height: 16px;
+		border-radius: 8px;
+		overflow: hidden;
+		/*
+		 * Three colour zones baked into the track:
+		 *   green  0 – 58.33 % (0 – 3.5 t)
+		 *   amber  58.33 – 70 % (3.5 – 4.2 t)
+		 *   red    70 – 100 % (4.2 – 6 t)
+		 */
+		background: linear-gradient(to right,
+			#22c55e 0%,     #22c55e 58.33%,
+			#f59e0b 58.33%, #f59e0b 70%,
+			#ef4444 70%,    #ef4444 100%
+		);
+	}
+
+	/*
+	 * Dark overlay that covers from the current load value to the right edge.
+	 * As load grows, `left` increases → overlay shrinks → more colour is revealed.
+	 */
+	.unfill {
+		position: absolute;
+		top: 0; right: 0; bottom: 0;
+		background: rgba(13, 13, 13, 0.84);
+		transition: left 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	/* white tick marks at warning and critical thresholds */
+	.tick-line {
+		position: absolute;
+		top: 0; bottom: 0;
+		width: 2px;
+		background: rgba(255, 255, 255, 0.45);
+		z-index: 2;
+		pointer-events: none;
+	}
+
+	/* ── numeric value ── */
+	.val {
+		font-size: 15px;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+		text-align: right;
+	}
+	.unit { font-size: 11px; font-weight: 400; color: var(--muted); }
+
+	/* ── scale labels ── */
+	.scale-row { gap: 10px; }
+
+	.scale {
+		position: relative;
+		height: 16px;
+	}
+
+	.scale span {
+		position: absolute;
+		font-size: 10px;
+		color: var(--muted);
+		white-space: nowrap;
+	}
+	/* "0" — left edge */
+	.s0 { left: 0; }
+	/* "3.5 t" — at warn tick, centred */
+	.sw { transform: translateX(-50%); color: var(--amber); }
+	/* "4.2 t" — at crit tick, centred */
+	.sc { transform: translateX(-50%); color: var(--red); }
+	/* "6 t" — right edge */
+	.s6 { right: 0; }
 </style>
