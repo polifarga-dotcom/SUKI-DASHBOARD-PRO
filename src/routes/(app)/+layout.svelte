@@ -194,6 +194,9 @@
 		height: 24px;
 		width: auto;
 		display: block;
+		align-self: flex-start;
+		object-fit: contain;
+		max-width: 160px;
 	}
 	.vessel-sub {
 		font-size: 10px;
