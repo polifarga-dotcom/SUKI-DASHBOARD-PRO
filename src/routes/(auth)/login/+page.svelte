@@ -129,8 +129,8 @@
 		width: 100%;
 		height: auto;
 		display: block;
-		opacity: 0.12;
-		filter: brightness(1.2);
+		opacity: 0.32;
+		filter: brightness(1.3);
 	}
 
 	/* Radial vignette so boat fades into dark background */
@@ -140,8 +140,8 @@
 		background: radial-gradient(
 			ellipse 120% 80% at 30% 40%,
 			rgba(0,0,0,0.0) 0%,
-			rgba(0,0,0,0.6) 60%,
-			rgba(0,0,0,0.85) 100%
+			rgba(0,0,0,0.45) 55%,
+			rgba(0,0,0,0.75) 100%
 		);
 		pointer-events: none;
 	}
