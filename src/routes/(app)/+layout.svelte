@@ -30,14 +30,6 @@
 			</svg>`
 		},
 		{
-			href: '/screen', label: 'Screen',
-			icon: `<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-				<rect x="2" y="3" width="16" height="11" rx="1.5"/>
-				<line x1="7" y1="17" x2="13" y2="17"/>
-				<line x1="10" y1="14" x2="10" y2="17"/>
-			</svg>`
-		},
-		{
 			href: '/settings', label: 'Settings',
 			icon: `<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 				<line x1="3" y1="6" x2="17" y2="6"/>
