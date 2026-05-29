@@ -131,6 +131,17 @@
 	let shellyTest    = $state<TestState>('idle');
 	let shellyTestMsg = $state('');
 
+	// ── Victron VRM ───────────────────────────────────────────────────────────
+	let vrmToken          = $state('');
+	let vrmInstallationId = $state('');
+	let vrmSaving         = $state(false);
+	let vrmSaved          = $state(false);
+	let vrmTest           = $state<TestState>('idle');
+	let vrmTestMsg        = $state('');
+	interface VRMInstallation { idSite: number; name: string; }
+	let vrmInstallations  = $state<VRMInstallation[]>([]);
+	let vrmDiscovering    = $state(false);
+
 	$effect(() => {
 		if (cfg) {
 			tgToken      = cfg.telegram_token        ?? '';
@@ -139,8 +150,10 @@
 			poKeys       = cfg.pushover_user_keys    ?? '';
 			alarmDelay   = cfg.alarm_delay_s         ?? 10;
 			cloudEnabled = cfg.cloud_enabled         ?? true;
-			shellyServer = cfg.shelly_cloud_server   ?? '';
-			shellyKey    = cfg.shelly_cloud_auth_key ?? '';
+			shellyServer      = cfg.shelly_cloud_server    ?? '';
+			shellyKey         = cfg.shelly_cloud_auth_key  ?? '';
+			vrmToken          = cfg.vrm_api_token           ?? '';
+			vrmInstallationId = cfg.vrm_installation_id != null ? String(cfg.vrm_installation_id) : '';
 		}
 	});
 
@@ -200,6 +213,74 @@
 			shellyTest = 'err';
 		}
 		setTimeout(() => { shellyTest = 'idle'; shellyTestMsg = ''; }, 6000);
+	}
+
+	const VRM_BASE = 'https://vrmapi.victronenergy.com/v2';
+	function vrmHeaders() { return { 'X-Authorization': `Token ${vrmToken}` }; }
+
+	async function discoverVRMInstallations() {
+		if (!vrmToken) return;
+		vrmDiscovering = true;
+		try {
+			const me = await fetch(`${VRM_BASE}/users/me`, { headers: vrmHeaders() });
+			const meJson = await me.json();
+			const uid = meJson?.record?.id ?? meJson?.user?.id;
+			if (!uid) { vrmTestMsg = 'Token ungültig'; vrmTest = 'err'; return; }
+			const inst = await fetch(`${VRM_BASE}/users/${uid}/installations`, { headers: vrmHeaders() });
+			const instJson = await inst.json();
+			vrmInstallations = (instJson?.records ?? []).map((r: Record<string, unknown>) => ({
+				idSite: r.idSite,
+				name: r.name ?? `Site ${r.idSite}`,
+			}));
+			if (vrmInstallations.length === 1) vrmInstallationId = String(vrmInstallations[0].idSite);
+		} catch {
+			vrmTestMsg = 'Verbindungsfehler'; vrmTest = 'err';
+		}
+		vrmDiscovering = false;
+	}
+
+	async function testVRM() {
+		if (!vrmToken || !vrmInstallationId) return;
+		vrmTest = 'sending'; vrmTestMsg = '';
+		try {
+			const res = await fetch(
+				`${VRM_BASE}/installations/${vrmInstallationId}/diagnostics?count=1000`,
+				{ headers: vrmHeaders() }
+			);
+			if (!res.ok) { vrmTestMsg = `HTTP ${res.status}`; vrmTest = 'err'; return; }
+			const json = await res.json();
+			const attrs: unknown[] = json?.records ?? [];
+			const hasBatt  = attrs.some((a: unknown) => (a as {dbusPath: string}).dbusPath === '/Dc/0/Soc');
+			const hasSolar = attrs.some((a: unknown) => (a as {dbusPath: string}).dbusPath === '/Yield/Power');
+			const tankCnt  = attrs.filter((a: unknown) => (a as {dbusPath: string}).dbusPath === '/Level').length;
+			const parts = [];
+			if (hasBatt)      parts.push('Batterie');
+			if (hasSolar)     parts.push('Solar');
+			if (tankCnt > 0)  parts.push(`${tankCnt} Tank${tankCnt !== 1 ? 's' : ''}`);
+			vrmTestMsg = `${attrs.length} Attribute${parts.length ? ' · ' + parts.join(', ') : ''}`;
+			vrmTest = 'ok';
+		} catch (e: unknown) {
+			vrmTestMsg = e instanceof Error ? e.message : 'Verbindungsfehler';
+			vrmTest = 'err';
+		}
+		setTimeout(() => { vrmTest = 'idle'; vrmTestMsg = ''; }, 8000);
+	}
+
+	async function saveVRM() {
+		vrmSaving = true;
+		const { data: row } = await supabase
+			.from('anchor_config')
+			.update({
+				vrm_api_token:       vrmToken       || null,
+				vrm_installation_id: vrmInstallationId ? Number(vrmInstallationId) : null,
+			})
+			.eq('id', 1).select().single();
+		vrmSaving = false;
+		if (row) {
+			anchorConfig.set(row);
+			vrmSaved = true;
+			setTimeout(() => { vrmSaved = false; }, 2000);
+		}
 	}
 
 	async function saveNotifications() {
@@ -472,6 +553,53 @@
 		</div>
 	</section>
 
+	<!-- ── Victron VRM ── -->
+	<section class="card">
+		<h2>Victron VRM</h2>
+		<div class="form-fields">
+			<div class="field">
+				<label for="vrm-token">API Token</label>
+				<input id="vrm-token" type="password" bind:value={vrmToken}
+					placeholder="VRM Portal → Preferences → Access Tokens" autocomplete="off" />
+			</div>
+			<div class="field">
+				<label for="vrm-site">Installation ID</label>
+				<div class="vrm-site-row">
+					{#if vrmInstallations.length > 1}
+						<select id="vrm-site" class="vrm-select" bind:value={vrmInstallationId}>
+							<option value="">— Auswählen —</option>
+							{#each vrmInstallations as inst}
+								<option value={String(inst.idSite)}>{inst.name} ({inst.idSite})</option>
+							{/each}
+						</select>
+					{:else}
+						<input id="vrm-site" type="text" bind:value={vrmInstallationId}
+							placeholder="z.B. 123456" inputmode="numeric" autocomplete="off" />
+					{/if}
+					<button class="btn btn-ghost vrm-discover-btn" onclick={discoverVRMInstallations}
+						disabled={vrmDiscovering || !vrmToken}>
+						{vrmDiscovering ? '…' : 'Suchen'}
+					</button>
+				</div>
+				{#if vrmInstallations.length === 1}
+					<span class="vrm-found">{vrmInstallations[0].name}</span>
+				{/if}
+			</div>
+		</div>
+		<div class="shelly-actions">
+			<button class="btn btn-ghost test-btn shelly-test" onclick={testVRM}
+				disabled={vrmTest === 'sending' || !vrmToken || !vrmInstallationId}>
+				{vrmTest === 'sending' ? 'Teste…'
+				 : vrmTest === 'ok'    ? `✓ ${vrmTestMsg}`
+				 : vrmTest === 'err'   ? `✗ ${vrmTestMsg}`
+				 : 'Verbindung testen'}
+			</button>
+			<button class="btn btn-primary" onclick={saveVRM} disabled={vrmSaving}>
+				{vrmSaving ? 'Speichere…' : vrmSaved ? '✓ Gespeichert' : 'Speichern'}
+			</button>
+		</div>
+	</section>
+
 	<!-- ── Konto ── -->
 	<section class="card">
 		<h2>Konto</h2>
@@ -654,4 +782,14 @@
 	.build-ver { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 	code { font-size: 12px; color: var(--accent); }
 	.mt  { margin-top: 12px; }
+
+	/* ── VRM ── */
+	.vrm-site-row { display: flex; gap: 6px; }
+	.vrm-site-row input { flex: 1; }
+	.vrm-select {
+		flex: 1; background: var(--card2); border: 1px solid var(--border); border-radius: 8px;
+		color: var(--text); font-size: 14px; padding: 10px 12px; outline: none;
+	}
+	.vrm-discover-btn { flex-shrink: 0; margin-top: 0; padding: 0 14px; height: 44px; font-size: 13px; }
+	.vrm-found { font-size: 12px; color: var(--green); margin-top: 2px; }
 </style>

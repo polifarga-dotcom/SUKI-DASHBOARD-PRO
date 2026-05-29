@@ -83,6 +83,21 @@ export type AnchorConfig = {
 	cloud_enabled: boolean;
 	shelly_cloud_server: string | null;
 	shelly_cloud_auth_key: string | null;
+	vrm_api_token: string | null;
+	vrm_installation_id: number | null;
+};
+
+export type VRMData = {
+	battery_soc: number | null;
+	battery_v: number | null;
+	battery_a: number | null;
+	battery_w: number | null;
+	solar_w: number | null;
+	solar_yield_today_wh: number | null;
+	tanks: { name: string; level: number }[];
+	gps_lat: number | null;
+	gps_lon: number | null;
+	last_ts: number | null;
 };
 
 export type ShellyDevice = {

@@ -5,6 +5,7 @@
 	type Device = { id: string; name: string; online: boolean; state: 0 | 1 | null };
 
 	let devices = $state<Device[]>([]);
+	let loaded = $state(false);
 	let pollTimer: ReturnType<typeof setInterval>;
 
 	const cfg = $derived($anchorConfig);
@@ -42,6 +43,7 @@
 			const stateJson = await stateRes.json();
 			const statesData: Record<string, unknown> = stateJson?.data ?? {};
 
+			loaded = true;
 			devices = ids.map(id => {
 				const info = devsMap[id] ?? {};
 				const raw = statesData[id];
@@ -56,7 +58,7 @@
 				return { id, name: info.name || id, online, state };
 			}).sort((a, b) => a.name.localeCompare(b.name));
 		} catch {
-			// keep existing device list on transient error
+			loaded = true; // stop spinner even on error
 		}
 	}
 
@@ -90,11 +92,10 @@
 	onDestroy(() => clearInterval(pollTimer));
 </script>
 
+{#if cfg?.shelly_cloud_server && (!loaded || devices.length > 0)}
 <div class="card">
 	<div class="title">Shelly</div>
-	{#if !cfg?.shelly_cloud_server}
-		<div class="empty">Cloud-Zugangsdaten unter Settings konfigurieren.</div>
-	{:else if devices.length === 0}
+	{#if !loaded}
 		<div class="empty">Verbinde…</div>
 	{:else}
 		<div class="list">
@@ -117,6 +118,7 @@
 		</div>
 	{/if}
 </div>
+{/if}
 
 <style>
 	.title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
