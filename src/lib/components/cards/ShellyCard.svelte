@@ -5,7 +5,6 @@
 	type Device = { id: string; name: string; online: boolean; state: 0 | 1 | null };
 
 	let devices = $state<Device[]>([]);
-	let toggleMsg = $state('');
 	let pollTimer: ReturnType<typeof setInterval>;
 
 	const cfg = $derived($anchorConfig);
@@ -62,7 +61,6 @@
 		if (!api) return;
 		const newState = dev.state === 1 ? 0 : 1;
 		devices = devices.map(d => d.id === dev.id ? { ...d, state: newState as 0 | 1 } : d);
-		toggleMsg = '…';
 		try {
 			const res = await fetch(
 				`https://${api.srv}/v2/devices/api/set/switch?auth_key=${api.key}`,
@@ -72,13 +70,10 @@
 					body: JSON.stringify({ id: dev.id, channel: 0, on: Boolean(newState) }),
 				}
 			);
-			const json = await res.json();
-			toggleMsg = JSON.stringify(json).slice(0, 200);
-			if (!json?.isok) {
+			if (!res.ok) {
 				devices = devices.map(d => d.id === dev.id ? { ...d, state: dev.state } : d);
 			}
-		} catch (e) {
-			toggleMsg = String(e);
+		} catch {
 			devices = devices.map(d => d.id === dev.id ? { ...d, state: dev.state } : d);
 		}
 	}
@@ -98,9 +93,6 @@
 	{:else if devices.length === 0}
 		<div class="empty">Verbinde…</div>
 	{:else}
-		{#if toggleMsg}
-			<div class="dbg">{toggleMsg}</div>
-		{/if}
 		<div class="list">
 			{#each devices as dev (dev.id)}
 				<div class="row">
@@ -149,5 +141,4 @@
 		background: var(--text); border-radius: 50%; transition: transform 0.2s; display: block;
 	}
 	.toggle.on .knob { transform: translateX(18px); }
-	.dbg { font-size: 10px; color: var(--amber); word-break: break-all; margin-bottom: 6px; }
 </style>
