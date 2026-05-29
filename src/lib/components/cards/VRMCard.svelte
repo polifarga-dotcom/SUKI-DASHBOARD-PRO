@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { anchorConfig } from '$lib/stores/anchor.js';
+	import { supabase } from '$lib/supabase.js';
 	import { parseVRMDiagnostics } from '$lib/utils/vrm.js';
 	import type { VRMData } from '$lib/types.js';
-
-	const VRM_BASE = 'https://vrmapi.victronenergy.com/v2';
 
 	let data = $state<VRMData | null>(null);
 	let error = $state('');
@@ -18,15 +17,9 @@
 
 	async function fetchVRM() {
 		if (!apiReady()) return;
-		const token = cfg!.vrm_api_token!;
-		const id    = cfg!.vrm_installation_id!;
 		try {
-			const res = await fetch(
-				`${VRM_BASE}/installations/${id}/diagnostics?count=1000`,
-				{ headers: { 'X-Authorization': `Token ${token}` } }
-			);
-			if (!res.ok) { error = `HTTP ${res.status}`; return; }
-			const json = await res.json();
+			const { data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy');
+			if (fnErr) { error = fnErr.message; return; }
 			const attrs: unknown[] = json?.records ?? [];
 			data  = parseVRMDiagnostics(attrs);
 			error = '';

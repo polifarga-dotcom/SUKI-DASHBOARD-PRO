@@ -215,24 +215,24 @@
 		setTimeout(() => { shellyTest = 'idle'; shellyTestMsg = ''; }, 6000);
 	}
 
-	const VRM_BASE = 'https://vrmapi.victronenergy.com/v2';
-	function vrmHeaders() { return { 'X-Authorization': `Token ${vrmToken}` }; }
-
 	async function discoverVRMInstallations() {
 		if (!vrmToken) return;
 		vrmDiscovering = true;
+		vrmTestMsg = ''; vrmTest = 'idle';
 		try {
-			const me = await fetch(`${VRM_BASE}/users/me`, { headers: vrmHeaders() });
-			const meJson = await me.json();
-			const uid = meJson?.record?.id ?? meJson?.user?.id;
-			if (!uid) { vrmTestMsg = 'Token ungültig'; vrmTest = 'err'; return; }
-			const inst = await fetch(`${VRM_BASE}/users/${uid}/installations`, { headers: vrmHeaders() });
-			const instJson = await inst.json();
-			vrmInstallations = (instJson?.records ?? []).map((r: Record<string, unknown>) => ({
-				idSite: r.idSite,
-				name: r.name ?? `Site ${r.idSite}`,
-			}));
-			if (vrmInstallations.length === 1) vrmInstallationId = String(vrmInstallations[0].idSite);
+			const { data, error: fnErr } = await supabase.functions.invoke('vrm-proxy', {
+				body: { action: 'discover', token: vrmToken },
+			});
+			if (fnErr || data?.error) {
+				vrmTestMsg = data?.error ?? fnErr?.message ?? 'Fehler';
+				vrmTest = 'err';
+			} else {
+				vrmInstallations = (data?.records ?? []).map((r: Record<string, unknown>) => ({
+					idSite: r.idSite,
+					name: r.name ?? `Site ${r.idSite}`,
+				}));
+				if (vrmInstallations.length === 1) vrmInstallationId = String(vrmInstallations[0].idSite);
+			}
 		} catch {
 			vrmTestMsg = 'Verbindungsfehler'; vrmTest = 'err';
 		}
@@ -243,20 +243,21 @@
 		if (!vrmToken || !vrmInstallationId) return;
 		vrmTest = 'sending'; vrmTestMsg = '';
 		try {
-			const res = await fetch(
-				`${VRM_BASE}/installations/${vrmInstallationId}/diagnostics?count=1000`,
-				{ headers: vrmHeaders() }
-			);
-			if (!res.ok) { vrmTestMsg = `HTTP ${res.status}`; vrmTest = 'err'; return; }
-			const json = await res.json();
-			const attrs: unknown[] = json?.records ?? [];
+			const { data, error: fnErr } = await supabase.functions.invoke('vrm-proxy', {
+				body: { token: vrmToken, installation_id: Number(vrmInstallationId) },
+			});
+			if (fnErr || data?.error) {
+				vrmTestMsg = data?.error ?? fnErr?.message ?? 'Fehler';
+				vrmTest = 'err'; return;
+			}
+			const attrs: unknown[] = data?.records ?? [];
 			const hasBatt  = attrs.some((a: unknown) => (a as {dbusPath: string}).dbusPath === '/Dc/0/Soc');
 			const hasSolar = attrs.some((a: unknown) => (a as {dbusPath: string}).dbusPath === '/Yield/Power');
 			const tankCnt  = attrs.filter((a: unknown) => (a as {dbusPath: string}).dbusPath === '/Level').length;
-			const parts = [];
-			if (hasBatt)      parts.push('Batterie');
-			if (hasSolar)     parts.push('Solar');
-			if (tankCnt > 0)  parts.push(`${tankCnt} Tank${tankCnt !== 1 ? 's' : ''}`);
+			const parts: string[] = [];
+			if (hasBatt)     parts.push('Batterie');
+			if (hasSolar)    parts.push('Solar');
+			if (tankCnt > 0) parts.push(`${tankCnt} Tank${tankCnt !== 1 ? 's' : ''}`);
 			vrmTestMsg = `${attrs.length} Attribute${parts.length ? ' · ' + parts.join(', ') : ''}`;
 			vrmTest = 'ok';
 		} catch (e: unknown) {
