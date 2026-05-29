@@ -44,14 +44,12 @@
 
 			devices = ids.map(id => {
 				const info = devsMap[id] ?? {};
-				const sw = (statesData[id] as Record<string, unknown> | undefined)?.['switch:0'] as Record<string, unknown> | undefined;
+				const stateObj = (statesData[id] as Record<string, unknown> | undefined) ?? {};
+				const sw = stateObj['switch:0'] as Record<string, unknown> | undefined;
 				const state: 0 | 1 | null = sw && 'output' in sw ? (sw.output ? 1 : 0) : null;
-				return {
-					id,
-					name: info.name || id,
-					online: Boolean(info.online),
-					state,
-				};
+				// Prefer live status response over stale device-list field
+				const online = Object.keys(stateObj).length > 0 || Boolean(info.online);
+				return { id, name: info.name || id, online, state };
 			}).sort((a, b) => a.name.localeCompare(b.name));
 		} catch {
 			// keep existing device list on transient error
