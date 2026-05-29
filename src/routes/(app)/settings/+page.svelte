@@ -173,19 +173,20 @@
 			console.log('[Shelly Cloud test] data keys:', Object.keys(json?.data ?? {}));
 
 			// Try multiple response formats the Shelly Cloud API may return
-			const ds = json?.data?.devices_status;          // dict format
-			const da = json?.data?.devices;                 // array format
-			const dr = json?.devices;                       // root-level array
+			const ds = json?.data?.devices_status;          // old dict format
+			const da = json?.data?.devices;                 // actual format (dict or array)
+			const dr = json?.devices;                       // root-level fallback
 
-			if (ds && typeof ds === 'object' && !Array.isArray(ds)) {
-				const n = Object.keys(ds).length;
+			function countDevs(d: unknown): number | null {
+				if (!d) return null;
+				if (Array.isArray(d)) return d.length;
+				if (typeof d === 'object') return Object.keys(d).length;
+				return null;
+			}
+
+			const n = countDevs(ds) ?? countDevs(da) ?? countDevs(dr);
+			if (n !== null) {
 				shellyTestMsg = `${n} Gerät${n !== 1 ? 'e' : ''} gefunden`;
-				shellyTest = 'ok';
-			} else if (Array.isArray(da)) {
-				shellyTestMsg = `${da.length} Gerät${da.length !== 1 ? 'e' : ''} gefunden`;
-				shellyTest = 'ok';
-			} else if (Array.isArray(dr)) {
-				shellyTestMsg = `${dr.length} Gerät${dr.length !== 1 ? 'e' : ''} gefunden`;
 				shellyTest = 'ok';
 			} else if (json?.isok === false) {
 				shellyTestMsg = json?.errors?.[0]?.message ?? json?.errors?.[0] ?? 'Auth-Fehler';
