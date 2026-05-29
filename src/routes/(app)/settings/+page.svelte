@@ -169,7 +169,8 @@
 			const url = `https://${shellyServer}/interface/device/list?auth_key=${shellyKey}`;
 			const res = await fetch(url);
 			const json = await res.json();
-			console.log('[Shelly Cloud test]', JSON.stringify(json).slice(0, 500));
+			console.log('[Shelly Cloud test] top:', JSON.stringify(json).slice(0, 800));
+			console.log('[Shelly Cloud test] data keys:', Object.keys(json?.data ?? {}));
 
 			// Try multiple response formats the Shelly Cloud API may return
 			const ds = json?.data?.devices_status;          // dict format
