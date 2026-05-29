@@ -44,11 +44,15 @@
 
 			devices = ids.map(id => {
 				const info = devsMap[id] ?? {};
-				const stateObj = (statesData[id] as Record<string, unknown> | undefined) ?? {};
-				const sw = stateObj['switch:0'] as Record<string, unknown> | undefined;
-				const state: 0 | 1 | null = sw && 'output' in sw ? (sw.output ? 1 : 0) : null;
-				// Prefer live status response over stale device-list field
-				const online = Object.keys(stateObj).length > 0 || Boolean(info.online);
+				const raw = statesData[id];
+				const stateObj = (raw && typeof raw === 'object' && !Array.isArray(raw))
+					? raw as Record<string, unknown> : null;
+				const sw = stateObj?.['switch:0'] as Record<string, unknown> | undefined;
+				const apiState: 0 | 1 | null = sw && 'output' in sw ? (sw.output ? 1 : 0) : null;
+				// Keep previous known state if API returns no status data (avoids toggle flip-flop)
+				const prev = devices.find(d => d.id === id);
+				const state: 0 | 1 | null = apiState !== null ? apiState : (prev?.state ?? null);
+				const online = Boolean(stateObj && Object.keys(stateObj).length > 0) || Boolean(info.online);
 				return { id, name: info.name || id, online, state };
 			}).sort((a, b) => a.name.localeCompare(b.name));
 		} catch {
