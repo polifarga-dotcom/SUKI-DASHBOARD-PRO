@@ -169,20 +169,37 @@
 			const url = `https://${shellyServer}/interface/device/list?auth_key=${shellyKey}`;
 			const res = await fetch(url);
 			const json = await res.json();
-			const devs = json?.data?.devices_status;
-			if (devs && typeof devs === 'object') {
-				const n = Object.keys(devs).length;
+			console.log('[Shelly Cloud test]', JSON.stringify(json).slice(0, 500));
+
+			// Try multiple response formats the Shelly Cloud API may return
+			const ds = json?.data?.devices_status;          // dict format
+			const da = json?.data?.devices;                 // array format
+			const dr = json?.devices;                       // root-level array
+
+			if (ds && typeof ds === 'object' && !Array.isArray(ds)) {
+				const n = Object.keys(ds).length;
 				shellyTestMsg = `${n} Gerät${n !== 1 ? 'e' : ''} gefunden`;
 				shellyTest = 'ok';
+			} else if (Array.isArray(da)) {
+				shellyTestMsg = `${da.length} Gerät${da.length !== 1 ? 'e' : ''} gefunden`;
+				shellyTest = 'ok';
+			} else if (Array.isArray(dr)) {
+				shellyTestMsg = `${dr.length} Gerät${dr.length !== 1 ? 'e' : ''} gefunden`;
+				shellyTest = 'ok';
+			} else if (json?.isok === false) {
+				shellyTestMsg = json?.errors?.[0]?.message ?? json?.errors?.[0] ?? 'Auth-Fehler';
+				shellyTest = 'err';
 			} else {
-				shellyTestMsg = json?.errors?.[0] ?? 'Unbekannte Antwort';
+				// Show actual top-level keys so we can diagnose
+				const keys = Object.keys(json ?? {}).join(', ') || '(leer)';
+				shellyTestMsg = `Unbekanntes Format: ${keys}`;
 				shellyTest = 'err';
 			}
 		} catch (e: unknown) {
 			shellyTestMsg = e instanceof Error ? e.message : 'Verbindungsfehler';
 			shellyTest = 'err';
 		}
-		setTimeout(() => { shellyTest = 'idle'; shellyTestMsg = ''; }, 4000);
+		setTimeout(() => { shellyTest = 'idle'; shellyTestMsg = ''; }, 6000);
 	}
 
 	async function saveNotifications() {
