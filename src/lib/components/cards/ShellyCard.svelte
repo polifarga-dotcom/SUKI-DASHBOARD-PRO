@@ -24,7 +24,6 @@
 				`https://${api.srv}/interface/device/list?auth_key=${api.key}`
 			);
 			const listJson = await listRes.json();
-			console.log('[ShellyCard] device list:', JSON.stringify(listJson?.data?.devices ?? listJson?.data, null, 2));
 			const devsMap: Record<string, { name: string; online: boolean }> =
 				listJson?.data?.devices ?? listJson?.data?.devices_status ?? {};
 
@@ -60,7 +59,6 @@
 	}
 
 	async function toggle(dev: Device) {
-		if (!dev.online) return;
 		const api = apiBase();
 		if (!api) return;
 		const newState = dev.state === 1 ? 0 : 1;
@@ -101,14 +99,12 @@
 				<div class="row">
 					<div class="device-info">
 						<span class="dot" class:online={dev.online}></span>
-						<span class="label">{dev.name} <span style="font-size:10px;color:var(--muted)">[{String(dev.online)}]</span></span>
+						<span class="label">{dev.name}</span>
 					</div>
 					<button
 						class="toggle"
 						class:on={dev.state === 1}
-						class:disabled={!dev.online}
 						aria-label="{dev.name} {dev.state === 1 ? 'aus' : 'ein'}schalten"
-						disabled={!dev.online}
 						onclick={() => toggle(dev)}
 					>
 						<span class="knob"></span>
@@ -141,7 +137,6 @@
 		padding: 0; cursor: pointer; flex-shrink: 0;
 	}
 	.toggle.on { background: var(--green); border-color: var(--green); }
-	.toggle.disabled { opacity: 0.35; cursor: default; }
 	.knob {
 		position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
 		background: var(--text); border-radius: 50%; transition: transform 0.2s; display: block;
