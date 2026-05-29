@@ -7,11 +7,8 @@
 	let { t }: Props = $props();
 
 	const relays = $derived([
-		{ device: 'victron_relay', channel: '0', label: 'Water Heater',  state: t?.relay_0    },
-		{ device: 'victron_relay', channel: '1', label: 'Anchor Light',  state: t?.relay_1    },
-		{ device: 'shelly', channel: '108', label: 'Hecklicht',          state: t?.shelly_108 },
-		{ device: 'shelly', channel: '102', label: 'Ambientelicht',      state: t?.shelly_102 },
-		{ device: 'shelly', channel: '118', label: 'Wasserpumpe',        state: t?.shelly_118 },
+		{ device: 'victron_relay', channel: '0', label: 'Water Heater', state: t?.relay_0 },
+		{ device: 'victron_relay', channel: '1', label: 'Anchor Light', state: t?.relay_1 },
 	]);
 
 	async function toggle(device: string, channel: string, currentState: 0 | 1 | null | undefined) {
