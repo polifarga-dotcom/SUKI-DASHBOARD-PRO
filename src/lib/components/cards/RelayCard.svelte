@@ -14,11 +14,7 @@
 	async function toggle(device: string, channel: string, currentState: 0 | 1 | null | undefined) {
 		const newState = currentState === 1 ? 0 : 1;
 		// Optimistic update
-		telemetry.update(cur => {
-			if (!cur) return cur;
-			const key = device === 'shelly' ? `shelly_${channel}` : `relay_${channel}`;
-			return { ...cur, [key]: newState };
-		});
+		telemetry.update(cur => cur ? { ...cur, [`relay_${channel}`]: newState } : cur);
 		await supabase.from('relay_commands').insert({ device, channel, desired_state: newState });
 	}
 </script>
