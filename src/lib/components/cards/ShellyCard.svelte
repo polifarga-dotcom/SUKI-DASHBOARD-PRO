@@ -101,7 +101,7 @@
 				<div class="row">
 					<div class="device-info">
 						<span class="dot" class:online={dev.online}></span>
-						<span class="label">{dev.name}</span>
+						<span class="label">{dev.name} <span style="font-size:10px;color:var(--muted)">[{String(dev.online)}]</span></span>
 					</div>
 					<button
 						class="toggle"
