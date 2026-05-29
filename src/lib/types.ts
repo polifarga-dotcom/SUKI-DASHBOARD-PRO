@@ -81,6 +81,17 @@ export type AnchorConfig = {
 	pushover_app_token: string | null;
 	pushover_user_keys: string | null;
 	cloud_enabled: boolean;
+	shelly_cloud_server: string | null;
+	shelly_cloud_auth_key: string | null;
+};
+
+export type ShellyDevice = {
+	id: string;
+	name: string;
+	type: string | null;
+	online: boolean;
+	state: 0 | 1 | null;
+	updated_at: string;
 };
 
 export type UserRole = {

@@ -123,16 +123,67 @@
 	let alarmDelay   = $state(10);
 	let cloudEnabled = $state(true);
 
+	// ── Shelly Cloud ─────────────────────────────────────────────────────────
+	let shellyServer  = $state('');
+	let shellyKey     = $state('');
+	let shellySaving  = $state(false);
+	let shellySaved   = $state(false);
+	let shellyTest    = $state<TestState>('idle');
+	let shellyTestMsg = $state('');
+
 	$effect(() => {
 		if (cfg) {
-			tgToken      = cfg.telegram_token      ?? '';
-			tgChats      = cfg.telegram_chat_ids   ?? '';
-			poToken      = cfg.pushover_app_token  ?? '';
-			poKeys       = cfg.pushover_user_keys  ?? '';
-			alarmDelay   = cfg.alarm_delay_s       ?? 10;
-			cloudEnabled = cfg.cloud_enabled       ?? true;
+			tgToken      = cfg.telegram_token        ?? '';
+			tgChats      = cfg.telegram_chat_ids     ?? '';
+			poToken      = cfg.pushover_app_token    ?? '';
+			poKeys       = cfg.pushover_user_keys    ?? '';
+			alarmDelay   = cfg.alarm_delay_s         ?? 10;
+			cloudEnabled = cfg.cloud_enabled         ?? true;
+			shellyServer = cfg.shelly_cloud_server   ?? '';
+			shellyKey    = cfg.shelly_cloud_auth_key ?? '';
 		}
 	});
+
+	async function saveShelly() {
+		shellySaving = true;
+		const { data: row } = await supabase
+			.from('anchor_config')
+			.update({
+				shelly_cloud_server:  shellyServer || null,
+				shelly_cloud_auth_key: shellyKey   || null,
+			})
+			.eq('id', 1).select().single();
+		shellySaving = false;
+		if (row) {
+			anchorConfig.set(row);
+			shellySaved = true;
+			setTimeout(() => { shellySaved = false; }, 2000);
+		}
+	}
+
+	async function testShelly() {
+		if (!shellyServer || !shellyKey) return;
+		shellyTest = 'sending';
+		shellyTestMsg = '';
+		try {
+			const url = `https://${shellyServer}/interface/device/list?auth_key=${shellyKey}`;
+			const res = await fetch(url);
+			const json = await res.json();
+			const devs = json?.data?.devices_status;
+			if (devs && typeof devs === 'object') {
+				const n = Object.keys(devs).length;
+				shellyTestMsg = `${n} Gerät${n !== 1 ? 'e' : ''} gefunden`;
+				shellyTest = 'ok';
+			} else {
+				shellyTestMsg = json?.errors?.[0] ?? 'Unbekannte Antwort';
+				shellyTest = 'err';
+			}
+		} catch (e: unknown) {
+			shellyTestMsg = e instanceof Error ? e.message : 'Verbindungsfehler';
+			shellyTest = 'err';
+		}
+		setTimeout(() => { shellyTest = 'idle'; shellyTestMsg = ''; }, 4000);
+	}
 
 	async function saveNotifications() {
 		notifSaving = true;
@@ -375,6 +426,35 @@
 		{notifSaving ? 'Speichere…' : notifSaved ? '✓ Gespeichert' : 'Alarm-Einstellungen speichern'}
 	</button>
 
+	<!-- ── Shelly Cloud ── -->
+	<section class="card">
+		<h2>Shelly Cloud</h2>
+		<div class="form-fields">
+			<div class="field">
+				<label for="sh-server">Server URL</label>
+				<input id="sh-server" type="text" bind:value={shellyServer}
+					placeholder="shelly-12-eu.shelly.cloud" autocomplete="off" spellcheck="false" />
+			</div>
+			<div class="field">
+				<label for="sh-key">Auth Key</label>
+				<input id="sh-key" type="password" bind:value={shellyKey}
+					placeholder="Authorization cloud key" autocomplete="off" />
+			</div>
+		</div>
+		<div class="shelly-actions">
+			<button class="btn btn-ghost test-btn shelly-test" onclick={testShelly}
+				disabled={shellyTest === 'sending' || !shellyServer || !shellyKey}>
+				{shellyTest === 'sending' ? 'Teste…'
+				 : shellyTest === 'ok'      ? `✓ ${shellyTestMsg}`
+				 : shellyTest === 'err'     ? `✗ ${shellyTestMsg}`
+				 : 'Verbindung testen'}
+			</button>
+			<button class="btn btn-primary" onclick={saveShelly} disabled={shellySaving}>
+				{shellySaving ? 'Speichere…' : shellySaved ? '✓ Gespeichert' : 'Speichern'}
+			</button>
+		</div>
+	</section>
+
 	<!-- ── Konto ── -->
 	<section class="card">
 		<h2>Konto</h2>
@@ -531,12 +611,15 @@
 		border: 3px solid var(--bg); box-shadow: 0 0 0 2px var(--accent);
 	}
 
-	/* ── Notifications ── */
+	/* ── Notifications + Shelly ── */
 	.form-fields { display: flex; flex-direction: column; gap: 10px; }
 	.field       { display: flex; flex-direction: column; gap: 5px; }
 	.field label { font-size: 12px; color: var(--muted); }
 	.test-btn    { width: 100%; margin-top: 10px; font-size: 12px; }
 	.save-btn    { width: 100%; }
+
+	.shelly-actions { display: flex; gap: 8px; margin-top: 10px; }
+	.shelly-test    { flex: 1; margin-top: 0; }
 
 	/* ── Account ── */
 	.info-row {

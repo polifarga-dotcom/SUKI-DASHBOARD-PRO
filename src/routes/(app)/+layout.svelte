@@ -5,6 +5,7 @@
 	import { supabase } from '$lib/supabase.js';
 	import { telemetry, dataStale } from '$lib/stores/telemetry.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
+	import { shellyDevices } from '$lib/stores/shelly.js';
 	import { authStore } from '$lib/stores/auth.js';
 	import { dataAge, fmtLatLon, ms2knNum } from '$lib/utils/units.js';
 	import StatusBar from '$lib/components/layout/StatusBar.svelte';
@@ -41,6 +42,7 @@
 	];
 
 	let pollTimer: ReturnType<typeof setInterval>;
+	let shellyTimer: ReturnType<typeof setInterval>;
 	let clockTimer: ReturnType<typeof setInterval>;
 	let clockStr = $state('--:--');
 
@@ -74,6 +76,14 @@
 		if (row) anchorConfig.set(row);
 	}
 
+	async function fetchShellyDevices() {
+		const { data } = await supabase
+			.from('shelly_devices')
+			.select('*')
+			.order('name');
+		if (data) shellyDevices.set(data);
+	}
+
 	async function signOut() {
 		await supabase.auth.signOut();
 		authStore.clear();
@@ -84,12 +94,15 @@
 		updateClock();
 		fetchTelemetry();
 		fetchAnchorConfig();
-		pollTimer = setInterval(fetchTelemetry, 3000);
-		clockTimer = setInterval(updateClock, 10000);
+		fetchShellyDevices();
+		pollTimer   = setInterval(fetchTelemetry, 3000);
+		shellyTimer = setInterval(fetchShellyDevices, 5000);
+		clockTimer  = setInterval(updateClock, 10000);
 	});
 
 	onDestroy(() => {
 		clearInterval(pollTimer);
+		clearInterval(shellyTimer);
 		clearInterval(clockTimer);
 	});
 
@@ -105,6 +118,7 @@
 	const sogKn = $derived(() => {
 		if (t?.nav_sog_ms == null) return null;
 		const kn = ms2knNum(t.nav_sog_ms);
+		if (kn == null) return null;
 		return kn.toFixed(1) + ' kn';
 	});
 </script>
