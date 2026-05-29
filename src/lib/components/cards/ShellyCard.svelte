@@ -24,6 +24,7 @@
 				`https://${api.srv}/interface/device/list?auth_key=${api.key}`
 			);
 			const listJson = await listRes.json();
+			console.log('[ShellyCard] device list:', JSON.stringify(listJson?.data?.devices ?? listJson?.data, null, 2));
 			const devsMap: Record<string, { name: string; online: boolean }> =
 				listJson?.data?.devices ?? listJson?.data?.devices_status ?? {};
 
