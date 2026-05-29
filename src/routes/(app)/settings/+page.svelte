@@ -191,9 +191,9 @@
 				shellyTestMsg = json?.errors?.[0]?.message ?? json?.errors?.[0] ?? 'Auth-Fehler';
 				shellyTest = 'err';
 			} else {
-				// Show actual top-level keys so we can diagnose
-				const keys = Object.keys(json ?? {}).join(', ') || '(leer)';
-				shellyTestMsg = `Unbekanntes Format: ${keys}`;
+				// Show keys inside data so we can identify the correct format
+				const dataKeys = Object.keys(json?.data ?? {}).join(', ') || '(leer)';
+				shellyTestMsg = `data: {${dataKeys}}`;
 				shellyTest = 'err';
 			}
 		} catch (e: unknown) {
