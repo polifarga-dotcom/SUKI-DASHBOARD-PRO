@@ -23,40 +23,38 @@
 				`https://${api.srv}/interface/device/list?auth_key=${api.key}`
 			);
 			const listJson = await listRes.json();
-			const devsMap: Record<string, { name: string; online: boolean }> =
-				listJson?.data?.devices ?? listJson?.data?.devices_status ?? {};
 
-			const ids = Object.keys(devsMap);
-			if (!ids.length) { devices = []; return; }
+			// `devices` has names/types; `devices_status` has online + relay state
+			const devsInfo:   Record<string, Record<string, unknown>> = listJson?.data?.devices         ?? {};
+			const devsStatus: Record<string, Record<string, unknown>> = listJson?.data?.devices_status  ?? {};
 
-			// Fetch switch states for all devices
-			const stateRes = await fetch(
-				`https://${api.srv}/v2/devices/api/get?auth_key=${api.key}`,
-				{
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ ids, select: ['status'] }),
-				}
-			);
-			const stateJson = await stateRes.json();
-			const statesData: Record<string, unknown> = stateJson?.data ?? {};
+			const ids = [...new Set([...Object.keys(devsInfo), ...Object.keys(devsStatus)])];
+			if (!ids.length) { devices = []; loaded = true; return; }
+
+			devices = ids.map(id => {
+				const info   = devsInfo[id]   ?? {};
+				const status = devsStatus[id] ?? {};
+
+				const name   = (info.name   as string | undefined)
+				            ?? (status.name  as string | undefined)
+				            ?? id;
+				const online = Boolean(status.online);
+
+				// Gen2 / Plus / Pro: { "switch:0": { output: true } }
+				const sw2 = status['switch:0'] as Record<string, unknown> | undefined;
+				// Gen1:               { "relays": [{ ison: true }] }
+				const relays = status['relays'] as Array<{ ison: boolean }> | undefined;
+
+				let state: 0 | 1 | null = null;
+				if (sw2 && 'output' in sw2)                      state = sw2.output ? 1 : 0;
+				else if (relays?.length && 'ison' in relays[0])  state = relays[0].ison ? 1 : 0;
+
+				return { id, name, online, state };
+			}).sort((a, b) => a.name.localeCompare(b.name));
 
 			loaded = true;
-			devices = ids.map(id => {
-				const info = devsMap[id] ?? {};
-				const raw = statesData[id];
-				const stateObj = (raw && typeof raw === 'object' && !Array.isArray(raw))
-					? raw as Record<string, unknown> : null;
-				const sw = stateObj?.['switch:0'] as Record<string, unknown> | undefined;
-				const apiState: 0 | 1 | null = sw && 'output' in sw ? (sw.output ? 1 : 0) : null;
-				// Keep previous known state if API returns no status data (avoids toggle flip-flop)
-				const prev = devices.find(d => d.id === id);
-				const state: 0 | 1 | null = apiState !== null ? apiState : (prev?.state ?? null);
-				const online = Boolean(stateObj && Object.keys(stateObj).length > 0) || Boolean(info.online);
-				return { id, name: info.name || id, online, state };
-			}).sort((a, b) => a.name.localeCompare(b.name));
 		} catch {
-			loaded = true; // stop spinner even on error
+			loaded = true;
 		}
 	}
 
