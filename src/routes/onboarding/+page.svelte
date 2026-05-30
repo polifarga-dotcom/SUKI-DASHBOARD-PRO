@@ -24,47 +24,18 @@
 		if (!boatName.trim()) { s1Error = 'Please enter a boat name'; return; }
 		s1Loading = true;
 
-		// Get session user id (needed for boat_members insert)
-		const { data: { user } } = await supabase.auth.getUser();
-		if (!user) { s1Error = 'Not authenticated'; s1Loading = false; return; }
-
-		// Create boat (created_by defaults to auth.uid() via DB column default)
-		const { data: boat, error: boatErr } = await supabase
-			.from('boats')
-			.insert({ name: boatName.trim() })
-			.select()
-			.single();
-
-		if (boatErr || !boat) {
-			s1Error = boatErr?.message ?? 'Failed to create boat';
-			s1Loading = false;
-			return;
-		}
-
-		// Add current user as admin member
-		const { error: memberErr } = await supabase
-			.from('boat_members')
-			.insert({ boat_id: boat.id, user_id: user.id, role: 'admin' });
-
-		if (memberErr) {
-			s1Error = memberErr.message;
-			s1Loading = false;
-			return;
-		}
-
-		// Create anchor_config row with defaults
-		await supabase.from('anchor_config').insert({
-			boat_id: boat.id,
-			active: false,
-			radius_m: 50,
-			chain_length_m: 30,
-			bearing_deg: 0,
-			alarm_delay_s: 30,
-			alarming: false,
-			cloud_enabled: false,
+		// Use edge function — service role bypasses RLS; JWT is auto-attached by SDK
+		const { data: result, error: fnErr } = await supabase.functions.invoke('create-boat', {
+			body: { name: boatName.trim() },
 		});
 
-		createdBoatId = boat.id;
+		if (fnErr || !result?.ok) {
+			s1Error = result?.error ?? fnErr?.message ?? 'Failed to create boat';
+			s1Loading = false;
+			return;
+		}
+
+		createdBoatId = result.boatId;
 		s1Loading = false;
 		step = 2;
 	}
