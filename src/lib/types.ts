@@ -86,6 +86,8 @@ export type AnchorConfig = {
 	shelly_cloud_auth_key: string | null;
 	vrm_api_token: string | null;
 	vrm_installation_id: number | null;
+	inreach_mapshare_id: string | null;
+	inreach_mapshare_password: string | null;
 };
 
 export type Boat = {
@@ -181,3 +183,16 @@ export type UserRole = {
 };
 
 export type RelayDevice = 'victron_relay' | 'shelly';
+
+export type InReachPoint = {
+  lat: number;
+  lon: number;
+  speed_kn: number | null;
+  course_deg: number | null;
+  altitude_m: number | null;
+  timestamp: string;        // ISO 8601 UTC
+  message: string | null;
+  event_type: string | null;
+  device_name: string | null;
+  in_emergency: boolean;
+};

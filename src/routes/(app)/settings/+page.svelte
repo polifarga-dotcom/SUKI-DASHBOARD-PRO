@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { version } from '$app/environment';
+	import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
 	import { supabase } from '$lib/supabase.js';
 	import { authStore } from '$lib/stores/auth.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
@@ -144,6 +145,14 @@
 	let vrmInstallations  = $state<VRMInstallation[]>([]);
 	let vrmDiscovering    = $state(false);
 
+	// ── Garmin InReach ────────────────────────────────────────────────────────
+	let inreachId       = $state('');
+	let inreachPassword = $state('');
+	let inreachSaving   = $state(false);
+	let inreachSaved    = $state(false);
+	let inreachTest     = $state<TestState>('idle');
+	let inreachTestMsg  = $state('');
+
 	$effect(() => {
 		if (cfg) {
 			tgToken    = cfg.telegram_token        ?? '';
@@ -155,6 +164,8 @@
 			shellyKey         = cfg.shelly_cloud_auth_key  ?? '';
 			vrmToken          = cfg.vrm_api_token           ?? '';
 			vrmInstallationId = cfg.vrm_installation_id != null ? String(cfg.vrm_installation_id) : '';
+			inreachId         = cfg.inreach_mapshare_id       ?? '';
+			inreachPassword   = cfg.inreach_mapshare_password ?? '';
 		}
 	});
 
@@ -291,6 +302,53 @@
 			vrmSaved = true;
 			setTimeout(() => { vrmSaved = false; }, 2000);
 		}
+	}
+
+	async function saveInReach() {
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
+		inreachSaving = true;
+		const { data: row } = await supabase
+			.from('anchor_config')
+			.update({
+				inreach_mapshare_id:       inreachId       || null,
+				inreach_mapshare_password: inreachPassword || null,
+			})
+			.eq('boat_id', boatId).select().single();
+		inreachSaving = false;
+		if (row) {
+			anchorConfig.set(row);
+			inreachSaved = true;
+			setTimeout(() => { inreachSaved = false; }, 2000);
+		}
+	}
+
+	async function testInReach() {
+		if (!inreachId) return;
+		inreachTest = 'sending'; inreachTestMsg = '';
+		try {
+			let qs = `id=${encodeURIComponent(inreachId)}&hours=24`;
+			if (inreachPassword) qs += `&password=${encodeURIComponent(inreachPassword)}`;
+			const res = await fetch(
+				`${PUBLIC_SUPABASE_URL}/functions/v1/inreach-proxy?${qs}`,
+				{ headers: { 'apikey': PUBLIC_SUPABASE_ANON_KEY } }
+			);
+			const data = await res.json();
+			if (data?.ok) {
+				const n = data.count ?? 0;
+				const latest = data.points?.[0];
+				const age = latest ? Math.round((Date.now() - new Date(latest.timestamp).getTime()) / 60_000) : null;
+				inreachTestMsg = `${n} point${n !== 1 ? 's' : ''}${age !== null ? ` · last ${age} min ago` : ''}`;
+				inreachTest = 'ok';
+			} else {
+				inreachTestMsg = data?.error ?? 'No data returned';
+				inreachTest = 'err';
+			}
+		} catch (e: unknown) {
+			inreachTestMsg = e instanceof Error ? e.message : 'Connection error';
+			inreachTest = 'err';
+		}
+		setTimeout(() => { inreachTest = 'idle'; inreachTestMsg = ''; }, 8000);
 	}
 
 	async function saveNotifications() {
@@ -602,6 +660,37 @@
 		</div>
 	</section>
 
+	<!-- ── Garmin InReach ── -->
+	<section class="card">
+		<h2>Garmin InReach</h2>
+		<div class="form-fields">
+			<div class="field">
+				<label for="inreach-id">MapShare ID</label>
+				<input id="inreach-id" type="text" bind:value={inreachId}
+					placeholder="Your MapShare feed name"
+					autocomplete="off" spellcheck="false" />
+				<span class="field-hint">Settings → Share → MapShare on Garmin Explore</span>
+			</div>
+			<div class="field">
+				<label for="inreach-pw">MapShare Password <span class="optional">(optional)</span></label>
+				<input id="inreach-pw" type="password" bind:value={inreachPassword}
+					placeholder="Leave empty if feed is public" autocomplete="off" />
+			</div>
+		</div>
+		<div class="shelly-actions">
+			<button class="btn btn-ghost test-btn shelly-test" onclick={testInReach}
+				disabled={inreachTest === 'sending' || !inreachId}>
+				{inreachTest === 'sending' ? 'Testing…'
+				 : inreachTest === 'ok'    ? `✓ ${inreachTestMsg}`
+				 : inreachTest === 'err'   ? `✗ ${inreachTestMsg}`
+				 : 'Test feed'}
+			</button>
+			<button class="btn btn-primary" onclick={saveInReach} disabled={inreachSaving}>
+				{inreachSaving ? 'Saving…' : inreachSaved ? '✓ Saved' : 'Save'}
+			</button>
+		</div>
+	</section>
+
 	<!-- ── Account ── -->
 	<section class="card">
 		<h2>Account</h2>
@@ -782,4 +871,6 @@
 	}
 	.vrm-discover-btn { flex-shrink: 0; margin-top: 0; padding: 0 14px; height: 44px; font-size: 13px; }
 	.vrm-found { font-size: 12px; color: var(--green); margin-top: 2px; }
+	.field-hint { font-size: 10px; color: var(--muted); opacity: 0.7; }
+	.optional   { font-size: 10px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
 </style>

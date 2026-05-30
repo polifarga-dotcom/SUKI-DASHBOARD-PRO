@@ -7,6 +7,7 @@
 	import RigCard from '$lib/components/cards/RigCard.svelte';
 	import ShellyCard from '$lib/components/cards/ShellyCard.svelte';
 	import VRMCard from '$lib/components/cards/VRMCard.svelte';
+	import InReachCard from '$lib/components/cards/InReachCard.svelte';
 </script>
 
 <svelte:head><title>Vessel · SUKI PRO</title></svelte:head>
@@ -23,6 +24,7 @@
 	<RigCard t={$telemetry} />
 	<ShellyCard />
 	<VRMCard />
+	<InReachCard />
 </div>
 
 <style>
