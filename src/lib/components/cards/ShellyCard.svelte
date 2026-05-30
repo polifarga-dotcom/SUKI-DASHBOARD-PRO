@@ -26,18 +26,33 @@
 		return null;
 	}
 
-	/** Fetch current state for one device via /device/status (authoritative). */
+	/** Fetch current state for one device via v2 API (same CORS-allowed path as toggle). */
 	async function fetchOneState(srv: string, key: string, id: string): Promise<0 | 1 | null> {
 		try {
-			const r = await fetch(`https://${srv}/device/status`, {
-				method:  'POST',
-				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-				body:    `auth_key=${encodeURIComponent(key)}&id=${encodeURIComponent(id)}`,
-			});
+			const r = await fetch(
+				`https://${srv}/v2/devices/api/get?auth_key=${encodeURIComponent(key)}`,
+				{
+					method:  'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body:    JSON.stringify({ id }),
+				}
+			);
+			if (!r.ok) {
+				console.warn('[Shelly] /v2/devices/api/get returned', r.status, 'for', id);
+				return null;
+			}
 			const j = await r.json();
-			const ds = (j?.data?.device_status ?? j?.data) as Record<string, unknown> | null;
+			// v2 response: { devices: [{ id, online, status: { "switch:0": { output: bool }, … } }] }
+			const dev = (j?.devices as Array<Record<string, unknown>> | undefined)?.[0];
+			const st = dev?.status as Record<string, unknown> | undefined;
+			if (st) return extractState(st);
+			// fallback: legacy shape { data: { device_status: { … } } }
+			const ds = (j?.data?.device_status ?? j?.data) as Record<string, unknown> | undefined;
 			return ds ? extractState(ds) : null;
-		} catch { return null; }
+		} catch (e) {
+			console.warn('[Shelly] fetchOneState error for', id, e);
+			return null;
+		}
 	}
 
 	async function fetchDevices() {
