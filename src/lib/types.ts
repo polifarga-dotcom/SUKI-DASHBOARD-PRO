@@ -92,21 +92,57 @@ export type VRMMppt = {
 	instance: number;
 	power_w: number;
 	yield_today_wh: number;
+	yield_total_kwh: number | null;
 	pv_v: number | null;
+	state: number | null;        // 0=off 3=bulk 4=absorption 5=float 7=equalize
+};
+
+export type VRMBattery = {
+	name: string;
+	instance: number;
+	soc: number | null;
+	v: number | null;
+	a: number | null;
+	w: number | null;
+	temp_c: number | null;
+	time_to_go_s: number | null;
+	consumed_ah: number | null;
+};
+
+export type VRMTempSensor = {
+	name: string;
+	instance: number;
+	celsius: number;
+	humidity: number | null;
 };
 
 export type VRMData = {
+	// Primary battery (instance 0 or first found)
 	battery_soc: number | null;
 	battery_v: number | null;
 	battery_a: number | null;
 	battery_w: number | null;
+	// All battery monitors
+	batteries: VRMBattery[];
+	// Solar
 	solar_w: number | null;
 	solar_yield_today_wh: number | null;
 	mpptsArr: VRMMppt[];
+	// AC
+	ac_input_v: number | null;
+	ac_input_w: number | null;
+	ac_output_v: number | null;
+	ac_output_w: number | null;
 	load_w: number | null;
+	// Environment
+	temperatures: VRMTempSensor[];
+	// Tanks
 	tanks: { name: string; level: number }[];
+	// GPS
 	gps_lat: number | null;
 	gps_lon: number | null;
+	gps_speed_ms: number | null;
+	gps_course_deg: number | null;
 	gps_ts: number | null;
 	last_ts: number | null;
 };
