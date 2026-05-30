@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { supabase } from '$lib/supabase.js';
+	import { currentBoat } from '$lib/stores/boat.js';
 	import { parseVRMDiagnostics, MPPT_STATE } from '$lib/utils/vrm.js';
 	import type { VRMData } from '$lib/types.js';
 
@@ -29,7 +30,9 @@
 		if (fetching) return;
 		fetching = true;
 		try {
-			const { data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy');
+			const { data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy', {
+				body: { boat_id: $currentBoat?.id },
+			});
 			if (fnErr) { error = fnErr.message; schedule(30_000); return; }
 
 			const parsed = parseVRMDiagnostics(json?.records ?? []);
@@ -113,17 +116,17 @@
 	function dataAgeStr(ts: number | null) {
 		if (!ts) return null;
 		const s = now - ts;
-		if (s < 90)   return 'Gerade eben';
-		if (s < 3600) return `${Math.floor(s / 60)} Min. alt`;
-		return `${Math.floor(s / 3600)} Std. alt`;
+		if (s < 90)   return 'Just now';
+		if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+		return `${Math.floor(s / 3600)} h ago`;
 	}
 	// Age of our last fetch from the API
 	function fetchAgeStr(ts: number | null) {
 		if (!ts) return null;
 		const s = now - ts;
-		if (s < 10)   return 'Jetzt';
+		if (s < 10)   return 'Now';
 		if (s < 90)   return `${s} s`;
-		return `${Math.floor(s / 60)} Min.`;
+		return `${Math.floor(s / 60)} min`;
 	}
 	// GPS age as mm:ss after the first minute
 	function gpsAgeStr(ts: number | null) {
@@ -178,11 +181,11 @@
 	// Battery status label (Venus OS style)
 	const battStatus = $derived(
 		!data ? '' :
-		(data.battery_a ?? 0) > 0.5  ? 'Laden' :
-		(data.battery_a ?? 0) < -0.5 ? 'Entladen' :
+		(data.battery_a ?? 0) > 0.5  ? 'Charging' :
+		(data.battery_a ?? 0) < -0.5 ? 'Discharging' :
 		data.mpptsArr.some(m => m.state === 5) ? 'Float' :
-		data.mpptsArr.some(m => m.state === 3 || m.state === 4) ? 'Laden' :
-		'Bereit'
+		data.mpptsArr.some(m => m.state === 3 || m.state === 4) ? 'Charging' :
+		'Idle'
 	);
 </script>
 
@@ -194,7 +197,7 @@
 		<span class="card-title">Victron VRM</span>
 		<div class="hdr-right">
 			{#if polling}
-			<span class="poll-spin" title="Warte auf neues VRM-Update…">⟳</span>
+			<span class="poll-spin" title="Waiting for new VRM upload…">⟳</span>
 			{/if}
 			{#if data?.last_ts}
 			<!-- Data age: how old is the Cerbo's last upload to VRM cloud -->
@@ -203,7 +206,7 @@
 			</span>
 			{/if}
 			{#if lastFetchAt}
-			<span class="fetch-dot" title="Abgeholt vor {fetchAgeStr(lastFetchAt)}">●</span>
+			<span class="fetch-dot" title="Fetched {fetchAgeStr(lastFetchAt)} ago">●</span>
 			{/if}
 		</div>
 	</div>
@@ -211,7 +214,7 @@
 	{#if error}
 		<p class="err">{error}</p>
 	{:else if !data}
-		<p class="loading">Verbinde mit VRM…</p>
+		<p class="loading">Connecting to VRM…</p>
 	{:else}
 
 	<!-- ══════════════════════════════════════════════════════════
@@ -245,7 +248,7 @@
 				<div class="vf-src-vals">
 					<span class="vf-src-big" style="color:{SOLAR_C}">{fmtW(data.solar_w)}</span>
 					{#if data.solar_yield_today_wh}
-					<span class="vf-src-sub">{fmtWh(data.solar_yield_today_wh)} heute</span>
+					<span class="vf-src-sub">{fmtWh(data.solar_yield_today_wh)} today</span>
 					{/if}
 				</div>
 			</div>
@@ -267,7 +270,7 @@
 					<path d="M9 3v4M15 3v4M7 7h10v7a5 5 0 01-10 0V7z"/>
 					<path d="M12 19v2"/>
 				</svg>
-				Landstrom ·
+				Shore power ·
 				{#if data.ac_input_v != null}<span>{fmtV(data.ac_input_v)}</span>{/if}
 				{#if data.ac_input_w != null}<span>{fmtW(data.ac_input_w)}</span>{/if}
 			</div>
@@ -284,7 +287,7 @@
 						<path d="M9 3v4M15 3v4M7 7h10v7a5 5 0 01-10 0V7z"/>
 						<path d="M12 19v2"/>
 					</svg>
-					Landstrom
+					Shore power
 				</div>
 				<div class="vf-src-vals">
 					<span class="vf-src-big" style="color:var(--accent)">{fmtW(data.ac_input_w)}</span>
@@ -317,7 +320,7 @@
 						<path d="M20 11v3"/>
 					</svg>
 				</div>
-				<div class="vfn-lbl">Batterie</div>
+				<div class="vfn-lbl">Battery</div>
 				{#if data.battery_soc != null}
 				<div class="vfn-val" style="color:{col}">{soc}%</div>
 				{/if}
@@ -352,7 +355,7 @@
 						<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
 					</svg>
 				</div>
-				<div class="vfn-lbl">Verbrauch</div>
+				<div class="vfn-lbl">Load</div>
 				<div class="vfn-val" style="color:var(--accent)">{fmtW(data.load_w)}</div>
 				{#if data.ac_output_v != null}
 				<div class="vfn-sub">{fmtV(data.ac_output_v)}</div>
@@ -372,7 +375,7 @@
 	═══════════════════════════════════════════════════════════════ -->
 	{#if data.mpptsArr.length > 0}
 	<div class="section">
-		<div class="section-title">MPPT Laderegler</div>
+		<div class="section-title">MPPT Chargers</div>
 		<div class="mppt-list">
 			{#each data.mpptsArr as mppt}
 			{@const barPct = mpptMaxW > 0 ? Math.min(100, (mppt.power_w / mpptMaxW) * 100) : 0}
@@ -392,7 +395,7 @@
 					<span class="mppt-state" style="color:{mpptStateColor(mppt.state)}">{mpptStateLabel(mppt.state)}</span>
 					{/if}
 					{#if mppt.pv_v != null}<span class="c-muted mppt-pv">{mppt.pv_v.toFixed(0)} V PV</span>{/if}
-					{#if mppt.yield_total_kwh != null}<span class="c-muted mppt-pv">{mppt.yield_total_kwh.toFixed(0)} kWh ges.</span>{/if}
+					{#if mppt.yield_total_kwh != null}<span class="c-muted mppt-pv">{mppt.yield_total_kwh.toFixed(0)} kWh total</span>{/if}
 				</div>
 			</div>
 			{/each}
@@ -423,14 +426,14 @@
 	═══════════════════════════════════════════════════════════════ -->
 	{#if hasTemps}
 	<div class="section">
-		<div class="section-title">Temperaturen</div>
+		<div class="section-title">Temperatures</div>
 		<div class="temp-grid">
 			{#each data.temperatures as t}
 			<div class="temp-cell">
 				<div class="temp-name">{t.name}</div>
 				<div class="temp-val">{fmtC(t.celsius)}</div>
 				{#if t.humidity != null}
-				<div class="temp-hum">{Math.round(t.humidity)} % rF</div>
+				<div class="temp-hum">{Math.round(t.humidity)} % RH</div>
 				{/if}
 			</div>
 			{/each}
@@ -443,7 +446,7 @@
 	═══════════════════════════════════════════════════════════════ -->
 	{#if hasSecBatt}
 	<div class="section">
-		<div class="section-title">Weitere Batterien</div>
+		<div class="section-title">Additional Batteries</div>
 		{#each data.batteries.slice(1) as batt}
 		<div class="sec-row">
 			<div class="sec-left">

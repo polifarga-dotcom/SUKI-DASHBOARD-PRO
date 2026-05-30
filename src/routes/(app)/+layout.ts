@@ -17,5 +17,22 @@ export const load: LayoutLoad = async () => {
 
 	if (roleData?.force_password_change) throw redirect(302, '/change-password');
 
-	return { session, role: roleData?.role ?? 'viewer' };
+	// Load all boats this user is a member of
+	const { data: memberships } = await supabase
+		.from('boat_members')
+		.select('role, boats(*)')
+		.eq('user_id', session.user.id);
+
+	const boats = (memberships ?? [])
+		.map((m: { role: string; boats: unknown }) => m.boats)
+		.filter(Boolean);
+
+	// No boat yet → onboarding (must not be inside (app) layout to avoid redirect loop)
+	if (!boats.length) throw redirect(302, '/onboarding');
+
+	return {
+		session,
+		role:        roleData?.role ?? 'viewer',
+		memberships: memberships   ?? [],
+	};
 };

@@ -14,7 +14,7 @@
 <svelte:head><title>Vessel · SUKI PRO</title></svelte:head>
 
 {#if $dataStale}
-	<div class="stale-banner">Keine aktuellen Daten — Cerbo offline oder nicht erreichbar</div>
+	<div class="stale-banner">No live data available</div>
 {/if}
 
 <div class="grid">

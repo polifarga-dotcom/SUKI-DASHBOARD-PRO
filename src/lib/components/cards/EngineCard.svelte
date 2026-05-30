@@ -8,12 +8,12 @@
 </script>
 
 <div class="card">
-	<div class="title">Motor</div>
+	<div class="title">Engine</div>
 	<div class="grid">
-		<ValueCell label="Drehzahl"   value={t?.eng_rpm != null ? t.eng_rpm.toFixed(0) : null} unit="RPM" />
-		<ValueCell label="Kühlwasser" value={k2c(t?.eng_temp_k ?? null)} />
-		<ValueCell label="Laufzeit"   value={fmtRuntime(t?.eng_run_sec ?? null)} />
-		<ValueCell label="Lichtm."    value={t?.eng_alt_v != null ? t.eng_alt_v.toFixed(1) : null} unit="V" />
+		<ValueCell label="Speed"   value={t?.eng_rpm != null ? t.eng_rpm.toFixed(0) : null} unit="RPM" />
+		<ValueCell label="Coolant" value={k2c(t?.eng_temp_k ?? null)} />
+		<ValueCell label="Runtime"   value={fmtRuntime(t?.eng_run_sec ?? null)} />
+		<ValueCell label="Alternator"    value={t?.eng_alt_v != null ? t.eng_alt_v.toFixed(1) : null} unit="V" />
 	</div>
 </div>
 

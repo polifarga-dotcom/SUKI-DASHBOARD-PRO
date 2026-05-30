@@ -20,7 +20,7 @@
 </script>
 
 <div class="card">
-	<div class="title">Schalter</div>
+	<div class="title">Switches</div>
 	<div class="relays">
 		{#each relays as r}
 			<div class="relay-row">
@@ -28,7 +28,7 @@
 				<button
 					class="toggle"
 					class:on={r.state === 1}
-					aria-label="{r.label} {r.state === 1 ? 'aus' : 'ein'}schalten"
+					aria-label="{r.label} {r.state === 1 ? 'turn off' : 'turn on'}"
 					onclick={() => toggle(r.device, r.channel, r.state)}
 				>
 					<span class="knob"></span>

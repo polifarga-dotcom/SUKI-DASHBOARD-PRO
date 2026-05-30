@@ -36,7 +36,7 @@
 </script>
 
 <div class="card">
-	<div class="title">Rigg</div>
+	<div class="title">Rig</div>
 
 	<div class="bars">
 		{#each sides as side}

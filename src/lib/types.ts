@@ -68,6 +68,7 @@ export type Telemetry = {
 export type AnchorConfig = {
 	id: number;
 	updated_at: string;
+	boat_id: string | null;
 	active: boolean;
 	lat: number | null;
 	lon: number | null;
@@ -80,11 +81,26 @@ export type AnchorConfig = {
 	telegram_chat_ids: string | null;
 	pushover_app_token: string | null;
 	pushover_user_keys: string | null;
-	cloud_enabled: boolean;
+	cloud_enabled: boolean;   // legacy — used only by local server.py bridge
 	shelly_cloud_server: string | null;
 	shelly_cloud_auth_key: string | null;
 	vrm_api_token: string | null;
 	vrm_installation_id: number | null;
+};
+
+export type Boat = {
+	id: string;
+	name: string;
+	created_at: string;
+	created_by: string | null;
+};
+
+export type BoatMember = {
+	boat_id: string;
+	user_id: string;
+	role: 'admin' | 'viewer';
+	invited_by: string | null;
+	joined_at: string;
 };
 
 export type VRMMppt = {

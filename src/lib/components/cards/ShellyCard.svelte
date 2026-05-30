@@ -95,7 +95,7 @@
 <div class="card">
 	<div class="title">Shelly</div>
 	{#if !loaded}
-		<div class="empty">Verbinde…</div>
+		<div class="empty">Connecting…</div>
 	{:else}
 		<div class="list">
 			{#each devices as dev (dev.id)}
@@ -107,7 +107,7 @@
 					<button
 						class="toggle"
 						class:on={dev.state === 1}
-						aria-label="{dev.name} {dev.state === 1 ? 'aus' : 'ein'}schalten"
+						aria-label="{dev.name} {dev.state === 1 ? 'turn off' : 'turn on'}"
 						onclick={() => toggle(dev)}
 					>
 						<span class="knob"></span>

@@ -1,0 +1,229 @@
+/**
+ * anchor-check — Supabase Edge Function
+ *
+ * Called every minute via pg_cron + pg_net.
+ * Reads all active anchor watches, fetches GPS from VRM,
+ * calculates distance to anchor point, and triggers
+ * Telegram/Pushover alerts when the boat drags.
+ *
+ * Authentication: Bearer SUPABASE_SERVICE_ROLE_KEY (set via pg_cron)
+ */
+import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+  });
+}
+
+// ── Haversine distance (metres) ───────────────────────────────────────────────
+function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6_371_000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
+
+// ── Fetch GPS from VRM diagnostics ────────────────────────────────────────────
+async function fetchGPSFromVRM(
+  token: string,
+  installationId: number
+): Promise<{ lat: number; lon: number } | null> {
+  try {
+    const url = `https://vrmapi.victronenergy.com/v2/installations/${installationId}/diagnostics?count=1000`;
+    const res = await fetch(url, {
+      headers: { 'X-Authorization': `Token ${token}` },
+    });
+    if (!res.ok) {
+      console.error('[anchor-check] VRM fetch failed', res.status);
+      return null;
+    }
+    const data = await res.json();
+    const records: { dbusPath: string; rawValue: number }[] = data?.records ?? [];
+
+    let lat: number | null = null;
+    let lon: number | null = null;
+    for (const r of records) {
+      if (r.dbusPath === '/Position/Latitude'  && lat == null) lat = r.rawValue;
+      if (r.dbusPath === '/Position/Longitude' && lon == null) lon = r.rawValue;
+      if (lat != null && lon != null) break;
+    }
+    if (lat == null || lon == null) return null;
+    return { lat, lon };
+  } catch (e) {
+    console.error('[anchor-check] VRM error', e);
+    return null;
+  }
+}
+
+// ── Telegram notification ─────────────────────────────────────────────────────
+async function sendTelegram(
+  botToken: string | null,
+  chatIds: string | null,
+  text: string
+): Promise<void> {
+  if (!botToken || !chatIds) return;
+  const ids = chatIds.split(',').map(s => s.trim()).filter(Boolean);
+  for (const chatId of ids) {
+    try {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+      });
+    } catch (e) {
+      console.error('[anchor-check] Telegram error for chat', chatId, e);
+    }
+  }
+}
+
+// ── Pushover notification ─────────────────────────────────────────────────────
+async function sendPushover(
+  appToken: string | null,
+  userKeys: string | null,
+  title: string,
+  message: string,
+  priority = 1
+): Promise<void> {
+  if (!appToken || !userKeys) return;
+  const keys = userKeys.split(',').map(s => s.trim()).filter(Boolean);
+  for (const userKey of keys) {
+    try {
+      const body = new URLSearchParams({
+        token:    appToken,
+        user:     userKey,
+        title,
+        message,
+        priority: String(priority),
+      });
+      if (priority === 2) {
+        body.set('retry',  '60');
+        body.set('expire', '3600');
+      }
+      await fetch('https://api.pushover.net/1/messages.json', {
+        method: 'POST',
+        body,
+      });
+    } catch (e) {
+      console.error('[anchor-check] Pushover error', e);
+    }
+  }
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: CORS });
+  }
+
+  // Accept only service-role calls (from pg_cron) or our own health checks
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  if (!authHeader.includes(serviceKey) && serviceKey) {
+    console.warn('[anchor-check] Unauthorized call');
+    return json({ error: 'Unauthorized' }, 401);
+  }
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    serviceKey,
+  );
+
+  // Load all active anchor watches
+  const { data: watches, error: watchErr } = await supabase
+    .from('anchor_config')
+    .select('*, boats(name)')
+    .eq('active', true)
+    .not('lat', 'is', null)
+    .not('vrm_api_token', 'is', null)
+    .not('vrm_installation_id', 'is', null);
+
+  if (watchErr) {
+    console.error('[anchor-check] load error', watchErr.message);
+    return json({ error: watchErr.message }, 500);
+  }
+
+  const results: { boat: string; status: string; dist_m?: number }[] = [];
+  console.log(`[anchor-check] checking ${watches?.length ?? 0} active watches`);
+
+  for (const watch of watches ?? []) {
+    const boatName: string = (watch.boats as { name: string } | null)?.name ?? watch.boat_id ?? 'Unknown';
+
+    const gps = await fetchGPSFromVRM(watch.vrm_api_token, watch.vrm_installation_id);
+    if (!gps) {
+      console.log(`[anchor-check] ${boatName}: GPS unavailable`);
+      results.push({ boat: boatName, status: 'gps_unavailable' });
+      continue;
+    }
+
+    const dist = haversine(gps.lat, gps.lon, watch.lat!, watch.lon!);
+    const violated = dist > watch.radius_m;
+
+    console.log(`[anchor-check] ${boatName}: dist=${Math.round(dist)}m radius=${watch.radius_m}m alarming=${watch.alarming}`);
+
+    if (violated && !watch.alarming) {
+      // ── NEW ALARM ────────────────────────────────────────────────────────
+      const msg = `⚓ <b>ANCHOR ALARM — ${boatName}</b>\n` +
+        `Distance: <b>${Math.round(dist)} m</b> (radius: ${watch.radius_m} m)\n` +
+        `Position: ${gps.lat.toFixed(5)}, ${gps.lon.toFixed(5)}`;
+
+      await sendTelegram(watch.telegram_token, watch.telegram_chat_ids, msg);
+      await sendPushover(
+        watch.pushover_app_token,
+        watch.pushover_user_keys,
+        `⚓ Anchor Alarm — ${boatName}`,
+        `Distance: ${Math.round(dist)} m (radius: ${watch.radius_m} m)`,
+        2  // emergency priority
+      );
+
+      await supabase
+        .from('anchor_config')
+        .update({ alarming: true })
+        .eq('boat_id', watch.boat_id);
+
+      results.push({ boat: boatName, status: 'alarm_triggered', dist_m: Math.round(dist) });
+
+    } else if (!violated && watch.alarming) {
+      // ── CLEAR ────────────────────────────────────────────────────────────
+      const msg = `✅ <b>Anchor back in range — ${boatName}</b>\n` +
+        `Distance: ${Math.round(dist)} m (radius: ${watch.radius_m} m)`;
+
+      await sendTelegram(watch.telegram_token, watch.telegram_chat_ids, msg);
+      await sendPushover(
+        watch.pushover_app_token,
+        watch.pushover_user_keys,
+        `✅ Anchor back in range — ${boatName}`,
+        `Distance: ${Math.round(dist)} m (radius: ${watch.radius_m} m)`,
+        0
+      );
+
+      await supabase
+        .from('anchor_config')
+        .update({ alarming: false })
+        .eq('boat_id', watch.boat_id);
+
+      results.push({ boat: boatName, status: 'alarm_cleared', dist_m: Math.round(dist) });
+
+    } else {
+      results.push({
+        boat: boatName,
+        status: violated ? 'still_alarming' : 'ok',
+        dist_m: Math.round(dist),
+      });
+    }
+  }
+
+  return json({ checked: results.length, results });
+});

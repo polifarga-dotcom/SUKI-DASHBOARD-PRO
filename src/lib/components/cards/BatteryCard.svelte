@@ -13,7 +13,7 @@
 
 <div class="card">
 	<div class="card-head">
-		<span class="title">Batterie</span>
+		<span class="title">Battery</span>
 		<span class="mode">{t?.batt_main_mode ?? '—'}</span>
 	</div>
 
@@ -25,15 +25,15 @@
 	</div>
 
 	<div class="metrics">
-		<ValueCell label="Spannung"    value={t?.batt_main_v != null ? t.batt_main_v.toFixed(1) : null} unit="V" />
-		<ValueCell label="Strom"       value={t?.batt_main_a != null ? (t.batt_main_a >= 0 ? '+' : '') + t.batt_main_a.toFixed(1) : null} unit="A" />
-		<ValueCell label="Leistung"    value={t?.batt_main_w != null ? t.batt_main_w.toFixed(0) : null} unit="W" />
+		<ValueCell label="Voltage"    value={t?.batt_main_v != null ? t.batt_main_v.toFixed(1) : null} unit="V" />
+		<ValueCell label="Current"       value={t?.batt_main_a != null ? (t.batt_main_a >= 0 ? '+' : '') + t.batt_main_a.toFixed(1) : null} unit="A" />
+		<ValueCell label="Power"    value={t?.batt_main_w != null ? t.batt_main_w.toFixed(0) : null} unit="W" />
 	</div>
 
 	<div class="divider"></div>
 
 	<div class="eng-row">
-		<span class="eng-label">Starterbatterie</span>
+		<span class="eng-label">Starter battery</span>
 		<span class="eng-vals">
 			{fmtV(t?.batt_eng_v ?? null)} ·
 			{fmtSOC(t?.batt_eng_soc ?? null)}

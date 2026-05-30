@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { telemetry } from '$lib/stores/telemetry.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
+	import { currentBoat } from '$lib/stores/boat.js';
 	import { supabase } from '$lib/supabase.js';
 	import { haversine, destinationPoint, bearingTo } from '$lib/utils/geo.js';
 	import { rad2deg, fmtDepth, ms2kn, bearingCardinal } from '$lib/utils/units.js';
@@ -214,7 +215,9 @@
 
 	// ── Supabase helpers ──────────────────────────────────────────────────────
 	async function saveConfig(patch: Record<string, unknown>) {
-		const { data } = await supabase.from('anchor_config').update(patch).eq('id', 1).select().single();
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
+		const { data } = await supabase.from('anchor_config').update(patch).eq('boat_id', boatId).select().single();
 		if (data) anchorConfig.set(data);
 	}
 
@@ -303,15 +306,15 @@
 	onDestroy(() => { map?.remove(); });
 </script>
 
-<svelte:head><title>Anker · SUKI PRO</title></svelte:head>
+<svelte:head><title>Anchor · SUKI PRO</title></svelte:head>
 
 <!-- ── Full-screen alarm overlay ── -->
 {#if alarming && !muteActive}
 <div class="alarm-overlay">
 	<div class="alarm-icon">⚓</div>
-	<div class="alarm-title">ANKER-ALARM</div>
-	<div class="alarm-dist">{ancDistM != null ? ancDistM.toFixed(0) + ' m vom Ankerpunkt' : 'Position unbekannt'}</div>
-	<button class="alarm-mute-btn" onclick={muteAlarm}>Stumm (30s)</button>
+	<div class="alarm-title">ANCHOR ALARM</div>
+	<div class="alarm-dist">{ancDistM != null ? ancDistM.toFixed(0) + ' m from anchor' : 'Position unknown'}</div>
+	<button class="alarm-mute-btn" onclick={muteAlarm}>Mute (30s)</button>
 </div>
 {/if}
 
@@ -359,7 +362,7 @@
 			<button class="map-btn" title="Zoom in"  onclick={() => map?.zoomIn()}>+</button>
 			<button class="map-btn" title="Zoom out" onclick={() => map?.zoomOut()}>−</button>
 			<button class="map-btn follow-btn" class:active={followMode}
-				title="Zum Boot springen" onclick={jumpToBoat}>
+				title="Center on boat" onclick={jumpToBoat}>
 				<svg viewBox="0 0 24 24" width="16" height="16" fill="none"
 					stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
 					<circle cx="12" cy="12" r="3"/>
@@ -372,18 +375,18 @@
 		</div>
 
 		{#if !mapReady}
-		<div class="map-loading">Karte lädt…</div>
+		<div class="map-loading">Loading map…</div>
 		{/if}
 	</div>
 
 	<!-- ── Data cells ── -->
 	<div class="data-cells">
 		<div class="cell">
-			<div class="cell-label">TIEFE</div>
+			<div class="cell-label">DEPTH</div>
 			<div class="cell-val">{depth}</div>
 		</div>
 		<div class="cell">
-			<div class="cell-label">KETTE</div>
+			<div class="cell-label">CHAIN</div>
 			<div class="cell-val">{localChain} m</div>
 		</div>
 		<div class="cell">
@@ -391,7 +394,7 @@
 			<div class="cell-val">{ancDistM != null ? ancDistM.toFixed(0) + ' m' : '—'}</div>
 		</div>
 		<div class="cell">
-			<div class="cell-label">KURS</div>
+			<div class="cell-label">BEARING</div>
 			<div class="cell-val">
 				{ancBearingDeg != null ? bearingCardinal(ancBearingDeg) + ' ' + ancBearingDeg.toFixed(0) + '°' : '—'}
 			</div>
@@ -401,12 +404,12 @@
 	<!-- ── Control buttons ── -->
 	<div class="ctrl-row">
 		{#if !cfg?.active}
-			<button class="ctrl-btn primary" onclick={setAnchor} disabled={!boatLat}>⚓ Anker setzen</button>
+			<button class="ctrl-btn primary" onclick={setAnchor} disabled={!boatLat}>⚓ Set Anchor</button>
 		{:else}
-			<button class="ctrl-btn danger" onclick={clearAnchor}>Anker lichten</button>
+			<button class="ctrl-btn danger" onclick={clearAnchor}>Clear Anchor</button>
 		{/if}
 		{#if alarming}
-			<button class="ctrl-btn warning" onclick={muteAlarm}>Stumm</button>
+			<button class="ctrl-btn warning" onclick={muteAlarm}>Mute</button>
 		{/if}
 	</div>
 
@@ -414,7 +417,7 @@
 	<div class="sliders">
 
 		<div class="srow">
-			<div class="slabel">Kettenlänge <span class="sval">{localChain} m</span></div>
+			<div class="slabel">Chain length <span class="sval">{localChain} m</span></div>
 			<div class="sctrl">
 				<button class="sbtn" onclick={() => { localChain = Math.max(0, localChain-5); saveConfig({ chain_length_m: localChain }); }}>−</button>
 				<input type="range" min="0" max="120" step="5" value={localChain}
@@ -425,7 +428,7 @@
 		</div>
 
 		<div class="srow">
-			<div class="slabel">Alarmradius <span class="sval">{localRadius} m</span></div>
+			<div class="slabel">Alarm radius <span class="sval">{localRadius} m</span></div>
 			<div class="sctrl">
 				<button class="sbtn" onclick={() => { localRadius = Math.max(10, localRadius-10); saveConfig({ radius_m: localRadius }); }}>−</button>
 				<input type="range" min="10" max="500" step="10" value={localRadius}
@@ -437,9 +440,9 @@
 
 		<div class="srow">
 			<div class="slabel">
-				Peilung <span class="sval">{localBearing.toFixed(0)}° {bearingCardinal(localBearing)}</span>
+				Bearing <span class="sval">{localBearing.toFixed(0)}° {bearingCardinal(localBearing)}</span>
 				{#if bearingManual}
-					<button class="reset-btn" onclick={snapBearingToHeading}>↑ Kurs</button>
+					<button class="reset-btn" onclick={snapBearingToHeading}>↑ Heading</button>
 				{:else}
 					<span class="auto-badge">auto</span>
 				{/if}

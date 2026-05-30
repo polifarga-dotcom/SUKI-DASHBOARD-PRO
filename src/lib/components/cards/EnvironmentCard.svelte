@@ -10,16 +10,16 @@
 </script>
 
 <div class="card">
-	<div class="title">Umgebung &amp; Navigation</div>
+	<div class="title">Environment</div>
 	<div class="grid">
-		<ValueCell label="Tiefe"       value={fmtDepth(t?.env_depth_m ?? null)} />
+		<ValueCell label="Depth"       value={fmtDepth(t?.env_depth_m ?? null)} />
 		<ValueCell label="AWS"         value={ms2kn(t?.env_aws_ms ?? null)} unit="kn" />
 		<ValueCell label="AWA"         value={rad2degStr(t?.env_awa_rad ?? null)} />
-		<ValueCell label="Druck"       value={fmtPressure(t?.env_pressure_pa ?? null)} color={pressColor} />
+		<ValueCell label="Pressure"       value={fmtPressure(t?.env_pressure_pa ?? null)} color={pressColor} />
 		<ValueCell label="Salon"       value={k2c(t?.temp_salon ?? null)} />
-		<ValueCell label="Kühlschrank" value={k2c(t?.temp_fridge ?? null)} />
-		<ValueCell label="Technik"     value={k2c(t?.temp_tech ?? null)} />
-		<ValueCell label="Wasser"      value={k2c(t?.temp_water ?? null)} />
+		<ValueCell label="Fridge" value={k2c(t?.temp_fridge ?? null)} />
+		<ValueCell label="Tech"     value={k2c(t?.temp_tech ?? null)} />
+		<ValueCell label="Water"      value={k2c(t?.temp_water ?? null)} />
 		<ValueCell label="AMA SB"      value={k2c(t?.temp_amasb ?? null)} />
 		<ValueCell label="AMA BB"      value={k2c(t?.temp_amabb ?? null)} />
 	</div>

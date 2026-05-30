@@ -46,22 +46,37 @@ Deno.serve(async (req: Request) => {
     let action = 'diagnostics';
     let overrideToken: string | undefined;
     let overrideId: number | undefined;
+    let boatId: string | undefined;
     try {
       const body = await req.json();
       if (body.action) action = body.action;
       if (body.token) overrideToken = body.token;
       if (body.installation_id) overrideId = Number(body.installation_id);
+      if (body.boat_id) boatId = String(body.boat_id);
     } catch { /* no body — use defaults */ }
 
-    console.log('[vrm-proxy] action', action);
+    console.log('[vrm-proxy] action', action, 'boat_id', boatId ?? '(none)');
 
-    // Read credentials from DB
-    const { data: cfg, error: cfgErr } = await supabase
+    // Read credentials from DB — by boat_id when provided, else legacy id=1
+    let cfgQuery = supabase
       .from('anchor_config')
-      .select('vrm_api_token, vrm_installation_id')
-      .eq('id', 1)
-      .single();
+      .select('vrm_api_token, vrm_installation_id');
 
+    if (boatId) {
+      // Verify the calling user is a member of the requested boat (service role bypasses RLS)
+      const { data: membership } = await supabase
+        .from('boat_members')
+        .select('role')
+        .eq('boat_id', boatId)
+        .eq('user_id', user.id)
+        .single();
+      if (!membership) return errResp('Not authorized for this boat', 403);
+      cfgQuery = cfgQuery.eq('boat_id', boatId) as typeof cfgQuery;
+    } else {
+      cfgQuery = cfgQuery.eq('id', 1) as typeof cfgQuery;  // legacy fallback
+    }
+
+    const { data: cfg, error: cfgErr } = await cfgQuery.single();
     if (cfgErr) console.log('[vrm-proxy] cfg error', cfgErr.message);
 
     const token = overrideToken ?? cfg?.vrm_api_token;

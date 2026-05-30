@@ -1,19 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { version } from '$app/environment';
 	import { supabase } from '$lib/supabase.js';
 	import { authStore } from '$lib/stores/auth.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
-
-	let { data } = $props();
+	import { currentBoat, isBoatAdmin, boatRole } from '$lib/stores/boat.js';
 
 	// ── Auth ──────────────────────────────────────────────────────────────────
-	let fetchedRole = $state<string | null>(null);
 	const userEmail  = $derived($authStore.session?.user?.email ?? '—');
 	const currentUid = $derived($authStore.session?.user?.id ?? '');
-	const userRole   = $derived(fetchedRole ?? '—');
-	const isAdmin    = $derived(fetchedRole === 'admin');
+	const userRole   = $derived($boatRole ?? '—');
+	const isAdmin    = $derived($isBoatAdmin);
 	const cfg        = $derived($anchorConfig);
 
 	// ── User management (admin only) ──────────────────────────────────────────
@@ -35,7 +32,7 @@
 	let addError     = $state('');
 	let addSuccess   = $state(false);
 	let deleteTarget = $state<AppUser | null>(null);
-	let actionBusy   = $state<string>(''); // userId of in-flight action
+	let actionBusy   = $state<string>('');
 
 	async function loadUsers() {
 		usersLoading = true;
@@ -45,7 +42,7 @@
 		});
 		usersLoading = false;
 		if (error || result?.error) {
-			usersError = result?.error ?? error?.message ?? 'Fehler beim Laden';
+			usersError = result?.error ?? error?.message ?? 'Failed to load';
 			return;
 		}
 		users = result as AppUser[];
@@ -54,7 +51,7 @@
 	async function addUser() {
 		addError = '';
 		addSuccess = false;
-		if (!addEmail) { addError = 'E-Mail erforderlich'; return; }
+		if (!addEmail) { addError = 'Email required'; return; }
 		addLoading = true;
 		const appUrl = window.location.hostname === 'localhost'
 			? 'https://suki-dashboard-pro.pages.dev'
@@ -64,7 +61,7 @@
 			body: { email: addEmail, role: addRole, redirectTo: appUrl },
 		});
 		addLoading = false;
-		if (error || result?.error) { addError = result?.error ?? error?.message ?? 'Fehler'; return; }
+		if (error || result?.error) { addError = result?.error ?? error?.message ?? 'Error'; return; }
 		addEmail = ''; addRole = 'viewer';
 		addSuccess = true;
 		setTimeout(() => { addSuccess = false; }, 3000);
@@ -104,8 +101,8 @@
 	}
 
 	function fmtDate(iso: string | null): string {
-		if (!iso) return 'Nie';
-		return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+		if (!iso) return 'Never';
+		return new Date(iso).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: '2-digit' });
 	}
 
 	// ── Notification settings ─────────────────────────────────────────────────
@@ -116,12 +113,11 @@
 	let tgTest = $state<TestState>('idle');
 	let poTest = $state<TestState>('idle');
 
-	let tgToken      = $state('');
-	let tgChats      = $state('');
-	let poToken      = $state('');
-	let poKeys       = $state('');
-	let alarmDelay   = $state(10);
-	let cloudEnabled = $state(true);
+	let tgToken    = $state('');
+	let tgChats    = $state('');
+	let poToken    = $state('');
+	let poKeys     = $state('');
+	let alarmDelay = $state(10);
 
 	// ── Shelly Cloud ─────────────────────────────────────────────────────────
 	let shellyServer  = $state('');
@@ -144,12 +140,11 @@
 
 	$effect(() => {
 		if (cfg) {
-			tgToken      = cfg.telegram_token        ?? '';
-			tgChats      = cfg.telegram_chat_ids     ?? '';
-			poToken      = cfg.pushover_app_token    ?? '';
-			poKeys       = cfg.pushover_user_keys    ?? '';
-			alarmDelay   = cfg.alarm_delay_s         ?? 10;
-			cloudEnabled = cfg.cloud_enabled         ?? true;
+			tgToken    = cfg.telegram_token        ?? '';
+			tgChats    = cfg.telegram_chat_ids     ?? '';
+			poToken    = cfg.pushover_app_token    ?? '';
+			poKeys     = cfg.pushover_user_keys    ?? '';
+			alarmDelay = cfg.alarm_delay_s         ?? 10;
 			shellyServer      = cfg.shelly_cloud_server    ?? '';
 			shellyKey         = cfg.shelly_cloud_auth_key  ?? '';
 			vrmToken          = cfg.vrm_api_token           ?? '';
@@ -157,15 +152,22 @@
 		}
 	});
 
+	// Load crew list whenever admin access is confirmed
+	$effect(() => {
+		if (isAdmin) loadUsers();
+	});
+
 	async function saveShelly() {
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
 		shellySaving = true;
 		const { data: row } = await supabase
 			.from('anchor_config')
 			.update({
-				shelly_cloud_server:  shellyServer || null,
-				shelly_cloud_auth_key: shellyKey   || null,
+				shelly_cloud_server:   shellyServer || null,
+				shelly_cloud_auth_key: shellyKey    || null,
 			})
-			.eq('id', 1).select().single();
+			.eq('boat_id', boatId).select().single();
 		shellySaving = false;
 		if (row) {
 			anchorConfig.set(row);
@@ -184,9 +186,9 @@
 			const json = await res.json();
 
 			// Try multiple response formats the Shelly Cloud API may return
-			const ds = json?.data?.devices_status;          // old dict format
-			const da = json?.data?.devices;                 // actual format (dict or array)
-			const dr = json?.devices;                       // root-level fallback
+			const ds = json?.data?.devices_status;
+			const da = json?.data?.devices;
+			const dr = json?.devices;
 
 			function countDevs(d: unknown): number | null {
 				if (!d) return null;
@@ -197,19 +199,18 @@
 
 			const n = countDevs(ds) ?? countDevs(da) ?? countDevs(dr);
 			if (n !== null) {
-				shellyTestMsg = `${n} Gerät${n !== 1 ? 'e' : ''} gefunden`;
+				shellyTestMsg = `${n} device${n !== 1 ? 's' : ''} found`;
 				shellyTest = 'ok';
 			} else if (json?.isok === false) {
-				shellyTestMsg = json?.errors?.[0]?.message ?? json?.errors?.[0] ?? 'Auth-Fehler';
+				shellyTestMsg = json?.errors?.[0]?.message ?? json?.errors?.[0] ?? 'Auth error';
 				shellyTest = 'err';
 			} else {
-				// Show keys inside data so we can identify the correct format
-				const dataKeys = Object.keys(json?.data ?? {}).join(', ') || '(leer)';
+				const dataKeys = Object.keys(json?.data ?? {}).join(', ') || '(empty)';
 				shellyTestMsg = `data: {${dataKeys}}`;
 				shellyTest = 'err';
 			}
 		} catch (e: unknown) {
-			shellyTestMsg = e instanceof Error ? e.message : 'Verbindungsfehler';
+			shellyTestMsg = e instanceof Error ? e.message : 'Connection error';
 			shellyTest = 'err';
 		}
 		setTimeout(() => { shellyTest = 'idle'; shellyTestMsg = ''; }, 6000);
@@ -224,7 +225,7 @@
 				body: { action: 'discover', token: vrmToken },
 			});
 			if (fnErr || data?.error) {
-				vrmTestMsg = data?.error ?? fnErr?.message ?? 'Fehler';
+				vrmTestMsg = data?.error ?? fnErr?.message ?? 'Error';
 				vrmTest = 'err';
 			} else {
 				vrmInstallations = (data?.records ?? []).map((r: Record<string, unknown>) => ({
@@ -234,7 +235,7 @@
 				if (vrmInstallations.length === 1) vrmInstallationId = String(vrmInstallations[0].idSite);
 			}
 		} catch {
-			vrmTestMsg = 'Verbindungsfehler'; vrmTest = 'err';
+			vrmTestMsg = 'Connection error'; vrmTest = 'err';
 		}
 		vrmDiscovering = false;
 	}
@@ -247,7 +248,7 @@
 				body: { token: vrmToken, installation_id: Number(vrmInstallationId) },
 			});
 			if (fnErr || data?.error) {
-				vrmTestMsg = data?.error ?? fnErr?.message ?? 'Fehler';
+				vrmTestMsg = data?.error ?? fnErr?.message ?? 'Error';
 				vrmTest = 'err'; return;
 			}
 			const attrs: unknown[] = data?.records ?? [];
@@ -255,19 +256,21 @@
 			const hasSolar = attrs.some((a: unknown) => (a as {dbusPath: string}).dbusPath === '/Yield/Power');
 			const tankCnt  = attrs.filter((a: unknown) => (a as {dbusPath: string}).dbusPath === '/Level').length;
 			const parts: string[] = [];
-			if (hasBatt)     parts.push('Batterie');
+			if (hasBatt)     parts.push('Battery');
 			if (hasSolar)    parts.push('Solar');
-			if (tankCnt > 0) parts.push(`${tankCnt} Tank${tankCnt !== 1 ? 's' : ''}`);
-			vrmTestMsg = `${attrs.length} Attribute${parts.length ? ' · ' + parts.join(', ') : ''}`;
+			if (tankCnt > 0) parts.push(`${tankCnt} tank${tankCnt !== 1 ? 's' : ''}`);
+			vrmTestMsg = `${attrs.length} attribute${attrs.length !== 1 ? 's' : ''}${parts.length ? ' · ' + parts.join(', ') : ''}`;
 			vrmTest = 'ok';
 		} catch (e: unknown) {
-			vrmTestMsg = e instanceof Error ? e.message : 'Verbindungsfehler';
+			vrmTestMsg = e instanceof Error ? e.message : 'Connection error';
 			vrmTest = 'err';
 		}
 		setTimeout(() => { vrmTest = 'idle'; vrmTestMsg = ''; }, 8000);
 	}
 
 	async function saveVRM() {
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
 		vrmSaving = true;
 		const { data: row } = await supabase
 			.from('anchor_config')
@@ -275,7 +278,7 @@
 				vrm_api_token:       vrmToken       || null,
 				vrm_installation_id: vrmInstallationId ? Number(vrmInstallationId) : null,
 			})
-			.eq('id', 1).select().single();
+			.eq('boat_id', boatId).select().single();
 		vrmSaving = false;
 		if (row) {
 			anchorConfig.set(row);
@@ -285,18 +288,19 @@
 	}
 
 	async function saveNotifications() {
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
 		notifSaving = true;
 		const { data: row } = await supabase
 			.from('anchor_config')
 			.update({
-				telegram_token:      tgToken  || null,
-				telegram_chat_ids:   tgChats  || null,
-				pushover_app_token:  poToken  || null,
-				pushover_user_keys:  poKeys   || null,
-				alarm_delay_s:       alarmDelay,
-				cloud_enabled:       cloudEnabled,
+				telegram_token:     tgToken  || null,
+				telegram_chat_ids:  tgChats  || null,
+				pushover_app_token: poToken  || null,
+				pushover_user_keys: poKeys   || null,
+				alarm_delay_s:      alarmDelay,
 			})
-			.eq('id', 1).select().single();
+			.eq('boat_id', boatId).select().single();
 		notifSaving = false;
 		if (row) {
 			anchorConfig.set(row);
@@ -324,8 +328,8 @@
 	async function changePassword(e: SubmitEvent) {
 		e.preventDefault();
 		pwError = ''; pwSuccess = false;
-		if (pw.length < 8) { pwError = 'Min. 8 Zeichen'; return; }
-		if (pw !== pw2)    { pwError = 'Passwörter stimmen nicht überein'; return; }
+		if (pw.length < 8) { pwError = 'Min. 8 characters'; return; }
+		if (pw !== pw2)    { pwError = "Passwords don't match"; return; }
 		pwLoading = true;
 		const { error } = await supabase.auth.updateUser({ password: pw });
 		pwLoading = false;
@@ -338,24 +342,18 @@
 		authStore.clear();
 		goto('/login');
 	}
-
-	onMount(async () => {
-		const { data: role } = await supabase.rpc('get_my_role');
-		fetchedRole = role ?? 'viewer';
-		if (fetchedRole === 'admin') loadUsers();
-	});
 </script>
 
 <svelte:head><title>Settings · SUKI PRO</title></svelte:head>
 
 <div class="settings">
 
-	<!-- ── User management (admin only) ── -->
+	<!-- ── Crew management (admin only) ── -->
 	{#if isAdmin}
 	<section class="card">
 		<div class="section-head">
-			<h2>Benutzer</h2>
-			<button class="icon-btn" onclick={loadUsers} disabled={usersLoading} title="Neu laden">
+			<h2>Crew</h2>
+			<button class="icon-btn" onclick={loadUsers} disabled={usersLoading} title="Refresh">
 				<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M16 10a6 6 0 1 1-1-3.2"/><path d="M16 4v3h-3"/>
 				</svg>
@@ -367,7 +365,7 @@
 		{/if}
 
 		{#if usersLoading}
-			<div class="loading-hint">Lädt…</div>
+			<div class="loading-hint">Loading…</div>
 		{:else}
 			<div class="user-list">
 				{#each users as u (u.id)}
@@ -375,9 +373,9 @@
 						<div class="user-main">
 							<span class="user-email">{u.email}</span>
 							<div class="user-meta">
-								<span class="user-date">Anmeldung: {fmtDate(u.last_sign_in_at)}</span>
+								<span class="user-date">Last login: {fmtDate(u.last_sign_in_at)}</span>
 								{#if u.force_password_change}
-									<span class="tag tag-warn">PW ausstehend</span>
+									<span class="tag tag-warn">PW pending</span>
 								{/if}
 							</div>
 						</div>
@@ -388,12 +386,12 @@
 								class:admin={u.role === 'admin'}
 								onclick={() => setUserRole(u.id, u.role === 'admin' ? 'viewer' : 'admin')}
 								disabled={actionBusy === u.id || u.id === currentUid}
-								title="Rolle umschalten"
+								title="Toggle role"
 							>
 								{u.role ?? '—'}
 							</button>
 							<!-- PW reset -->
-							<button class="icon-btn" title="Passwort-Reset erzwingen"
+							<button class="icon-btn" title="Force password reset"
 								disabled={actionBusy === u.id + '_pw' || u.force_password_change}
 								onclick={() => resetUserPw(u.id)}>
 								<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -403,7 +401,7 @@
 							</button>
 							<!-- Delete -->
 							{#if u.id !== currentUid}
-							<button class="icon-btn danger" title="Nutzer löschen"
+							<button class="icon-btn danger" title="Remove user"
 								disabled={actionBusy === u.id + '_del'}
 								onclick={() => { deleteTarget = u; }}>
 								<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -418,24 +416,24 @@
 			</div>
 		{/if}
 
-		<!-- Add user form -->
+		<!-- Add crew member form -->
 		<div class="add-user">
-			<div class="add-title">Neuen Nutzer anlegen</div>
+			<div class="add-title">Add crew member</div>
 			{#if addError}<div class="alert alert-error">{addError}</div>{/if}
-			{#if addSuccess}<div class="alert alert-info">Einladung gesendet. Der Nutzer erhält eine E-Mail mit dem Login-Link.</div>{/if}
+			{#if addSuccess}<div class="alert alert-info">Invitation sent. The user will receive an email with a login link.</div>{/if}
 			<div class="field">
-				<label for="add-email">E-Mail</label>
-				<input id="add-email" type="email" bind:value={addEmail} placeholder="neu@example.com" autocomplete="off" />
+				<label for="add-email">Email</label>
+				<input id="add-email" type="email" bind:value={addEmail} placeholder="new@example.com" autocomplete="off" />
 			</div>
 			<div class="role-row">
-				<label>Rolle</label>
+				<span class="role-lbl">Role</span>
 				<div class="role-picker">
 					<button class="role-opt" class:sel={addRole === 'viewer'} onclick={() => { addRole = 'viewer'; }}>Viewer</button>
 					<button class="role-opt" class:sel={addRole === 'admin'}  onclick={() => { addRole = 'admin'; }}>Admin</button>
 				</div>
 			</div>
 			<button class="btn btn-primary" onclick={addUser} disabled={addLoading || !addEmail}>
-				{addLoading ? 'Erstelle…' : 'Nutzer hinzufügen'}
+				{addLoading ? 'Adding…' : 'Add member'}
 			</button>
 		</div>
 	</section>
@@ -445,23 +443,23 @@
 	{#if deleteTarget}
 	<div class="modal-backdrop" role="dialog" aria-modal="true">
 		<div class="modal">
-			<div class="modal-title">Nutzer löschen?</div>
+			<div class="modal-title">Remove user?</div>
 			<div class="modal-body">{deleteTarget.email}</div>
-			<div class="modal-hint">Dieser Vorgang kann nicht rückgängig gemacht werden.</div>
+			<div class="modal-hint">This action cannot be undone.</div>
 			<div class="modal-actions">
-				<button class="btn btn-ghost" onclick={() => { deleteTarget = null; }}>Abbrechen</button>
-				<button class="btn btn-danger" onclick={confirmDelete}>Löschen</button>
+				<button class="btn btn-ghost" onclick={() => { deleteTarget = null; }}>Cancel</button>
+				<button class="btn btn-danger" onclick={confirmDelete}>Remove</button>
 			</div>
 		</div>
 	</div>
 	{/if}
 
-	<!-- ── Alarm & Cloud ── -->
+	<!-- ── Alarm ── -->
 	<section class="card">
-		<h2>Alarm & Verbindung</h2>
+		<h2>Alarm</h2>
 		<div class="field-group">
 			<div class="field-row">
-				<span class="field-label">Alarm-Verzögerung</span>
+				<span class="field-label">Alarm delay</span>
 				<span class="field-val">{alarmDelay} s</span>
 			</div>
 			<div class="slider-controls">
@@ -470,59 +468,48 @@
 				<button class="step-btn" onclick={() => { alarmDelay = Math.min(120, alarmDelay + 5); }}>+</button>
 			</div>
 		</div>
-		<div class="toggle-row">
-			<div>
-				<div class="field-label">Cloud Bridge</div>
-				<div class="field-sub">HiveMQ Publish (Starlink-Daten sparen)</div>
-			</div>
-			<button class="toggle-btn" class:on={cloudEnabled}
-				aria-label="Cloud Bridge {cloudEnabled ? 'deaktivieren' : 'aktivieren'}"
-				onclick={() => { cloudEnabled = !cloudEnabled; }}>
-				<span class="knob"></span>
-			</button>
-		</div>
 	</section>
 
 	<!-- ── Telegram ── -->
 	<section class="card">
-		<h2>Telegram Alarm</h2>
+		<h2>Telegram Notifications</h2>
 		<div class="form-fields">
 			<div class="field">
 				<label for="tg-token">Bot Token</label>
 				<input id="tg-token" type="text" bind:value={tgToken} placeholder="123456789:AABBCCdd…" autocomplete="off" />
 			</div>
 			<div class="field">
-				<label for="tg-chats">Chat IDs (kommagetrennt)</label>
+				<label for="tg-chats">Chat IDs (comma-separated)</label>
 				<input id="tg-chats" type="text" bind:value={tgChats} placeholder="-1001234567890,987654321" autocomplete="off" />
 			</div>
 		</div>
 		<button class="btn btn-ghost test-btn" onclick={() => sendTestNotification('telegram')}
 			disabled={tgTest === 'sending' || !tgToken}>
-			{tgTest === 'sending' ? 'Sende…' : tgTest === 'ok' ? '✓ Gesendet' : tgTest === 'err' ? '✗ Fehler' : 'Testnachricht senden'}
+			{tgTest === 'sending' ? 'Sending…' : tgTest === 'ok' ? '✓ Sent' : tgTest === 'err' ? '✗ Error' : 'Send test message'}
 		</button>
 	</section>
 
 	<!-- ── Pushover ── -->
 	<section class="card">
-		<h2>Pushover Alarm</h2>
+		<h2>Pushover Notifications</h2>
 		<div class="form-fields">
 			<div class="field">
 				<label for="po-token">App Token</label>
 				<input id="po-token" type="text" bind:value={poToken} placeholder="azGDORePK8gMaC0QOYAMyEEuzJnyUi" autocomplete="off" />
 			</div>
 			<div class="field">
-				<label for="po-keys">User Keys (kommagetrennt)</label>
+				<label for="po-keys">User Keys (comma-separated)</label>
 				<input id="po-keys" type="text" bind:value={poKeys} placeholder="uQiRzpo4DXghDmr9QzzfQu,…" autocomplete="off" />
 			</div>
 		</div>
 		<button class="btn btn-ghost test-btn" onclick={() => sendTestNotification('pushover')}
 			disabled={poTest === 'sending' || !poToken}>
-			{poTest === 'sending' ? 'Sende…' : poTest === 'ok' ? '✓ Gesendet' : poTest === 'err' ? '✗ Fehler' : 'Testnachricht senden'}
+			{poTest === 'sending' ? 'Sending…' : poTest === 'ok' ? '✓ Sent' : poTest === 'err' ? '✗ Error' : 'Send test message'}
 		</button>
 	</section>
 
 	<button class="btn btn-primary save-btn" onclick={saveNotifications} disabled={notifSaving}>
-		{notifSaving ? 'Speichere…' : notifSaved ? '✓ Gespeichert' : 'Alarm-Einstellungen speichern'}
+		{notifSaving ? 'Saving…' : notifSaved ? '✓ Saved' : 'Save notification settings'}
 	</button>
 
 	<!-- ── Shelly Cloud ── -->
@@ -543,13 +530,13 @@
 		<div class="shelly-actions">
 			<button class="btn btn-ghost test-btn shelly-test" onclick={testShelly}
 				disabled={shellyTest === 'sending' || !shellyServer || !shellyKey}>
-				{shellyTest === 'sending' ? 'Teste…'
+				{shellyTest === 'sending' ? 'Testing…'
 				 : shellyTest === 'ok'      ? `✓ ${shellyTestMsg}`
 				 : shellyTest === 'err'     ? `✗ ${shellyTestMsg}`
-				 : 'Verbindung testen'}
+				 : 'Test connection'}
 			</button>
 			<button class="btn btn-primary" onclick={saveShelly} disabled={shellySaving}>
-				{shellySaving ? 'Speichere…' : shellySaved ? '✓ Gespeichert' : 'Speichern'}
+				{shellySaving ? 'Saving…' : shellySaved ? '✓ Saved' : 'Save'}
 			</button>
 		</div>
 	</section>
@@ -568,18 +555,18 @@
 				<div class="vrm-site-row">
 					{#if vrmInstallations.length > 1}
 						<select id="vrm-site" class="vrm-select" bind:value={vrmInstallationId}>
-							<option value="">— Auswählen —</option>
+							<option value="">— Select —</option>
 							{#each vrmInstallations as inst}
 								<option value={String(inst.idSite)}>{inst.name} ({inst.idSite})</option>
 							{/each}
 						</select>
 					{:else}
 						<input id="vrm-site" type="text" bind:value={vrmInstallationId}
-							placeholder="z.B. 123456" inputmode="numeric" autocomplete="off" />
+							placeholder="e.g. 123456" inputmode="numeric" autocomplete="off" />
 					{/if}
 					<button class="btn btn-ghost vrm-discover-btn" onclick={discoverVRMInstallations}
 						disabled={vrmDiscovering || !vrmToken}>
-						{vrmDiscovering ? '…' : 'Suchen'}
+						{vrmDiscovering ? '…' : 'Discover'}
 					</button>
 				</div>
 				{#if vrmInstallations.length === 1}
@@ -590,40 +577,40 @@
 		<div class="shelly-actions">
 			<button class="btn btn-ghost test-btn shelly-test" onclick={testVRM}
 				disabled={vrmTest === 'sending' || !vrmToken || !vrmInstallationId}>
-				{vrmTest === 'sending' ? 'Teste…'
+				{vrmTest === 'sending' ? 'Testing…'
 				 : vrmTest === 'ok'    ? `✓ ${vrmTestMsg}`
 				 : vrmTest === 'err'   ? `✗ ${vrmTestMsg}`
-				 : 'Verbindung testen'}
+				 : 'Test connection'}
 			</button>
 			<button class="btn btn-primary" onclick={saveVRM} disabled={vrmSaving}>
-				{vrmSaving ? 'Speichere…' : vrmSaved ? '✓ Gespeichert' : 'Speichern'}
+				{vrmSaving ? 'Saving…' : vrmSaved ? '✓ Saved' : 'Save'}
 			</button>
 		</div>
 	</section>
 
-	<!-- ── Konto ── -->
+	<!-- ── Account ── -->
 	<section class="card">
-		<h2>Konto</h2>
-		<div class="info-row"><span class="lbl">E-Mail</span><span>{userEmail}</span></div>
-		<div class="info-row"><span class="lbl">Rolle</span><span class="role-badge">{userRole}</span></div>
+		<h2>Account</h2>
+		<div class="info-row"><span class="lbl">Email</span><span>{userEmail}</span></div>
+		<div class="info-row"><span class="lbl">Role</span><span class="role-badge">{userRole}</span></div>
 	</section>
 
-	<!-- ── Passwort ändern ── -->
+	<!-- ── Change Password ── -->
 	<section class="card">
-		<h2>Passwort ändern</h2>
+		<h2>Change Password</h2>
 		<form onsubmit={changePassword} class="form-fields">
 			{#if pwError}<div class="alert alert-error">{pwError}</div>{/if}
-			{#if pwSuccess}<div class="alert alert-info">Passwort geändert.</div>{/if}
+			{#if pwSuccess}<div class="alert alert-info">Password changed.</div>{/if}
 			<div class="field">
-				<label for="pw">Neues Passwort</label>
-				<input id="pw" type="password" bind:value={pw} placeholder="min. 8 Zeichen" autocomplete="new-password" />
+				<label for="pw">New password</label>
+				<input id="pw" type="password" bind:value={pw} placeholder="min. 8 characters" autocomplete="new-password" />
 			</div>
 			<div class="field">
-				<label for="pw2">Bestätigen</label>
-				<input id="pw2" type="password" bind:value={pw2} placeholder="Wiederholung" autocomplete="new-password" />
+				<label for="pw2">Confirm</label>
+				<input id="pw2" type="password" bind:value={pw2} placeholder="Repeat" autocomplete="new-password" />
 			</div>
 			<button type="submit" class="btn btn-ghost" disabled={pwLoading}>
-				{pwLoading ? 'Speichere…' : 'Passwort speichern'}
+				{pwLoading ? 'Saving…' : 'Save password'}
 			</button>
 		</form>
 	</section>
@@ -633,7 +620,7 @@
 		<h2>System</h2>
 		<div class="info-row"><span class="lbl">Build</span><span class="build-ver">{version}</span></div>
 		<div class="info-row"><span class="lbl">Supabase</span><code>mtcmxrmykvthybwrlnvz</code></div>
-		<button class="btn btn-danger mt" onclick={signOut}>Abmelden</button>
+		<button class="btn btn-danger mt" onclick={signOut}>Sign out</button>
 	</section>
 
 </div>
@@ -687,14 +674,14 @@
 	.icon-btn.danger:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
 	.icon-btn:disabled { opacity: 0.4; cursor: default; }
 
-	/* Add user form */
+	/* Add crew form */
 	.add-user {
 		margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);
 		display: flex; flex-direction: column; gap: 10px;
 	}
 	.add-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
 	.role-row { display: flex; align-items: center; justify-content: space-between; }
-	.role-row label { font-size: 12px; color: var(--muted); }
+	.role-lbl { font-size: 12px; color: var(--muted); }
 	.role-picker { display: flex; gap: 4px; }
 	.role-opt {
 		padding: 4px 12px; border-radius: 5px; font-size: 12px; font-weight: 500; cursor: pointer;
@@ -718,25 +705,11 @@
 	.modal-actions { display: flex; gap: 8px; margin-top: 8px; }
 	.modal-actions .btn { flex: 1; }
 
-	/* ── Toggle / slider ── */
-	.toggle-btn {
-		width: 44px; height: 26px; background: var(--card2); border: 1px solid var(--border);
-		border-radius: 13px; position: relative; transition: background 0.2s, border-color 0.2s;
-		padding: 0; cursor: pointer; flex-shrink: 0;
-	}
-	.toggle-btn.on { background: var(--green); border-color: var(--green); }
-	.knob {
-		position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
-		background: var(--text); border-radius: 50%; transition: transform 0.2s; display: block;
-	}
-	.toggle-btn.on .knob { transform: translateX(18px); }
-
-	.field-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+	/* ── Slider ── */
+	.field-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
 	.field-row   { display: flex; justify-content: space-between; align-items: center; }
 	.field-label { font-size: 13px; color: var(--muted); }
 	.field-val   { font-size: 13px; font-weight: 600; color: var(--text); }
-	.field-sub   { font-size: 11px; color: var(--muted); margin-top: 2px; }
-	.toggle-row  { display: flex; justify-content: space-between; align-items: center; padding-top: 8px; border-top: 1px solid var(--border); }
 
 	.slider-controls { display: flex; align-items: center; gap: 8px; }
 	.step-btn {
