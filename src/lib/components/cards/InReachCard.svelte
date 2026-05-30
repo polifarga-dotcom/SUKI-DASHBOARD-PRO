@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { inreachPoints, inreachStale } from '$lib/stores/inreach.js';
@@ -189,6 +189,7 @@
 		}).addTo(map);
 
 		mapReady = true;
+		map.invalidateSize();   // recalc after async CSS load
 		updateMap();
 	}
 
@@ -200,13 +201,18 @@
 		pollTimer = setInterval(fetchInReach, 10 * 60_000);
 	});
 
+	// Init map as soon as hasData is known (config may load after onMount)
+	let mapInitStarted = $state(false);
+	$effect(() => {
+		if (hasData && !mapInitStarted) {
+			mapInitStarted = true;
+			initMap();
+		}
+	});
+
 	// Re-draw map whenever points update
 	$effect(() => {
 		if (pts && mapReady) updateMap();
-	});
-
-	onMount(async () => {
-		if (hasData) await initMap();
 	});
 
 	onDestroy(() => {
