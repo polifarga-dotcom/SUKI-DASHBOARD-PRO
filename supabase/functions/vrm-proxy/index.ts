@@ -1,12 +1,12 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const CORS = {
-  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
 };
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   const authHeader = req.headers.get('Authorization');
@@ -23,16 +23,16 @@ serve(async (req) => {
   );
   if (authErr || !user) return new Response('Unauthorized', { status: 401, headers: CORS });
 
-  // Optional overrides from request body (for settings test-before-save)
+  // Parse request body
+  let action = 'diagnostics';
   let overrideToken: string | undefined;
   let overrideId: number | undefined;
-  if (req.method === 'POST') {
-    try {
-      const body = await req.json();
-      if (body.token) overrideToken = body.token;
-      if (body.installation_id) overrideId = Number(body.installation_id);
-    } catch { /* no body */ }
-  }
+  try {
+    const body = await req.json();
+    if (body.action) action = body.action;
+    if (body.token) overrideToken = body.token;
+    if (body.installation_id) overrideId = Number(body.installation_id);
+  } catch { /* no body — use defaults */ }
 
   // Read credentials from DB
   const { data: cfg } = await supabase
@@ -42,21 +42,61 @@ serve(async (req) => {
     .single();
 
   const token = overrideToken ?? cfg?.vrm_api_token;
-  const id    = overrideId    ?? cfg?.vrm_installation_id;
+  const id    = overrideId   ?? cfg?.vrm_installation_id;
 
-  if (!token || !id) {
+  if (!token) {
     return new Response(
-      JSON.stringify({ error: 'VRM credentials not configured' }),
+      JSON.stringify({ error: 'VRM API token not configured' }),
       { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } }
     );
   }
 
-  // Proxy to VRM API
+  const vrmHeaders = { 'X-Authorization': `Token ${token}` };
+
+  // ── Discover installations for this account ──────────────────────────────
+  if (action === 'discover') {
+    // 1. Get user ID
+    const meRes = await fetch('https://vrmapi.victronenergy.com/v2/users/me', { headers: vrmHeaders });
+    if (!meRes.ok) {
+      const txt = await meRes.text();
+      return new Response(
+        JSON.stringify({ error: `VRM /users/me failed: ${meRes.status} ${txt}` }),
+        { status: meRes.status, headers: { ...CORS, 'Content-Type': 'application/json' } }
+      );
+    }
+    const meJson = await meRes.json();
+    const userId = meJson?.user?.id;
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: 'Could not read user ID from VRM' }),
+        { status: 502, headers: { ...CORS, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 2. Get installations list
+    const instRes = await fetch(
+      `https://vrmapi.victronenergy.com/v2/users/${userId}/installations`,
+      { headers: vrmHeaders }
+    );
+    const instJson = await instRes.json();
+    return new Response(JSON.stringify(instJson), {
+      status: instRes.status,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // ── Diagnostics (default) ────────────────────────────────────────────────
+  if (!id) {
+    return new Response(
+      JSON.stringify({ error: 'VRM installation ID not configured' }),
+      { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } }
+    );
+  }
+
   const vrmRes = await fetch(
     `https://vrmapi.victronenergy.com/v2/installations/${id}/diagnostics?count=1000`,
-    { headers: { 'X-Authorization': `Token ${token}` } }
+    { headers: vrmHeaders }
   );
-
   const data = await vrmRes.json();
   return new Response(JSON.stringify(data), {
     status: vrmRes.status,
