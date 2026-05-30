@@ -55,14 +55,17 @@
 			const ids = Object.keys(devsInfo);
 			if (!ids.length) { devices = []; loaded = true; return; }
 
-			// Show names + online status immediately (switch state still loading)
+			// Preserve last-known state across refreshes to avoid flicker
+			const prev = new Map(devices.map(d => [d.id, d.state]));
+
+			// Show names + online status immediately (switch state carries over or null on first load)
 			devices = ids.map(id => {
 				const info = devsInfo[id] ?? {};
 				return {
 					id,
 					name:   (info.name ?? id) as string,
 					online: Boolean(info.cloud_online ?? info.online),
-					state:  null,
+					state:  prev.get(id) ?? null,
 				};
 			}).sort((a, b) => a.name.localeCompare(b.name));
 
