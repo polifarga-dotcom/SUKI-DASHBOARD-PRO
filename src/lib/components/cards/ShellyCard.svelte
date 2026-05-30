@@ -1,12 +1,10 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
 	import { anchorConfig } from '$lib/stores/anchor.js';
 
 	type Device = { id: string; name: string; online: boolean; state: 0 | 1 | null };
 
 	let devices = $state<Device[]>([]);
-	let loaded = $state(false);
-	let pollTimer: ReturnType<typeof setInterval>;
+	let loaded  = $state(false);
 
 	const cfg = $derived($anchorConfig);
 
@@ -84,12 +82,13 @@
 		}
 	}
 
-	onMount(() => {
-		fetchDevices();
-		pollTimer = setInterval(fetchDevices, 30_000);
+	// ── Reactive start: fetch as soon as credentials are ready ───────────────
+	$effect(() => {
+		if (!apiBase()) return;
+		fetchDevices(); // immediate first fetch
+		const timer = setInterval(fetchDevices, 30_000);
+		return () => clearInterval(timer);
 	});
-
-	onDestroy(() => clearInterval(pollTimer));
 </script>
 
 {#if cfg?.shelly_cloud_server && (!loaded || devices.length > 0)}

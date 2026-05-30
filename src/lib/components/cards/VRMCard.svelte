@@ -9,14 +9,12 @@
 	let error = $state('');
 	let now   = $state(Math.floor(Date.now() / 1000));
 
-	let pollTimer: ReturnType<typeof setInterval>;
 	let tickTimer: ReturnType<typeof setInterval>;
 
 	const cfg = $derived($anchorConfig);
-	function apiReady() { return cfg?.vrm_api_token && cfg?.vrm_installation_id; }
+	function apiReady() { return !!(cfg?.vrm_api_token && cfg?.vrm_installation_id); }
 
 	async function fetchVRM() {
-		if (!apiReady()) return;
 		try {
 			const { data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy');
 			if (fnErr) { error = fnErr.message; return; }
@@ -25,12 +23,21 @@
 		} catch (e) { error = String(e); }
 	}
 
+	// ── Reactive start: fetch as soon as credentials are ready ────────────────
+	// $effect re-runs when cfg changes (null → loaded). Returns cleanup so the
+	// interval is always cleared on unmount or when credentials are removed.
+	$effect(() => {
+		if (!apiReady()) return;
+		fetchVRM(); // immediate first fetch
+		const timer = setInterval(fetchVRM, 60_000);
+		return () => clearInterval(timer);
+	});
+
+	// Tick timer for live GPS age counter (independent of credentials)
 	onMount(() => {
-		fetchVRM();
-		pollTimer = setInterval(fetchVRM, 60_000);
 		tickTimer = setInterval(() => { now = Math.floor(Date.now() / 1000); }, 1000);
 	});
-	onDestroy(() => { clearInterval(pollTimer); clearInterval(tickTimer); });
+	onDestroy(() => clearInterval(tickTimer));
 
 	// ── Formatters ─────────────────────────────────────────────────────────
 	function pct(v: number | null) { return v != null ? Math.round(v) : null; }
