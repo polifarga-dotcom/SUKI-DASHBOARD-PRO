@@ -185,35 +185,35 @@
 			<span class="clock">{clockStr}</span>
 			<span class="conn-dot" class:stale title={stale ? 'No data' : 'Live'}></span>
 		</div>
-	</header>
 
-	<!-- Boat picker dropdown -->
-	{#if boatPickerOpen}
-	<div class="boat-picker">
-		{#each boats as boat (boat.id)}
-		<button
-			class="boat-picker-item"
-			class:active={boat.id === activeBoat?.id}
-			onclick={() => switchBoat(boat)}
-		>
-			<span class="picker-name">{boat.name}</span>
-			<div class="picker-right">
-				<span class="picker-role" class:master={roles[boat.id] === 'admin'}>
-					{roles[boat.id] === 'admin' ? 'master' : 'crew'}
-				</span>
-				{#if boat.id === activeBoat?.id}<span class="check">✓</span>{/if}
-			</div>
-		</button>
-		{/each}
-		<div class="picker-divider"></div>
-		<button class="boat-picker-add" onclick={() => { boatPickerOpen = false; goto('/onboarding'); }}>
-			<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-				<line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/>
-			</svg>
-			Add boat
-		</button>
-	</div>
-	{/if}
+		<!-- Boat picker — inside header so position:absolute top:100% anchors correctly -->
+		{#if boatPickerOpen}
+		<div class="boat-picker">
+			{#each boats as boat (boat.id)}
+			<button
+				class="boat-picker-item"
+				class:active={boat.id === activeBoat?.id}
+				onclick={() => switchBoat(boat)}
+			>
+				<span class="picker-name">{boat.name}</span>
+				<div class="picker-right">
+					<span class="picker-role" class:master={roles[boat.id] === 'admin'}>
+						{roles[boat.id] === 'admin' ? 'master' : 'crew'}
+					</span>
+					{#if boat.id === activeBoat?.id}<span class="check">✓</span>{/if}
+				</div>
+			</button>
+			{/each}
+			<div class="picker-divider"></div>
+			<button class="boat-picker-add" onclick={() => { boatPickerOpen = false; goto('/onboarding'); }}>
+				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+					<line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/>
+				</svg>
+				Add boat
+			</button>
+		</div>
+		{/if}
+	</header>
 
 	<!-- Tab navigation -->
 	<nav class="tab-bar">
