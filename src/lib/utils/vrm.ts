@@ -59,19 +59,8 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		battMap.set(key, entry);
 	});
 
-	// Sort: primary battery first (instance 0), then by instance
-	const batteries = Array.from(battMap.values())
-		.filter(b => b.v != null || b.soc != null)
-		.sort((a, b) => a.instance - b.instance);
-
-	// Primary battery (first / instance 0)
-	const primary = batteries[0] ?? null;
-	const battery_soc = primary?.soc ?? null;
-	const battery_v   = primary?.v   ?? null;
-	const battery_a   = primary?.a   ?? null;
-	const battery_w   = primary?.w   ?? null;
-
 	// ── Individual MPPTs ──────────────────────────────────────────────────────
+	// Built BEFORE filtering batteries so we can exclude MPPT devices from battMap
 	const mpptMap = new Map<string, VRMMppt>();
 
 	const mpptPaths = ['/Yield/Power', '/Yield/User', '/Yield/System', '/Pv/V', '/State'];
@@ -88,7 +77,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 			pv_v: null, state: null,
 		};
 
-		if (r.dbusPath === '/Yield/Power')  entry.power_w        = v ?? 0;
+		if (r.dbusPath === '/Yield/Power')       entry.power_w        = v ?? 0;
 		else if (r.dbusPath === '/Yield/User')   entry.yield_today_wh  = (v ?? 0) * 1000;
 		else if (r.dbusPath === '/Yield/System') entry.yield_total_kwh = v;
 		else if (r.dbusPath === '/Pv/V')         entry.pv_v            = v;
@@ -100,6 +89,22 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	const mpptsArr = Array.from(mpptMap.values())
 		.filter(m => m.yield_today_wh > 0 || m.power_w > 0 || m.pv_v != null)
 		.sort((a, b) => b.power_w - a.power_w);
+
+	// ── Battery monitors — exclude MPPT chargers (they share /Dc/0/* paths) ──
+	// MPPTs appear in battMap because they expose /Dc/0/Voltage and /Dc/0/Current,
+	// but they never provide SOC. Use the cross-reference with mpptMap as the filter.
+	const mpptKeys = new Set(mpptMap.keys());
+	const batteries = Array.from(battMap.entries())
+		.filter(([key, b]) => !mpptKeys.has(key) && (b.v != null || b.soc != null))
+		.map(([, b]) => b)
+		.sort((a, b) => a.instance - b.instance);
+
+	// Primary battery (first / instance 0)
+	const primary = batteries[0] ?? null;
+	const battery_soc = primary?.soc ?? null;
+	const battery_v   = primary?.v   ?? null;
+	const battery_a   = primary?.a   ?? null;
+	const battery_w   = primary?.w   ?? null;
 
 	// ── Solar totals ──────────────────────────────────────────────────────────
 	const solar_w = mpptsArr.length > 0
