@@ -5,9 +5,11 @@
 	import { parseVRMDiagnostics, MPPT_STATE } from '$lib/utils/vrm.js';
 	import type { VRMData } from '$lib/types.js';
 
-	let data  = $state<VRMData | null>(null);
-	let error = $state('');
-	let now   = $state(Math.floor(Date.now() / 1000));
+	let data         = $state<VRMData | null>(null);
+	let error        = $state('');
+	let now          = $state(Math.floor(Date.now() / 1000));
+	let lastFetchAt  = $state<number | null>(null);   // epoch-s of our last successful API call
+
 	let tickTimer: ReturnType<typeof setInterval>;
 
 	const cfg = $derived($anchorConfig);
@@ -17,12 +19,13 @@
 		try {
 			const { data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy');
 			if (fnErr) { error = fnErr.message; return; }
-			data  = parseVRMDiagnostics(json?.records ?? []);
-			error = '';
+			data        = parseVRMDiagnostics(json?.records ?? []);
+			lastFetchAt = Math.floor(Date.now() / 1000);
+			error       = '';
 		} catch (e) { error = String(e); }
 	}
 
-	// Reactive start — fires as soon as credentials are loaded from Supabase
+	// Reactive start — triggers immediately when credentials load
 	$effect(() => {
 		if (!apiReady()) return;
 		fetchVRM();
@@ -30,7 +33,14 @@
 		return () => clearInterval(timer);
 	});
 
-	// Live tick for timestamps/GPS age counter
+	// Re-fetch immediately when user returns to the tab
+	$effect(() => {
+		const onVisible = () => { if (!document.hidden && apiReady()) fetchVRM(); };
+		document.addEventListener('visibilitychange', onVisible);
+		return () => document.removeEventListener('visibilitychange', onVisible);
+	});
+
+	// Tick: live seconds counter for GPS age + fetch age display
 	onMount(() => { tickTimer = setInterval(() => { now = Math.floor(Date.now() / 1000); }, 1000); });
 	onDestroy(() => clearInterval(tickTimer));
 
@@ -57,34 +67,37 @@
 		const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
 		return h > 0 ? `${h}h ${m}m` : `${m}m`;
 	}
-	function ageStr(ts: number | null) {
-		if (!ts) return '';
+
+	// Age of VRM cloud data (how old is the Cerbo's last upload)
+	function dataAgeStr(ts: number | null) {
+		if (!ts) return null;
 		const s = now - ts;
 		if (s < 90)   return 'Gerade eben';
-		if (s < 3600) return `Vor ${Math.floor(s / 60)} Min.`;
-		return `Vor ${Math.floor(s / 3600)} Std.`;
+		if (s < 3600) return `${Math.floor(s / 60)} Min. alt`;
+		return `${Math.floor(s / 3600)} Std. alt`;
 	}
-	// mm:ss after the first minute, plain seconds before
+	// Age of our last fetch from the API
+	function fetchAgeStr(ts: number | null) {
+		if (!ts) return null;
+		const s = now - ts;
+		if (s < 10)   return 'Jetzt';
+		if (s < 90)   return `${s} s`;
+		return `${Math.floor(s / 60)} Min.`;
+	}
+	// GPS age as mm:ss after the first minute
 	function gpsAgeStr(ts: number | null) {
 		if (!ts) return null;
 		const s = Math.max(0, now - ts);
 		const m = Math.floor(s / 60), sec = s % 60;
 		return m > 0 ? `${m}:${String(sec).padStart(2, '0')} min` : `${sec} s`;
 	}
-	function stale(ts: number | null)    { return ts ? (now - ts) > 180 : false; }
 	function gpsStale(ts: number | null) { return ts ? (now - ts) > 120 : false; }
 
 	function socColor(soc: number | null) {
 		if (soc == null) return 'var(--muted)';
-		if (soc > 50) return '#4ec7ff';   // Venus OS blue for good SOC
+		if (soc > 50) return 'var(--green)';
 		if (soc > 20) return 'var(--amber)';
 		return 'var(--red)';
-	}
-	function socBorderColor(soc: number | null) {
-		if (soc == null) return 'rgba(0,120,230,0.2)';
-		if (soc > 50) return 'rgba(0,160,255,0.45)';
-		if (soc > 20) return 'rgba(230,160,0,0.45)';
-		return 'rgba(220,60,60,0.45)';
 	}
 	function mpptStateLabel(st: number | null) { return st != null ? (MPPT_STATE[st] ?? `St.${st}`) : ''; }
 	function mpptStateColor(st: number | null) {
@@ -107,10 +120,9 @@
 
 	const SOLAR_C = '#f5c842';
 
-	// Max W across MPPTs — for power bar scaling
+	// Max W for MPPT bar scaling
 	const mpptMaxW = $derived(data ? Math.max(100, ...data.mpptsArr.map(m => m.power_w)) : 100);
 
-	// Section guards
 	const hasSolar   = $derived(!!data && (data.solar_w != null || data.mpptsArr.length > 0));
 	const hasBatt    = $derived(!!data && (data.battery_soc != null || data.battery_v != null));
 	const hasSecBatt = $derived(!!data && data.batteries.length > 1);
@@ -122,7 +134,7 @@
 	const isCharging    = $derived(!!data && (data.battery_a ?? 0) > 0.5);
 	const isDischarging = $derived(!!data && (data.battery_a ?? 0) < -0.5);
 
-	// Venus OS battery status label
+	// Battery status label (Venus OS style)
 	const battStatus = $derived(
 		!data ? '' :
 		(data.battery_a ?? 0) > 0.5  ? 'Laden' :
@@ -139,9 +151,17 @@
 	<!-- ── Header ──────────────────────────────────────────────── -->
 	<div class="hdr">
 		<span class="card-title">Victron VRM</span>
-		{#if data?.last_ts}
-			<span class="age" class:stale={stale(data.last_ts)}>{ageStr(data.last_ts)}</span>
-		{/if}
+		<div class="hdr-right">
+			{#if data?.last_ts}
+			<!-- Data age: how old is the Cerbo's last upload to VRM cloud -->
+			<span class="data-age" class:age-warn={data.last_ts != null && (now - data.last_ts) > 300}>
+				{dataAgeStr(data.last_ts)}
+			</span>
+			{/if}
+			{#if lastFetchAt}
+			<span class="fetch-dot" title="Abgeholt vor {fetchAgeStr(lastFetchAt)}">●</span>
+			{/if}
+		</div>
 	</div>
 
 	{#if error}
@@ -151,127 +171,160 @@
 	{:else}
 
 	<!-- ══════════════════════════════════════════════════════════
-	     ENERGY FLOW  —  Venus OS 3-box horizontal layout
+	     ENERGY FLOW — Venus OS style (local app reference)
+	     Top: Solar/Shore source box (full width)
+	     │
+	     Hub: [Battery] [──] [AC Load]
 	═══════════════════════════════════════════════════════════════ -->
-	<div class="vf">
-		<div class="vf-row">
+	<div class="vflow">
 
-			<!-- LEFT: Sources (Solar and/or Shore stacked) -->
-			{#if hasSolar || hasAcIn}
-			<div class="vf-sources">
-
-				{#if hasSolar}
-				<div class="vf-box vf-solar">
-					<div class="vf-box-head">
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-							stroke={SOLAR_C} stroke-width="2" stroke-linecap="round">
-							<circle cx="12" cy="12" r="4" fill={SOLAR_C} stroke="none"/>
-							<line x1="12" y1="2"  x2="12" y2="5"/>
-							<line x1="12" y1="19" x2="12" y2="22"/>
-							<line x1="4.22" y1="4.22"  x2="6.34" y2="6.34"/>
-							<line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/>
-							<line x1="2" y1="12" x2="5" y2="12"/>
-							<line x1="19" y1="12" x2="22" y2="12"/>
-							<line x1="4.22"  y1="19.78" x2="6.34" y2="17.66"/>
-							<line x1="17.66" y1="6.34"  x2="19.78" y2="4.22"/>
-						</svg>
-						<span class="vf-lbl">Solar</span>
-					</div>
-					<div class="vf-big" style="color:{SOLAR_C}">{fmtW(data.solar_w)}</div>
+		<!-- SOURCE BOX: Solar (full width), or Shore when no solar -->
+		{#if hasSolar}
+		<div class="vf-source vf-solar-src">
+			<div class="vf-src-top">
+				<div class="vf-src-lbl">
+					<!-- Sun icon -->
+					<svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+						stroke={SOLAR_C} stroke-width="2" stroke-linecap="round">
+						<circle cx="12" cy="12" r="4" fill={SOLAR_C} stroke="none"/>
+						<line x1="12" y1="2"  x2="12" y2="5"/>
+						<line x1="12" y1="19" x2="12" y2="22"/>
+						<line x1="4.22" y1="4.22"  x2="6.34" y2="6.34"/>
+						<line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/>
+						<line x1="2" y1="12" x2="5" y2="12"/>
+						<line x1="19" y1="12" x2="22" y2="12"/>
+						<line x1="4.22" y1="19.78" x2="6.34" y2="17.66"/>
+						<line x1="17.66" y1="6.34" x2="19.78" y2="4.22"/>
+					</svg>
+					Solar Total
+				</div>
+				<div class="vf-src-vals">
+					<span class="vf-src-big" style="color:{SOLAR_C}">{fmtW(data.solar_w)}</span>
 					{#if data.solar_yield_today_wh}
-					<div class="vf-sub">{fmtWh(data.solar_yield_today_wh)} heute</div>
+					<span class="vf-src-sub">{fmtWh(data.solar_yield_today_wh)} heute</span>
 					{/if}
 				</div>
-				{/if}
-
-				{#if hasAcIn}
-				<div class="vf-box vf-shore">
-					<div class="vf-box-head">
-						<svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-							stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M9 3v4M15 3v4M7 7h10v7a5 5 0 01-10 0V7z"/>
-							<path d="M12 19v2"/>
-						</svg>
-						<span class="vf-lbl">Landstrom</span>
-					</div>
-					<div class="vf-big" style="color:var(--accent)">{fmtW(data.ac_input_w)}</div>
-					{#if data.ac_input_v != null}
-					<div class="vf-sub">{fmtV(data.ac_input_v)}</div>
-					{/if}
-				</div>
-				{/if}
-
-			</div><!-- /vf-sources -->
-
-			<!-- Arrow → Battery -->
-			<div class="vf-arrow">
-				<div class="vf-line"></div>
-				<div class="vf-head"></div>
+			</div>
+			<!-- MPPT pills — compact summary per charger -->
+			{#if data.mpptsArr.length > 0}
+			<div class="vf-mppt-strip">
+				{#each data.mpptsArr as mppt}
+				<span class="vf-mppt-pill">
+					{mpptShortName(mppt.name)} <b style="color:{SOLAR_C}">{fmtW(mppt.power_w)}</b>
+				</span>
+				{/each}
 			</div>
 			{/if}
+			<!-- Shore power badge inside solar box if also connected -->
+			{#if hasAcIn}
+			<div class="vf-shore-inline">
+				<svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+					stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M9 3v4M15 3v4M7 7h10v7a5 5 0 01-10 0V7z"/>
+					<path d="M12 19v2"/>
+				</svg>
+				Landstrom ·
+				{#if data.ac_input_v != null}<span>{fmtV(data.ac_input_v)}</span>{/if}
+				{#if data.ac_input_w != null}<span>{fmtW(data.ac_input_w)}</span>{/if}
+			</div>
+			{/if}
+		</div>
 
-			<!-- CENTER: Battery (dominant box) -->
+		{:else if hasAcIn}
+		<!-- Shore only (no solar): show shore as source box -->
+		<div class="vf-source vf-shore-src">
+			<div class="vf-src-top">
+				<div class="vf-src-lbl">
+					<svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+						stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M9 3v4M15 3v4M7 7h10v7a5 5 0 01-10 0V7z"/>
+						<path d="M12 19v2"/>
+					</svg>
+					Landstrom
+				</div>
+				<div class="vf-src-vals">
+					<span class="vf-src-big" style="color:var(--accent)">{fmtW(data.ac_input_w)}</span>
+					{#if data.ac_input_v != null}
+					<span class="vf-src-sub">{fmtV(data.ac_input_v)}</span>
+					{/if}
+				</div>
+			</div>
+		</div>
+		{/if}
+
+		<!-- Vertical connector: source → hub -->
+		{#if hasSolar || hasAcIn}
+		<div class="vf-vc-wrap"><div class="vf-vc"></div></div>
+		{/if}
+
+		<!-- Hub row: [Battery] [──] [Load] -->
+		{#if hasBatt || hasLoad}
+		<div class="vf-hub">
+
+			<!-- Battery node -->
 			{#if hasBatt}
 			{@const soc = Math.round(data.battery_soc ?? 0)}
 			{@const col = socColor(data.battery_soc)}
-			{@const brd = socBorderColor(data.battery_soc)}
-			<div class="vf-box vf-batt" style="border-color:{brd}" class:vf-charging={isCharging}>
-				<div class="vf-box-head">
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+			<div class="vfn vfn-batt" style="border-color:{col}44">
+				<div class="vfn-icon">
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none"
 						stroke={col} stroke-width="2" stroke-linecap="round">
 						<rect x="2" y="7" width="16" height="11" rx="2"/>
 						<path d="M20 11v3"/>
 					</svg>
-					<span class="vf-lbl">Batterie</span>
 				</div>
+				<div class="vfn-lbl">Batterie</div>
 				{#if data.battery_soc != null}
-				<div class="vf-soc" style="color:{col}">{soc}%</div>
+				<div class="vfn-val" style="color:{col}">{soc}%</div>
 				{/if}
 				{#if battStatus}
-				<div class="vf-status" style="color:{col}aa">{battStatus}</div>
+				<div class="vfn-status" style="color:{col}bb">{battStatus}</div>
 				{/if}
-				<div class="vf-batt-vals">
-					{#if data.battery_v != null}<span class="vf-stat">{fmtV(data.battery_v)}</span>{/if}
+				<div class="vfn-detail">
+					{#if data.battery_v != null}<span>{fmtV(data.battery_v)}</span>{/if}
 					{#if data.battery_a != null}
-					<span class="vf-stat" class:c-green={isCharging} class:c-amber={isDischarging}>{fmtA(data.battery_a)}</span>
+					<span class:c-green={isCharging} class:c-amber={isDischarging}>{fmtA(data.battery_a)}</span>
 					{/if}
 				</div>
 				{#if data.battery_w != null}
-				<div class="vf-sub">{fmtW(data.battery_w)}</div>
+				<div class="vfn-sub">{fmtW(data.battery_w)}</div>
 				{/if}
 				{#if ttgStr(data.batteries[0]?.time_to_go_s)}
-				<div class="vf-ttg">⏱ {ttgStr(data.batteries[0].time_to_go_s)}</div>
+				<div class="vfn-ttg">⏱ {ttgStr(data.batteries[0].time_to_go_s)}</div>
 				{/if}
 			</div>
 			{/if}
 
-			<!-- Arrow → Load -->
-			{#if hasLoad && hasBatt}
-			<div class="vf-arrow">
-				<div class="vf-line"></div>
-				<div class="vf-head"></div>
-			</div>
+			<!-- Horizontal connector line -->
+			{#if hasBatt && hasLoad}
+			<div class="vf-hline"></div>
+			{/if}
 
-			<!-- RIGHT: Load -->
-			<div class="vf-box vf-load">
-				<div class="vf-box-head">
+			<!-- Load node -->
+			{#if hasLoad}
+			<div class="vfn vfn-load">
+				<div class="vfn-icon">
 					<svg width="13" height="13" viewBox="0 0 24 24" fill="var(--accent)" stroke="none">
 						<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
 					</svg>
-					<span class="vf-lbl">Verbrauch</span>
 				</div>
-				<div class="vf-big" style="color:var(--accent)">{fmtW(data.load_w)}</div>
+				<div class="vfn-lbl">Verbrauch</div>
+				<div class="vfn-val" style="color:var(--accent)">{fmtW(data.load_w)}</div>
 				{#if data.ac_output_v != null}
-				<div class="vf-sub">{fmtV(data.ac_output_v)}</div>
+				<div class="vfn-sub">{fmtV(data.ac_output_v)}</div>
 				{/if}
 			</div>
 			{/if}
 
-		</div><!-- /vf-row -->
-	</div><!-- /vf -->
+		</div><!-- /vf-hub -->
+		{/if}
+
+	</div><!-- /vflow -->
 
 	<!-- ══════════════════════════════════════════════════════════
 	     MPPT LADEREGLER — individual chargers with power bars
+	     (MPPT pills already shown in the solar source box above;
+	      this section shows the detailed per-charger breakdown)
 	═══════════════════════════════════════════════════════════════ -->
 	{#if data.mpptsArr.length > 0}
 	<div class="section">
@@ -288,7 +341,7 @@
 					</div>
 				</div>
 				<div class="mppt-bar-track">
-					<div class="mppt-bar-fill" style="width:{barPct}%; background:{SOLAR_C}80"></div>
+					<div class="mppt-bar-fill" style="width:{barPct}%; background:{SOLAR_C}70"></div>
 				</div>
 				<div class="mppt-meta">
 					{#if mppt.state != null}
@@ -412,115 +465,108 @@
 .vrm-card { display: flex; flex-direction: column; }
 
 /* ── Header ──────────────────────────────────────────────── */
-.hdr { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+.hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .card-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
-.age { font-size: 11px; color: var(--muted); }
-.age.stale { color: var(--amber); }
+.hdr-right { display: flex; align-items: center; gap: 6px; }
+/* Data age = how old is the Cerbo's upload to VRM */
+.data-age { font-size: 11px; color: var(--muted); }
+.data-age.age-warn { color: var(--amber); }
+/* Green dot = we have a recent fetch */
+.fetch-dot { font-size: 8px; color: var(--green); opacity: 0.7; }
+
 .loading { font-size: 13px; color: var(--muted); }
-.err { font-size: 13px; color: var(--red); }
+.err     { font-size: 13px; color: var(--red); }
 
-/* ══ ENERGY FLOW — Venus OS 3-box horizontal ══════════════ */
-.vf { margin-bottom: 6px; }
+/* ══ ENERGY FLOW — matches local SUKI app's Power Flow ════ */
+.vflow { display: flex; flex-direction: column; align-items: center; width: 100%; gap: 0; margin-bottom: 4px; }
 
-.vf-row {
-	display: flex;
-	align-items: flex-start;   /* boxes size to their content */
-	gap: 0;
+/* ── Source box (solar or shore, full width) ─────────────── */
+.vf-source {
+	width: 100%; border-radius: 8px; padding: 8px 12px;
 }
-
-/* Sources column: Solar and/or Shore stacked vertically */
-.vf-sources {
-	display: flex;
-	flex-direction: column;
-	gap: 5px;
-	flex: 1;
-	min-width: 0;
-}
-
-/* ── Venus OS-style boxes ─────────────────────────────────── */
-.vf-box {
-	border-radius: 10px;
-	padding: 10px 11px;
-	display: flex;
-	flex-direction: column;
-	gap: 3px;
-}
-
-/* Solar box: yellow tint */
-.vf-solar {
+.vf-solar-src {
 	background: rgba(245, 200, 66, 0.08);
 	border: 1px solid rgba(245, 200, 66, 0.25);
-	flex: 1;
+}
+.vf-shore-src {
+	background: rgba(0, 160, 230, 0.07);
+	border: 1px solid rgba(0, 160, 230, 0.25);
 }
 
-/* Shore/AC box: blue tint */
-.vf-shore {
-	background: rgba(0, 140, 230, 0.08);
-	border: 1px solid rgba(0, 140, 230, 0.25);
+.vf-src-top { display: flex; justify-content: space-between; align-items: center; }
+.vf-src-lbl {
+	font-size: 10px; color: var(--muted); text-transform: uppercase;
+	letter-spacing: 0.5px; display: flex; align-items: center; gap: 5px;
+}
+.vf-src-vals { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.vf-src-big  { font-size: 24px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.vf-src-sub  { font-size: 10px; color: var(--muted); }
+
+/* MPPT pills strip inside solar box */
+.vf-mppt-strip {
+	display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px;
+}
+.vf-mppt-pill {
+	font-size: 10px; color: var(--muted);
+	background: rgba(245, 200, 66, 0.07);
+	border: 1px solid rgba(245, 200, 66, 0.16);
+	border-radius: 4px; padding: 2px 7px;
+}
+.vf-mppt-pill b { font-weight: 600; }
+
+/* Shore badge inside solar box */
+.vf-shore-inline {
+	display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+	margin-top: 6px; font-size: 10px; color: var(--accent);
+	border-top: 1px solid rgba(245,200,66,0.12); padding-top: 5px;
 }
 
-/* Battery box: centre, dominant — border set inline from socBorderColor() */
-.vf-batt {
-	background: rgba(0, 80, 160, 0.12);
-	border: 1px solid rgba(0, 120, 230, 0.22); /* fallback, overridden inline */
-	flex: 1.4;
+/* ── Vertical connector: source → hub ───────────────────── */
+.vf-vc-wrap { display: flex; width: 100%; justify-content: center; }
+.vf-vc {
+	width: 2px; height: 16px;
+	background: linear-gradient(180deg, rgba(245,200,66,0.6), rgba(0,160,230,0.4));
+}
+
+/* ── Hub row ─────────────────────────────────────────────── */
+.vf-hub {
+	display: flex; align-items: stretch; width: 100%;
+}
+
+/* Horizontal connector between hub nodes */
+.vf-hline {
+	width: 12px; flex-shrink: 0;
+	display: flex; align-items: center;
+}
+.vf-hline::after {
+	content: ''; display: block; width: 100%; height: 2px;
+	background: rgba(255, 255, 255, 0.15);
+}
+
+/* Node boxes */
+.vfn {
+	flex: 1; border-radius: 8px; padding: 9px 8px; text-align: center;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	background: rgba(255, 255, 255, 0.03);
 	min-width: 0;
+	display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
-.vf-batt.vf-charging {
-	background: rgba(0, 100, 200, 0.18);
+.vfn-batt {
+	background: rgba(0, 100, 180, 0.10);
+	/* border-color set inline from socColor */
 }
-
-/* Load box: right */
-.vf-load {
-	background: rgba(0, 140, 200, 0.08);
-	border: 1px solid rgba(0, 140, 200, 0.22);
-	flex: 0.85;
-	min-width: 0;
+.vfn-load {
+	background: rgba(0, 160, 220, 0.07);
+	border-color: rgba(0, 160, 220, 0.22);
 }
 
-/* Box header: icon + label on one row */
-.vf-box-head {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	margin-bottom: 2px;
-}
-.vf-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
-
-/* Main values */
-.vf-big  { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.vf-soc  { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.vf-status { font-size: 10px; margin-top: -1px; }
-.vf-sub  { font-size: 10px; color: var(--muted); }
-.vf-ttg  { font-size: 10px; color: var(--accent); }
-
-.vf-batt-vals {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 4px 8px;
-	margin-top: 1px;
-}
-.vf-stat { font-size: 12px; font-variant-numeric: tabular-nums; }
-
-/* ── CSS Arrow  line + filled triangle ───────────────────── */
-.vf-arrow {
-	display: flex;
-	align-items: center;
-	align-self: center;    /* vertically centered relative to boxes */
-	padding: 0 3px;
-	flex-shrink: 0;
-}
-.vf-line {
-	width: 12px;
-	height: 1.5px;
-	background: rgba(0, 140, 255, 0.3);
-}
-.vf-head {
-	width: 0; height: 0;
-	border-top:    4px solid transparent;
-	border-bottom: 4px solid transparent;
-	border-left:   6px solid rgba(0, 140, 255, 0.3);
-}
+.vfn-icon { display: flex; justify-content: center; margin-bottom: 1px; }
+.vfn-lbl  { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.vfn-val  { font-size: 18px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.vfn-status { font-size: 10px; line-height: 1.2; }
+.vfn-detail { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; font-size: 11px; font-variant-numeric: tabular-nums; }
+.vfn-sub  { font-size: 10px; color: var(--muted); }
+.vfn-ttg  { font-size: 10px; color: var(--accent); }
 
 /* ── Sections ────────────────────────────────────────────── */
 .section { border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px; margin-top: 10px; }

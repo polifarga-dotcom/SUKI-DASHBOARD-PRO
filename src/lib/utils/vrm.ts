@@ -20,14 +20,44 @@ export const MPPT_STATE: Record<number, string> = {
 	7: 'Equalize', 252: 'Hub-1', 255: 'N/A',
 };
 
+// Tank fluid type → display name
+const FLUID_TYPE: Record<number, string> = {
+	0: 'Kraftstoff', 1: 'Frischwasser', 2: 'Abwasser',
+	3: 'Live Well', 4: 'Öl', 5: 'Schwarzwasser', 6: 'Diesel',
+};
+
 export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	const rows = attrs as DiagAttr[];
 
 	const find    = (path: string) => rows.find(r => r.dbusPath === path);
 	const findAll = (path: string) => rows.filter(r => r.dbusPath === path);
 
+	// ── Custom names — collected first, used everywhere ───────────────────────
+	// Venus OS lets users rename each device; these appear as /CustomName records.
+	const customNames = new Map<string, string>();
+	rows.forEach(r => {
+		if (r.dbusPath !== '/CustomName') return;
+		const raw = r.rawValue;
+		if (raw == null || String(raw).trim() === '') return;
+		customNames.set(`${r.Device}__${r.instance}`, String(raw).trim());
+	});
+
+	// Tank fluid types (numeric → label), used for default tank names
+	const fluidTypes = new Map<string, number>();
+	rows.forEach(r => {
+		if (r.dbusPath !== '/FluidType') return;
+		const v = num(r.rawValue);
+		if (v == null) return;
+		fluidTypes.set(`${r.Device}__${r.instance}`, Math.round(v));
+	});
+
+	// Helper: best display name for a Device+instance key
+	function deviceName(device: string, instance: number, fallback: string): string {
+		const key = `${device}__${instance}`;
+		return customNames.get(key) ?? (device ? device : fallback);
+	}
+
 	// ── Battery Monitors ──────────────────────────────────────────────────────
-	// Collect all unique (Device, instance) pairs that have battery data
 	const battMap = new Map<string, VRMBattery>();
 
 	const battPaths = [
@@ -42,7 +72,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 
 		const key = `${r.Device}__${r.instance}`;
 		const entry: VRMBattery = battMap.get(key) ?? {
-			name: r.Device || `Batterie ${r.instance}`,
+			name: deviceName(r.Device, r.instance, `Batterie ${r.instance}`),
 			instance: r.instance,
 			soc: null, v: null, a: null, w: null,
 			temp_c: null, time_to_go_s: null, consumed_ah: null,
@@ -60,9 +90,9 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	});
 
 	// ── Individual MPPTs ──────────────────────────────────────────────────────
-	// Built BEFORE filtering batteries so we can exclude MPPT devices from battMap
+	// Built BEFORE filtering batteries so we can cross-reference and exclude
+	// MPPT charger devices from the battery list (they share /Dc/0/* paths).
 	const mpptMap = new Map<string, VRMMppt>();
-
 	const mpptPaths = ['/Yield/Power', '/Yield/User', '/Yield/System', '/Pv/V', '/State'];
 
 	rows.forEach(r => {
@@ -71,13 +101,13 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 
 		const key = `${r.Device}__${r.instance}`;
 		const entry: VRMMppt = mpptMap.get(key) ?? {
-			name: r.Device || `MPPT ${r.instance}`,
+			name: deviceName(r.Device, r.instance, `MPPT ${r.instance}`),
 			instance: r.instance,
 			power_w: 0, yield_today_wh: 0, yield_total_kwh: null,
 			pv_v: null, state: null,
 		};
 
-		if (r.dbusPath === '/Yield/Power')       entry.power_w        = v ?? 0;
+		if (r.dbusPath === '/Yield/Power')       entry.power_w         = v ?? 0;
 		else if (r.dbusPath === '/Yield/User')   entry.yield_today_wh  = (v ?? 0) * 1000;
 		else if (r.dbusPath === '/Yield/System') entry.yield_total_kwh = v;
 		else if (r.dbusPath === '/Pv/V')         entry.pv_v            = v;
@@ -90,9 +120,9 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		.filter(m => m.yield_today_wh > 0 || m.power_w > 0 || m.pv_v != null)
 		.sort((a, b) => b.power_w - a.power_w);
 
-	// ── Battery monitors — exclude MPPT chargers (they share /Dc/0/* paths) ──
-	// MPPTs appear in battMap because they expose /Dc/0/Voltage and /Dc/0/Current,
-	// but they never provide SOC. Use the cross-reference with mpptMap as the filter.
+	// ── Battery monitors — exclude MPPT chargers ──────────────────────────────
+	// MPPTs appear in battMap because they share /Dc/0/Voltage & /Dc/0/Current
+	// with battery monitors, but they never provide SOC.
 	const mpptKeys = new Set(mpptMap.keys());
 	const batteries = Array.from(battMap.entries())
 		.filter(([key, b]) => !mpptKeys.has(key) && (b.v != null || b.soc != null))
@@ -129,7 +159,6 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	const load_w = acL.some(v => v > 0) ? acL.reduce((s, v) => s + v, 0) : (acOutP ?? null);
 
 	// ── Temperature & Humidity Sensors ───────────────────────────────────────
-	// Scan for /Temperature and /Humidity on any device
 	const tempMap = new Map<string, VRMTempSensor>();
 
 	rows.forEach(r => {
@@ -139,7 +168,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 
 		const key = `${r.Device}__${r.instance}`;
 		const entry: VRMTempSensor = tempMap.get(key) ?? {
-			name: r.Device || `Sensor ${r.instance}`,
+			name: deviceName(r.Device, r.instance, `Sensor ${r.instance}`),
 			instance: r.instance,
 			celsius: 0,
 			humidity: null,
@@ -151,8 +180,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		tempMap.set(key, entry);
 	});
 
-	// Also pick up battery temperature from the primary battery and add it
-	// only if not already in tempMap (avoid duplicates)
+	// Battery temperature from primary battery — add if not already in tempMap
 	if (primary?.temp_c != null) {
 		const key = `__batt_temp_${primary.instance}`;
 		if (!tempMap.has(key)) {
@@ -169,9 +197,23 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		.sort((a, b) => a.instance - b.instance);
 
 	// ── Tanks ─────────────────────────────────────────────────────────────────
-	const tanks = rows
-		.filter(r => r.dbusPath === '/Level')
-		.map(r => ({ name: r.Device || `Tank ${r.instance}`, level: num(r.rawValue) ?? 0 }));
+	const tanksSeen = new Set<string>();
+	const tanks = findAll('/Level')
+		.filter(r => {
+			// De-duplicate per device+instance
+			const k = `${r.Device}__${r.instance}`;
+			if (tanksSeen.has(k)) return false;
+			tanksSeen.add(k);
+			return num(r.rawValue) != null;
+		})
+		.map(r => {
+			const key = `${r.Device}__${r.instance}`;
+			// Prefer custom name, then device name, then fluid type label
+			const fluidType = fluidTypes.get(key);
+			const fallback  = fluidType != null ? (FLUID_TYPE[fluidType] ?? `Tank ${r.instance}`) : `Tank ${r.instance}`;
+			const name      = customNames.get(key) ?? (r.Device ? r.Device : fallback);
+			return { name, level: num(r.rawValue) ?? 0 };
+		});
 
 	// ── GPS ───────────────────────────────────────────────────────────────────
 	const gpsLatRow = find('/Position/Latitude');
