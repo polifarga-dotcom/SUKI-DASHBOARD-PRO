@@ -399,7 +399,7 @@
 
 	/* Map controls */
 	.ir-map-controls {
-		position: absolute; bottom: 10px; right: 10px;
+		position: absolute; top: 10px; right: 10px;
 		display: flex; flex-direction: column; gap: 4px; z-index: 1000;
 	}
 	.ir-map-btn {
