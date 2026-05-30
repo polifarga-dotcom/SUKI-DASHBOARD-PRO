@@ -26,33 +26,19 @@
 		return null;
 	}
 
-	/** Fetch current state for one device via v2 API (same CORS-allowed path as toggle). */
+	/** Fetch current state for one device via /device/status. */
 	async function fetchOneState(srv: string, key: string, id: string): Promise<0 | 1 | null> {
 		try {
-			const r = await fetch(
-				`https://${srv}/v2/devices/api/get?auth_key=${encodeURIComponent(key)}`,
-				{
-					method:  'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body:    JSON.stringify({ id }),
-				}
-			);
-			if (!r.ok) {
-				console.warn('[Shelly] /v2/devices/api/get returned', r.status, 'for', id);
-				return null;
-			}
+			const r = await fetch(`https://${srv}/device/status`, {
+				method:  'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body:    `auth_key=${encodeURIComponent(key)}&id=${encodeURIComponent(id)}`,
+			});
+			if (!r.ok) return null;
 			const j = await r.json();
-			// v2 response: { devices: [{ id, online, status: { "switch:0": { output: bool }, … } }] }
-			const dev = (j?.devices as Array<Record<string, unknown>> | undefined)?.[0];
-			const st = dev?.status as Record<string, unknown> | undefined;
-			if (st) return extractState(st);
-			// fallback: legacy shape { data: { device_status: { … } } }
-			const ds = (j?.data?.device_status ?? j?.data) as Record<string, unknown> | undefined;
+			const ds = j?.data?.device_status as Record<string, unknown> | undefined;
 			return ds ? extractState(ds) : null;
-		} catch (e) {
-			console.warn('[Shelly] fetchOneState error for', id, e);
-			return null;
-		}
+		} catch { return null; }
 	}
 
 	async function fetchDevices() {
@@ -60,39 +46,36 @@
 		if (!api) return;
 		try {
 			// ── Step 1: device list (names + online status) ──────────────────────
+			// Note: list returns `devices` (metadata) only — no devices_status.
+			// Online flag lives in devsInfo[id].cloud_online.
 			const listRes  = await fetch(`https://${api.srv}/interface/device/list?auth_key=${api.key}`);
 			const listJson = await listRes.json();
 
-			const devsInfo:   Record<string, Record<string, unknown>> = listJson?.data?.devices        ?? {};
-			const devsStatus: Record<string, Record<string, unknown>> = listJson?.data?.devices_status ?? {};
-
-			const ids = [...new Set([...Object.keys(devsInfo), ...Object.keys(devsStatus)])];
+			const devsInfo: Record<string, Record<string, unknown>> = listJson?.data?.devices ?? {};
+			const ids = Object.keys(devsInfo);
 			if (!ids.length) { devices = []; loaded = true; return; }
 
-			// Show names immediately (state still resolving)
+			// Show names + online status immediately (switch state still loading)
 			devices = ids.map(id => {
-				const info   = devsInfo[id]   ?? {};
-				const status = devsStatus[id] ?? {};
+				const info = devsInfo[id] ?? {};
 				return {
 					id,
-					name:   ((info.name ?? status.name ?? id) as string),
-					online: Boolean(status.online),
-					state:  extractState(status),   // best-effort from list; may be null
+					name:   (info.name ?? id) as string,
+					online: Boolean(info.cloud_online ?? info.online),
+					state:  null,
 				};
 			}).sort((a, b) => a.name.localeCompare(b.name));
 
 			loaded = true;
 
-			// ── Step 2: authoritative per-device status in parallel ───────────────
-			const states = await Promise.all(
-				ids.map(id => fetchOneState(api.srv, api.key, id).then(state => ({ id, state })))
-			);
-
-			// Merge: only overwrite if we got a real value
-			devices = devices.map(dev => {
-				const found = states.find(s => s.id === dev.id);
-				return found?.state !== null ? { ...dev, state: found!.state } : dev;
-			});
+			// ── Step 2: per-device status — sequential to respect rate limit (≈1 req/s) ──
+			for (const id of ids) {
+				await new Promise(r => setTimeout(r, 1000));
+				const state = await fetchOneState(api.srv, api.key, id);
+				if (state !== null) {
+					devices = devices.map(d => d.id === id ? { ...d, state } : d);
+				}
+			}
 
 		} catch {
 			loaded = true;
