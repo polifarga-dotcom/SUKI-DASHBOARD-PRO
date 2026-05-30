@@ -158,6 +158,17 @@
 		}
 	}
 
+	// ── Center map on track ───────────────────────────────────────────────────
+	function centerMap() {
+		if (!map || !L || !pts || pts.length === 0) return;
+		const latlngs = [...pts].reverse().map(p => [p.lat, p.lon] as [number, number]);
+		if (latlngs.length > 1) {
+			map.fitBounds(L.latLngBounds(latlngs), { padding: [20, 20], maxZoom: 13 });
+		} else {
+			map.setView([pts[0].lat, pts[0].lon], 11);
+		}
+	}
+
 	// ── Init map ──────────────────────────────────────────────────────────────
 	async function initMap() {
 		await new Promise(r => requestAnimationFrame(r));
@@ -234,6 +245,21 @@
 		<div class="ir-map-overlay">Connecting to InReach…</div>
 		{:else if pts.length === 0}
 		<div class="ir-map-overlay">No positions in the last 24 h</div>
+		{/if}
+		{#if mapReady}
+		<div class="ir-map-controls">
+			<button class="ir-map-btn" onclick={() => map?.zoomIn()}  aria-label="Zoom in">+</button>
+			<button class="ir-map-btn" onclick={() => map?.zoomOut()} aria-label="Zoom out">−</button>
+			<button class="ir-map-btn ir-map-btn-center" onclick={centerMap} aria-label="Center on track">
+				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+					<circle cx="8" cy="8" r="3"/>
+					<line x1="8" y1="1" x2="8" y2="4"/>
+					<line x1="8" y1="12" x2="8" y2="15"/>
+					<line x1="1" y1="8" x2="4" y2="8"/>
+					<line x1="12" y1="8" x2="15" y2="8"/>
+				</svg>
+			</button>
+		</div>
 		{/if}
 	</div>
 
@@ -365,6 +391,23 @@
 	}
 	/* Slightly darken OSM tiles for dark UI */
 	:global(.ir-map .leaflet-tile-pane) { filter: brightness(0.82) saturate(0.9); }
+
+	/* Map controls */
+	.ir-map-controls {
+		position: absolute; bottom: 10px; right: 10px;
+		display: flex; flex-direction: column; gap: 4px; z-index: 500;
+	}
+	.ir-map-btn {
+		width: 28px; height: 28px;
+		background: rgba(8,16,28,.82); border: 1px solid rgba(255,255,255,.15);
+		border-radius: 6px; color: var(--text);
+		font-size: 16px; font-weight: 500; line-height: 1;
+		display: flex; align-items: center; justify-content: center;
+		cursor: pointer; transition: background 0.15s;
+		padding: 0;
+	}
+	.ir-map-btn:hover { background: rgba(0,200,255,.18); border-color: rgba(0,200,255,.4); }
+	.ir-map-btn-center { margin-top: 4px; color: #00c8ff; }
 
 	/* Data grid */
 	.ir-grid {
