@@ -1,4 +1,4 @@
-import type { VRMData } from '$lib/types.js';
+import type { VRMData, VRMMppt } from '$lib/types.js';
 
 type DiagAttr = {
 	Device: string;
@@ -17,41 +17,99 @@ function num(v: string | number | null | undefined): number | null {
 export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	const rows = attrs as DiagAttr[];
 
-	const find = (path: string) => rows.find(r => r.dbusPath === path);
+	const find    = (path: string) => rows.find(r => r.dbusPath === path);
 	const findAll = (path: string) => rows.filter(r => r.dbusPath === path);
 
-	// Battery (Battery Monitor or Multi/Quattro DC side)
-	const battery_soc = num(find('/Dc/0/Soc')?.rawValue);
-	const battery_v   = num(find('/Dc/0/Voltage')?.rawValue);
-	const battery_a   = num(find('/Dc/0/Current')?.rawValue);
-	const battery_w   = num(find('/Dc/0/Power')?.rawValue);
+	// ── Battery ───────────────────────────────────────────────────────────────
+	// SOC may live on the battery monitor (/Dc/0/Soc) or vebus (/Soc)
+	const battery_soc =
+		num(find('/Dc/0/Soc')?.rawValue) ??
+		num(rows.find(r => r.dbusPath === '/Soc')?.rawValue);
 
-	// Solar — sum across all MPPT chargers
-	const solarPowerAttrs = findAll('/Yield/Power');
-	const solar_w = solarPowerAttrs.length
-		? solarPowerAttrs.reduce((s, r) => s + (num(r.rawValue) ?? 0), 0)
+	const battery_v = num(find('/Dc/0/Voltage')?.rawValue);
+	const battery_a = num(find('/Dc/0/Current')?.rawValue);
+	const battery_w = num(find('/Dc/0/Power')?.rawValue);
+
+	// ── Individual MPPTs ──────────────────────────────────────────────────────
+	const mpptMap = new Map<string, VRMMppt>();
+
+	findAll('/Yield/Power').forEach(r => {
+		const key = `${r.Device}__${r.instance}`;
+		const entry = mpptMap.get(key) ?? {
+			name: r.Device || `MPPT ${r.instance}`,
+			instance: r.instance,
+			power_w: 0,
+			yield_today_wh: 0,
+			pv_v: null,
+		};
+		entry.power_w = num(r.rawValue) ?? 0;
+		mpptMap.set(key, entry);
+	});
+
+	findAll('/Yield/User').forEach(r => {
+		const key = `${r.Device}__${r.instance}`;
+		const entry = mpptMap.get(key) ?? {
+			name: r.Device || `MPPT ${r.instance}`,
+			instance: r.instance,
+			power_w: 0,
+			yield_today_wh: 0,
+			pv_v: null,
+		};
+		entry.yield_today_wh = (num(r.rawValue) ?? 0) * 1000; // kWh → Wh
+		mpptMap.set(key, entry);
+	});
+
+	findAll('/Pv/V').forEach(r => {
+		const key = `${r.Device}__${r.instance}`;
+		const entry = mpptMap.get(key);
+		if (entry) { entry.pv_v = num(r.rawValue); mpptMap.set(key, entry); }
+	});
+
+	// Sort by power descending (active first)
+	const mpptsArr = Array.from(mpptMap.values()).sort((a, b) => b.power_w - a.power_w);
+
+	// ── Solar totals ──────────────────────────────────────────────────────────
+	const solar_w = mpptsArr.length > 0
+		? mpptsArr.reduce((s, m) => s + m.power_w, 0)
 		: null;
 
-	// Solar yield today — VRM stores in kWh, multiply to Wh for consistency
-	const solarYieldAttrs = findAll('/Yield/User');
-	const solar_yield_today_wh = solarYieldAttrs.length
-		? solarYieldAttrs.reduce((s, r) => s + (num(r.rawValue) ?? 0), 0) * 1000
+	const solar_yield_today_wh = mpptsArr.length > 0
+		? mpptsArr.reduce((s, m) => s + m.yield_today_wh, 0)
 		: null;
 
-	// Tanks — group by device+instance
-	const tankAttrs = rows.filter(r => r.dbusPath === '/Level');
-	const tanks = tankAttrs.map(r => ({
-		name: r.Device || `Tank ${r.instance}`,
-		level: num(r.rawValue) ?? 0,
-	}));
+	// ── AC Load (Vebus / Multi / Quattro) ─────────────────────────────────────
+	const acL1 = num(find('/Ac/Consumption/L1/Power')?.rawValue);
+	const acL2 = num(find('/Ac/Consumption/L2/Power')?.rawValue);
+	const acL3 = num(find('/Ac/Consumption/L3/Power')?.rawValue);
+	const load_w = (acL1 != null || acL2 != null || acL3 != null)
+		? (acL1 ?? 0) + (acL2 ?? 0) + (acL3 ?? 0)
+		: null;
 
-	// GPS
-	const gps_lat = num(find('/Position/Latitude')?.rawValue);
-	const gps_lon = num(find('/Position/Longitude')?.rawValue);
+	// ── Tanks ─────────────────────────────────────────────────────────────────
+	const tanks = rows
+		.filter(r => r.dbusPath === '/Level')
+		.map(r => ({
+			name: r.Device || `Tank ${r.instance}`,
+			level: num(r.rawValue) ?? 0,
+		}));
 
-	// Timestamp from latest attribute
+	// ── GPS ───────────────────────────────────────────────────────────────────
+	const gpsLatRow = find('/Position/Latitude');
+	const gpsLonRow = find('/Position/Longitude');
+	const gps_lat = num(gpsLatRow?.rawValue);
+	const gps_lon = num(gpsLonRow?.rawValue);
+	const gps_ts  = gpsLatRow?.timestamp ?? gpsLonRow?.timestamp ?? null;
+
+	// ── Overall data freshness ────────────────────────────────────────────────
 	const timestamps = rows.map(r => r.timestamp).filter(Boolean) as number[];
 	const last_ts = timestamps.length ? Math.max(...timestamps) : null;
 
-	return { battery_soc, battery_v, battery_a, battery_w, solar_w, solar_yield_today_wh, tanks, gps_lat, gps_lon, last_ts };
+	return {
+		battery_soc, battery_v, battery_a, battery_w,
+		solar_w, solar_yield_today_wh, mpptsArr,
+		load_w,
+		tanks,
+		gps_lat, gps_lon, gps_ts,
+		last_ts,
+	};
 }

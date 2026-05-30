@@ -87,6 +87,14 @@ export type AnchorConfig = {
 	vrm_installation_id: number | null;
 };
 
+export type VRMMppt = {
+	name: string;
+	instance: number;
+	power_w: number;
+	yield_today_wh: number;
+	pv_v: number | null;
+};
+
 export type VRMData = {
 	battery_soc: number | null;
 	battery_v: number | null;
@@ -94,9 +102,12 @@ export type VRMData = {
 	battery_w: number | null;
 	solar_w: number | null;
 	solar_yield_today_wh: number | null;
+	mpptsArr: VRMMppt[];
+	load_w: number | null;
 	tanks: { name: string; level: number }[];
 	gps_lat: number | null;
 	gps_lon: number | null;
+	gps_ts: number | null;
 	last_ts: number | null;
 };
 
