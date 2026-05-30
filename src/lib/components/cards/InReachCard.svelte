@@ -246,7 +246,6 @@
 		{:else if pts.length === 0}
 		<div class="ir-map-overlay">No positions in the last 24 h</div>
 		{/if}
-		{#if mapReady}
 		<div class="ir-map-controls">
 			<button class="ir-map-btn" onclick={() => map?.zoomIn()}  aria-label="Zoom in">+</button>
 			<button class="ir-map-btn" onclick={() => map?.zoomOut()} aria-label="Zoom out">−</button>
@@ -260,7 +259,6 @@
 				</svg>
 			</button>
 		</div>
-		{/if}
 	</div>
 
 	{#if latest}
@@ -395,7 +393,7 @@
 	/* Map controls */
 	.ir-map-controls {
 		position: absolute; bottom: 10px; right: 10px;
-		display: flex; flex-direction: column; gap: 4px; z-index: 500;
+		display: flex; flex-direction: column; gap: 4px; z-index: 1000;
 	}
 	.ir-map-btn {
 		width: 28px; height: 28px;
