@@ -196,13 +196,14 @@
 	// ── Reactivity ────────────────────────────────────────────────────────────
 	$effect(() => {
 		if (!hasData) { loaded = true; return; }
+		loaded = false;   // reset so "Connecting…" overlay shows while fetching
 		fetchInReach();
 		clearInterval(pollTimer);
 		pollTimer = setInterval(fetchInReach, 10 * 60_000);
 	});
 
 	// Init map as soon as hasData is known (config may load after onMount)
-	let mapInitStarted = $state(false);
+	let mapInitStarted = false;
 	$effect(() => {
 		if (hasData && !mapInitStarted) {
 			mapInitStarted = true;
@@ -221,7 +222,7 @@
 	});
 </script>
 
-{#if hasData && (loaded === false || (pts !== null) || stale)}
+{#if hasData}
 <div class="inreach-card card" class:emergency={latest?.in_emergency}>
 
 	<!-- Header -->
