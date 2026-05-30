@@ -1,29 +1,75 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { inreachPoints, inreachStale } from '$lib/stores/inreach.js';
 	import type { InReachPoint } from '$lib/types.js';
 
+	// ── Leaflet ──────────────────────────────────────────────────────────────
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let L: typeof import('leaflet') | null = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let map: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let trackLine: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let posMarker: any = null;
+	let mapEl: HTMLDivElement;
+	let mapReady = $state(false);
+
+	// ── Polling ───────────────────────────────────────────────────────────────
 	let pollTimer: ReturnType<typeof setInterval>;
 	let loaded = $state(false);
 
-	const cfg = $derived($anchorConfig);
-	const pts  = $derived($inreachPoints);
-
-	const latest  = $derived<InReachPoint | null>(pts?.[0] ?? null);
+	const cfg     = $derived($anchorConfig);
+	const pts     = $derived($inreachPoints);
 	const hasData = $derived(!!cfg?.inreach_mapshare_id);
+	const latest  = $derived<InReachPoint | null>(pts?.[0] ?? null);
+	const stale   = $derived($inreachStale);
 
-	// ── Data age ──────────────────────────────────────────────────────────────
+	// ── Haversine distance (km) ───────────────────────────────────────────────
+	function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+		const R = 6371;
+		const dLat = (lat2 - lat1) * Math.PI / 180;
+		const dLon = (lon2 - lon1) * Math.PI / 180;
+		const a = Math.sin(dLat / 2) ** 2 +
+			Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+			Math.sin(dLon / 2) ** 2;
+		return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+	}
+
+	// ── Total distance from all track points ──────────────────────────────────
+	const totalNm = $derived(() => {
+		if (!pts || pts.length < 2) return null;
+		const sorted = [...pts].reverse(); // oldest→newest
+		let km = 0;
+		for (let i = 1; i < sorted.length; i++) {
+			km += haversine(sorted[i-1].lat, sorted[i-1].lon, sorted[i].lat, sorted[i].lon);
+		}
+		return (km / 1.852).toFixed(1);
+	});
+
+	// ── Duration (oldest → newest) ────────────────────────────────────────────
+	const durationStr = $derived(() => {
+		if (!pts || pts.length < 2) return null;
+		const oldest = pts[pts.length - 1].timestamp;
+		const newest = pts[0].timestamp;
+		if (!oldest || !newest) return null;
+		const ms = new Date(newest).getTime() - new Date(oldest).getTime();
+		const h = Math.floor(ms / 3_600_000);
+		const m = Math.floor((ms % 3_600_000) / 60_000);
+		return h > 0 ? `${h}h ${m}m` : `${m}m`;
+	});
+
+	// ── Age of latest fix ─────────────────────────────────────────────────────
 	function ageStr(ts: string): string {
 		if (!ts) return '—';
 		const diff = Date.now() - new Date(ts).getTime();
-		const min  = Math.floor(diff / 60_000);
-		if (min < 1)   return 'just now';
-		if (min < 60)  return `${min} min ago`;
+		const min = Math.floor(diff / 60_000);
+		if (min < 1)  return 'just now';
+		if (min < 60) return `${min} min ago`;
 		const h = Math.floor(min / 60);
-		if (h  < 24)   return `${h} h ago`;
-		return `${Math.floor(h / 24)} d ago`;
+		return h < 24 ? `${h} h ago` : `${Math.floor(h / 24)} d ago`;
 	}
 
 	// ── Format lat/lon ────────────────────────────────────────────────────────
@@ -34,18 +80,24 @@
 		const m   = ((abs - d) * 60).toFixed(3);
 		return `${d}° ${m}′ ${dir}`;
 	}
-	function fmtCoord(lat: number, lon: number): string {
-		return `${fmtDeg(lat,'N','S')}  ${fmtDeg(lon,'E','W')}`;
-	}
 
-	// ── Course arrow (Unicode) ────────────────────────────────────────────────
+	// ── Course arrow ──────────────────────────────────────────────────────────
 	function courseArrow(deg: number | null): string {
 		if (deg === null) return '';
 		const arrows = ['↑','↗','→','↘','↓','↙','←','↖'];
 		return arrows[Math.round(deg / 45) % 8];
 	}
 
-	// ── Fetch ─────────────────────────────────────────────────────────────────
+	// ── Messages (unique, newest first) ───────────────────────────────────────
+	const messages = $derived(() => {
+		if (!pts) return [];
+		const seen = new Set<string>();
+		return pts
+			.filter(p => p.message && !seen.has(p.message) && seen.add(p.message))
+			.slice(0, 3);
+	});
+
+	// ── Fetch data ────────────────────────────────────────────────────────────
 	async function fetchInReach() {
 		const id = cfg?.inreach_mapshare_id;
 		if (!id) return;
@@ -54,13 +106,11 @@
 		try {
 			let qs = `id=${encodeURIComponent(id)}&hours=24`;
 			if (pw) qs += `&password=${encodeURIComponent(pw)}`;
-
 			const res = await fetch(
 				`${PUBLIC_SUPABASE_URL}/functions/v1/inreach-proxy?${qs}`,
 				{ headers: { 'apikey': PUBLIC_SUPABASE_ANON_KEY } }
 			);
 			const result = await res.json();
-
 			if (result?.ok) {
 				inreachPoints.set(result.points ?? []);
 				inreachStale.set(false);
@@ -73,80 +123,188 @@
 		loaded = true;
 	}
 
+	// ── Update map when points change ─────────────────────────────────────────
+	function updateMap() {
+		if (!map || !L || !pts || pts.length === 0) return;
+
+		const sorted = [...pts].reverse(); // oldest → newest for polyline
+		const latlngs = sorted.map(p => [p.lat, p.lon] as [number, number]);
+
+		// Track polyline
+		if (trackLine) { trackLine.remove(); trackLine = null; }
+		if (latlngs.length > 1) {
+			trackLine = L.polyline(latlngs, {
+				color: '#00c8ff', weight: 2.5, opacity: 0.85,
+			}).addTo(map);
+		}
+
+		// Position marker (latest point)
+		const last = pts[0];
+		const markerHtml = `<div style="
+			width:12px;height:12px;border-radius:50%;
+			background:#00c8ff;border:2px solid #fff;
+			box-shadow:0 0 6px rgba(0,200,255,.8);
+		"></div>`;
+		const icon = L.divIcon({ className: '', html: markerHtml, iconSize: [12, 12], iconAnchor: [6, 6] });
+
+		if (posMarker) { posMarker.remove(); posMarker = null; }
+		posMarker = L.marker([last.lat, last.lon], { icon }).addTo(map);
+
+		// Fit bounds with some padding
+		if (latlngs.length > 1) {
+			map.fitBounds(L.latLngBounds(latlngs), { padding: [20, 20], maxZoom: 13 });
+		} else {
+			map.setView([last.lat, last.lon], 11);
+		}
+	}
+
+	// ── Init map ──────────────────────────────────────────────────────────────
+	async function initMap() {
+		await new Promise(r => requestAnimationFrame(r));
+		await new Promise(r => requestAnimationFrame(r));
+
+		L = await import('leaflet') as typeof import('leaflet');
+		await import('leaflet/dist/leaflet.css');
+
+		if (!mapEl) return;
+		map = L.map(mapEl, { zoomControl: false, attributionControl: false });
+
+		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+			maxNativeZoom: 19, maxZoom: 22,
+		}).addTo(map);
+
+		L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+			maxNativeZoom: 18, maxZoom: 22, opacity: 0.9,
+		}).addTo(map);
+
+		mapReady = true;
+		updateMap();
+	}
+
+	// ── Reactivity ────────────────────────────────────────────────────────────
 	$effect(() => {
 		if (!hasData) { loaded = true; return; }
 		fetchInReach();
 		clearInterval(pollTimer);
-		pollTimer = setInterval(fetchInReach, 10 * 60_000); // every 10 min
+		pollTimer = setInterval(fetchInReach, 10 * 60_000);
 	});
 
-	onDestroy(() => clearInterval(pollTimer));
+	// Re-draw map whenever points update
+	$effect(() => {
+		if (pts && mapReady) updateMap();
+	});
+
+	onMount(async () => {
+		if (hasData) await initMap();
+	});
+
+	onDestroy(() => {
+		clearInterval(pollTimer);
+		map?.remove();
+	});
 </script>
 
-{#if hasData && (loaded === false || (pts !== null && pts.length > 0) || $inreachStale)}
-<div class="card inreach-card" class:emergency={latest?.in_emergency}>
+{#if hasData && (loaded === false || (pts !== null) || stale)}
+<div class="inreach-card card" class:emergency={latest?.in_emergency}>
 
-	<div class="card-header">
-		<span class="card-title">
-			<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-				<circle cx="10" cy="10" r="8"/>
-				<path d="M10 6v4l3 2"/>
+	<!-- Header -->
+	<div class="ir-header">
+		<span class="ir-title">
+			<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M12 2C12 2 16 5 16 10a4 4 0 0 1-8 0C8 5 12 2 12 2z"/>
+				<circle cx="12" cy="10" r="1.5" fill="currentColor" stroke="none"/>
+				<path d="M12 14v4M9 18h6"/>
 			</svg>
-			{latest?.device_name ?? 'InReach'}
+			Garmin InReach
 		</span>
-		<span class="card-age" class:stale={$inreachStale}>
-			{#if $inreachStale}No signal{:else if latest}{ageStr(latest.timestamp)}{:else}—{/if}
+		<span class="ir-age" class:stale>
+			{#if stale}No signal{:else if latest}{ageStr(latest.timestamp)}{:else}—{/if}
+			<span class="ir-dot" class:stale></span>
 		</span>
 	</div>
 
 	{#if latest?.in_emergency}
-	<div class="emergency-banner">🚨 EMERGENCY ACTIVE</div>
+	<div class="ir-emergency">🚨 EMERGENCY ACTIVE</div>
 	{/if}
 
+	<!-- Map -->
+	<div class="ir-map-wrap">
+		<div class="ir-map" bind:this={mapEl}></div>
+		{#if !loaded || !pts}
+		<div class="ir-map-overlay">Connecting to InReach…</div>
+		{:else if pts.length === 0}
+		<div class="ir-map-overlay">No positions in the last 24 h</div>
+		{/if}
+	</div>
+
 	{#if latest}
-	<div class="inreach-grid">
+	<!-- Data grid -->
+	<div class="ir-grid">
 		<!-- Position -->
-		<div class="ir-item full">
-			<span class="ir-label">Position</span>
-			<span class="ir-val coord">{fmtCoord(latest.lat, latest.lon)}</span>
+		<div class="ir-cell span2">
+			<span class="ir-lbl">Position</span>
+			<span class="ir-val mono">
+				{fmtDeg(latest.lat, 'N', 'S')}<br>
+				{fmtDeg(latest.lon, 'E', 'W')}
+			</span>
 		</div>
 
 		<!-- Speed -->
 		{#if latest.speed_kn !== null}
-		<div class="ir-item">
-			<span class="ir-label">Speed</span>
+		<div class="ir-cell">
+			<span class="ir-lbl">Speed</span>
 			<span class="ir-val">{latest.speed_kn.toFixed(1)} kn</span>
 		</div>
 		{/if}
 
 		<!-- Course -->
 		{#if latest.course_deg !== null}
-		<div class="ir-item">
-			<span class="ir-label">Course</span>
+		<div class="ir-cell">
+			<span class="ir-lbl">Course</span>
 			<span class="ir-val">{courseArrow(latest.course_deg)} {Math.round(latest.course_deg)}°</span>
 		</div>
 		{/if}
 
-		<!-- Track count -->
-		{#if pts && pts.length > 1}
-		<div class="ir-item">
-			<span class="ir-label">Track</span>
-			<span class="ir-val">{pts.length} points</span>
+		<!-- Total distance -->
+		{#if totalNm()}
+		<div class="ir-cell">
+			<span class="ir-lbl">Distance (24h)</span>
+			<span class="ir-val">{totalNm()} nm</span>
 		</div>
 		{/if}
 
-		<!-- Last message -->
-		{#if latest.message}
-		<div class="ir-item full">
-			<span class="ir-label">Last message</span>
-			<span class="ir-val message">"{latest.message}"</span>
+		<!-- Duration -->
+		{#if durationStr()}
+		<div class="ir-cell">
+			<span class="ir-lbl">Track duration</span>
+			<span class="ir-val">{durationStr()}</span>
 		</div>
 		{/if}
+
+		<!-- Track points -->
+		{#if pts && pts.length > 0}
+		<div class="ir-cell">
+			<span class="ir-lbl">Track points</span>
+			<span class="ir-val">{pts.length}</span>
+		</div>
+		{/if}
+
+		<!-- Altitude -->
+		{#if latest.altitude_m !== null}
+		<div class="ir-cell">
+			<span class="ir-lbl">Altitude</span>
+			<span class="ir-val">{Math.round(latest.altitude_m)} m</span>
+		</div>
+		{/if}
+
+		<!-- Messages -->
+		{#each messages() as msg}
+		<div class="ir-cell span2">
+			<span class="ir-lbl">Message</span>
+			<span class="ir-val ir-msg">"{msg.message}"</span>
+		</div>
+		{/each}
 	</div>
-	{:else if !loaded}
-	<div class="ir-loading">Connecting to InReach…</div>
-	{:else}
-	<div class="ir-loading">No position data in the last 24 h</div>
 	{/if}
 
 </div>
@@ -154,6 +312,8 @@
 
 <style>
 	.inreach-card {
+		padding: 0;
+		overflow: hidden;
 		border-color: var(--border);
 		transition: border-color 0.3s;
 	}
@@ -162,49 +322,72 @@
 		box-shadow: 0 0 0 1px var(--red);
 	}
 
-	.card-header {
+	/* Header */
+	.ir-header {
 		display: flex; justify-content: space-between; align-items: center;
-		margin-bottom: 10px;
+		padding: 10px 12px 8px;
 	}
-	.card-title {
+	.ir-title {
 		display: flex; align-items: center; gap: 5px;
 		font-size: 11px; font-weight: 600; text-transform: uppercase;
 		letter-spacing: 0.8px; color: var(--muted);
 	}
-	.card-age {
+	.ir-age {
+		display: flex; align-items: center; gap: 5px;
 		font-size: 10px; color: var(--muted);
 	}
-	.card-age.stale { color: var(--amber); }
+	.ir-dot {
+		width: 6px; height: 6px; border-radius: 50%;
+		background: var(--green); animation: pulse-live 2s ease-in-out infinite;
+	}
+	.ir-dot.stale { background: var(--amber); animation: none; }
+	@keyframes pulse-live { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-	.emergency-banner {
-		background: rgba(239,68,68,.15); border: 1px solid var(--red);
+	.ir-emergency {
+		margin: 0 12px 8px;
+		background: rgba(239,68,68,.12); border: 1px solid var(--red);
 		color: var(--red); border-radius: 6px; padding: 6px 10px;
-		font-size: 12px; font-weight: 700; text-align: center;
-		margin-bottom: 10px; letter-spacing: 0.5px;
+		font-size: 12px; font-weight: 700; text-align: center; letter-spacing: 0.5px;
 	}
 
-	.inreach-grid {
-		display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+	/* Map */
+	.ir-map-wrap {
+		position: relative; height: 220px; background: #0a1520;
 	}
-	.ir-item {
+	.ir-map {
+		width: 100%; height: 100%;
+	}
+	.ir-map-overlay {
+		position: absolute; inset: 0;
+		display: flex; align-items: center; justify-content: center;
+		font-size: 12px; color: var(--muted);
+		background: rgba(8,16,28,.85);
+	}
+	/* Slightly darken OSM tiles for dark UI */
+	:global(.ir-map .leaflet-tile-pane) { filter: brightness(0.82) saturate(0.9); }
+
+	/* Data grid */
+	.ir-grid {
+		display: grid; grid-template-columns: 1fr 1fr;
+		gap: 1px; background: var(--border);
+		border-top: 1px solid var(--border);
+	}
+	.ir-cell {
 		display: flex; flex-direction: column; gap: 2px;
-		background: var(--card2); border-radius: 6px; padding: 7px 9px;
+		background: var(--card); padding: 8px 12px;
 	}
-	.ir-item.full { grid-column: 1 / -1; }
-	.ir-label {
+	.ir-cell.span2 { grid-column: 1 / -1; }
+	.ir-lbl {
 		font-size: 9px; font-weight: 600; text-transform: uppercase;
 		letter-spacing: 0.6px; color: var(--muted);
 	}
 	.ir-val {
-		font-size: 13px; font-variant-numeric: tabular-nums; color: var(--text);
+		font-size: 13px; color: var(--text);
+		font-variant-numeric: tabular-nums; line-height: 1.3;
 	}
-	.ir-val.coord { font-size: 11px; line-height: 1.4; }
-	.ir-val.message {
-		font-size: 12px; font-style: italic; color: var(--accent);
+	.ir-val.mono { font-size: 11px; }
+	.ir-val.ir-msg {
+		font-style: italic; color: var(--accent); font-size: 12px;
 		white-space: pre-wrap; word-break: break-word;
-	}
-
-	.ir-loading {
-		font-size: 12px; color: var(--muted); text-align: center; padding: 12px 0;
 	}
 </style>

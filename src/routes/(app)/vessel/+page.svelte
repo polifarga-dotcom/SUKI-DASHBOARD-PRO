@@ -24,7 +24,7 @@
 	<RigCard t={$telemetry} />
 	<ShellyCard />
 	<VRMCard />
-	<InReachCard />
+	<div class="inreach-wrap"><InReachCard /></div>
 </div>
 
 <style>
@@ -44,6 +44,9 @@
 		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 		gap: 12px;
 	}
+
+	/* InReach card spans full width (has a map inside) */
+	.inreach-wrap { grid-column: 1 / -1; }
 
 	@media (max-width: 480px) {
 		.grid { grid-template-columns: 1fr; }
