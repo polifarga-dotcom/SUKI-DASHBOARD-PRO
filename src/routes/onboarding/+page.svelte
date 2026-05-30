@@ -24,14 +24,14 @@
 		if (!boatName.trim()) { s1Error = 'Please enter a boat name'; return; }
 		s1Loading = true;
 
-		// Get current user
+		// Get session user id (needed for boat_members insert)
 		const { data: { user } } = await supabase.auth.getUser();
 		if (!user) { s1Error = 'Not authenticated'; s1Loading = false; return; }
 
-		// Create boat
+		// Create boat (created_by defaults to auth.uid() via DB column default)
 		const { data: boat, error: boatErr } = await supabase
 			.from('boats')
-			.insert({ name: boatName.trim(), created_by: user.id })
+			.insert({ name: boatName.trim() })
 			.select()
 			.single();
 
