@@ -7,10 +7,11 @@
 	import { currentBoat, isBoatAdmin, boatRole } from '$lib/stores/boat.js';
 
 	// ── Auth ──────────────────────────────────────────────────────────────────
-	const userEmail  = $derived($authStore.session?.user?.email ?? '—');
-	const currentUid = $derived($authStore.session?.user?.id ?? '');
-	const userRole   = $derived($boatRole ?? '—');
-	const isAdmin    = $derived($isBoatAdmin);
+	const userEmail    = $derived($authStore.session?.user?.email ?? '—');
+	const currentUid   = $derived($authStore.session?.user?.id ?? '');
+	const userRole     = $derived($boatRole ?? '—');
+	const isAdmin      = $derived($isBoatAdmin);
+	const isSuperAdmin = $derived(userEmail === 'polifarga@gmail.com');
 	const cfg        = $derived($anchorConfig);
 
 	// ── User management (admin only) ──────────────────────────────────────────
@@ -28,17 +29,21 @@
 	let usersError   = $state('');
 	let addEmail     = $state('');
 	let addRole      = $state<'viewer' | 'admin'>('viewer');
-	let addLoading   = $state(false);
-	let addError     = $state('');
-	let addSuccess   = $state(false);
+	let addLoading          = $state(false);
+	let addError            = $state('');
+	let addSuccess          = $state(false);
+	let addSuccessEmailSent = $state(true);
 	let deleteTarget = $state<AppUser | null>(null);
 	let actionBusy   = $state<string>('');
 
 	async function loadUsers() {
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
 		usersLoading = true;
 		usersError = '';
 		const { data: result, error } = await supabase.functions.invoke('manage-users', {
 			method: 'GET',
+			headers: { 'x-boat-id': boatId },
 		});
 		usersLoading = false;
 		if (error || result?.error) {
@@ -58,13 +63,14 @@
 			: window.location.origin;
 		const { data: result, error } = await supabase.functions.invoke('manage-users', {
 			method: 'POST',
-			body: { email: addEmail, role: addRole, redirectTo: appUrl },
+			body: { email: addEmail, role: addRole, boat_id: $currentBoat?.id, redirectTo: appUrl },
 		});
 		addLoading = false;
 		if (error || result?.error) { addError = result?.error ?? error?.message ?? 'Error'; return; }
 		addEmail = ''; addRole = 'viewer';
 		addSuccess = true;
-		setTimeout(() => { addSuccess = false; }, 3000);
+		addSuccessEmailSent = result?.emailSent ?? true;
+		setTimeout(() => { addSuccess = false; }, 5000);
 		await loadUsers();
 	}
 
@@ -72,7 +78,7 @@
 		actionBusy = userId;
 		await supabase.functions.invoke('manage-users', {
 			method: 'PATCH',
-			body: { userId, role: newRole },
+			body: { userId, role: newRole, boat_id: $currentBoat?.id },
 		});
 		actionBusy = '';
 		await loadUsers();
@@ -93,7 +99,7 @@
 		actionBusy = deleteTarget.id + '_del';
 		await supabase.functions.invoke('manage-users', {
 			method: 'DELETE',
-			body: { userId: deleteTarget.id },
+			body: { userId: deleteTarget.id, boat_id: $currentBoat?.id },
 		});
 		deleteTarget = null;
 		actionBusy = '';
@@ -420,7 +426,15 @@
 		<div class="add-user">
 			<div class="add-title">Add crew member</div>
 			{#if addError}<div class="alert alert-error">{addError}</div>{/if}
-			{#if addSuccess}<div class="alert alert-info">Invitation sent. The user will receive an email with a login link.</div>{/if}
+			{#if addSuccess}
+				<div class="alert alert-info">
+					{#if addSuccessEmailSent}
+						Invitation sent. The user will receive an email with a login link.
+					{:else}
+						User added to boat. They already have an account and will see this boat on next login.
+					{/if}
+				</div>
+			{/if}
 			<div class="field">
 				<label for="add-email">Email</label>
 				<input id="add-email" type="email" bind:value={addEmail} placeholder="new@example.com" autocomplete="off" />
@@ -619,7 +633,9 @@
 	<section class="card">
 		<h2>System</h2>
 		<div class="info-row"><span class="lbl">Build</span><span class="build-ver">{version}</span></div>
+		{#if isSuperAdmin}
 		<div class="info-row"><span class="lbl">Supabase</span><code>mtcmxrmykvthybwrlnvz</code></div>
+		{/if}
 		<button class="btn btn-danger mt" onclick={signOut}>Sign out</button>
 	</section>
 

@@ -10,6 +10,9 @@ export const currentBoat = writable<Boat | null>(null);
 /** The current user's role in the active boat. */
 export const boatRole = writable<'admin' | 'viewer' | null>(null);
 
+/** Role for every boat the user is a member of: { [boatId]: 'admin' | 'viewer' } */
+export const boatRoles = writable<Record<string, 'admin' | 'viewer'>>({});
+
 /** Members of the currently active boat (populated lazily by settings page). */
 export const boatMembers = writable<(BoatMember & { email?: string })[]>([]);
 

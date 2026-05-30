@@ -4,9 +4,13 @@
 --   • pg_cron
 --   • pg_net
 --
--- The SUPABASE_SERVICE_ROLE_KEY is stored in Vault as 'service_role_key'.
--- Set it via: supabase secrets set SERVICE_ROLE_KEY=<key>
--- Or in SQL:  SELECT vault.create_secret('<key>', 'service_role_key');
+-- A random shared secret is stored in Vault as 'cron_secret'.
+-- Generate via SQL:
+--   SELECT vault.create_secret(gen_random_uuid()::text, 'cron_secret',
+--     'Shared secret for anchor-check pg_cron authentication');
+--
+-- The anchor-check Edge Function reads this secret from Vault at runtime
+-- and verifies the Authorization header matches.
 --
 -- The Edge Function URL must match your project ref:
 --   https://<project_ref>.supabase.co/functions/v1/anchor-check
@@ -27,7 +31,7 @@ SELECT cron.schedule(
                  'Authorization', 'Bearer ' || (
                    SELECT decrypted_secret
                    FROM vault.decrypted_secrets
-                   WHERE name = 'service_role_key'
+                   WHERE name = 'cron_secret'
                    LIMIT 1
                  )
                ),

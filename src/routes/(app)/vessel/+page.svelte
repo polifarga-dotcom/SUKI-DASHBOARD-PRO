@@ -2,11 +2,9 @@
 	import { telemetry, dataStale } from '$lib/stores/telemetry.js';
 	import BatteryCard from '$lib/components/cards/BatteryCard.svelte';
 	import SolarCard from '$lib/components/cards/SolarCard.svelte';
-	import TanksCard from '$lib/components/cards/TanksCard.svelte';
 	import EnvironmentCard from '$lib/components/cards/EnvironmentCard.svelte';
 	import EngineCard from '$lib/components/cards/EngineCard.svelte';
 	import RigCard from '$lib/components/cards/RigCard.svelte';
-	import RelayCard from '$lib/components/cards/RelayCard.svelte';
 	import ShellyCard from '$lib/components/cards/ShellyCard.svelte';
 	import VRMCard from '$lib/components/cards/VRMCard.svelte';
 </script>
@@ -20,11 +18,9 @@
 <div class="grid">
 	<BatteryCard t={$telemetry} />
 	<SolarCard t={$telemetry} />
-	<TanksCard t={$telemetry} />
 	<EnvironmentCard t={$telemetry} />
 	<EngineCard t={$telemetry} />
 	<RigCard t={$telemetry} />
-	<RelayCard t={$telemetry} />
 	<ShellyCard />
 	<VRMCard />
 </div>

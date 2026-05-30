@@ -6,7 +6,7 @@
 	import { telemetry, dataStale } from '$lib/stores/telemetry.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { authStore } from '$lib/stores/auth.js';
-	import { myBoats, currentBoat, boatRole } from '$lib/stores/boat.js';
+	import { myBoats, currentBoat, boatRole, boatRoles } from '$lib/stores/boat.js';
 	import { dataAge, fmtLatLon, ms2knNum } from '$lib/utils/units.js';
 	import StatusBar from '$lib/components/layout/StatusBar.svelte';
 	import type { Boat } from '$lib/types.js';
@@ -108,6 +108,13 @@
 		const boats = memberships.map(m => m.boats).filter(Boolean) as Boat[];
 		myBoats.set(boats);
 
+		// Build role map for every boat
+		const roleMap: Record<string, 'admin' | 'viewer'> = {};
+		for (const m of memberships) {
+			if (m.boats?.id) roleMap[m.boats.id] = m.role as 'admin' | 'viewer';
+		}
+		boatRoles.set(roleMap);
+
 		// Restore last active boat from localStorage or default to first
 		const savedId = typeof localStorage !== 'undefined' ? localStorage.getItem('currentBoatId') : null;
 		const active  = boats.find(b => b.id === savedId) ?? boats[0];
@@ -134,6 +141,7 @@
 	const stale       = $derived($dataStale);
 	const boats       = $derived($myBoats);
 	const activeBoat  = $derived($currentBoat);
+	const roles       = $derived($boatRoles);
 
 	const gpsStr = $derived(() => {
 		if (!t?.nav_lat || !t?.nav_lon) return null;
@@ -152,20 +160,18 @@
 	<!-- Header -->
 	<header class="app-header">
 		<div class="header-left">
-			{#if boats.length > 1}
-			<!-- Multi-boat switcher -->
 			<button class="boat-btn" onclick={() => (boatPickerOpen = !boatPickerOpen)}>
-				<span class="boat-name">{activeBoat?.name ?? '—'}</span>
-				<svg width="10" height="10" viewBox="0 0 10 10">
+				<img src="/logo.png" alt="logo" class="vessel-logo-sm" />
+				<div class="boat-btn-text">
+					<span class="boat-name">{activeBoat?.name ?? '—'}</span>
+					<span class="boat-role-tag" class:master={roles[activeBoat?.id ?? ''] === 'admin'}>
+						{roles[activeBoat?.id ?? ''] === 'admin' ? 'master' : 'crew'}
+					</span>
+				</div>
+				<svg width="10" height="10" viewBox="0 0 10 10" class:open={boatPickerOpen}>
 					<path d="M1 3 L5 7 L9 3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
 				</svg>
 			</button>
-			{:else}
-			<div class="header-brand">
-				<img src="/logo.png" alt="logo" class="vessel-logo" />
-				<span class="vessel-sub">{activeBoat?.name ?? ''}</span>
-			</div>
-			{/if}
 		</div>
 		<div class="header-center">
 			{#if gpsStr()}
@@ -182,7 +188,7 @@
 	</header>
 
 	<!-- Boat picker dropdown -->
-	{#if boatPickerOpen && boats.length > 1}
+	{#if boatPickerOpen}
 	<div class="boat-picker">
 		{#each boats as boat (boat.id)}
 		<button
@@ -190,10 +196,22 @@
 			class:active={boat.id === activeBoat?.id}
 			onclick={() => switchBoat(boat)}
 		>
-			{boat.name}
-			{#if boat.id === activeBoat?.id}<span class="check">✓</span>{/if}
+			<span class="picker-name">{boat.name}</span>
+			<div class="picker-right">
+				<span class="picker-role" class:master={roles[boat.id] === 'admin'}>
+					{roles[boat.id] === 'admin' ? 'master' : 'crew'}
+				</span>
+				{#if boat.id === activeBoat?.id}<span class="check">✓</span>{/if}
+			</div>
 		</button>
 		{/each}
+		<div class="picker-divider"></div>
+		<button class="boat-picker-add" onclick={() => { boatPickerOpen = false; goto('/onboarding'); }}>
+			<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+				<line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/>
+			</svg>
+			Add boat
+		</button>
 	</div>
 	{/if}
 
@@ -238,33 +256,53 @@
 		flex-shrink: 0; gap: 8px; position: relative;
 	}
 	.header-left { display: flex; flex-direction: column; gap: 1px; flex-shrink: 0; }
-	.header-brand { display: flex; flex-direction: column; gap: 1px; }
-	.vessel-logo { height: 24px; width: auto; display: block; object-fit: contain; max-width: 160px; }
-	.vessel-sub { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; }
 
 	/* Boat switcher */
 	.boat-btn {
-		display: flex; align-items: center; gap: 5px;
-		background: none; border: 1px solid var(--border); border-radius: 6px;
-		padding: 4px 8px; cursor: pointer; color: var(--text);
+		display: flex; align-items: center; gap: 7px;
+		background: none; border: 1px solid var(--border); border-radius: 8px;
+		padding: 5px 8px 5px 6px; cursor: pointer; color: var(--text);
 	}
 	.boat-btn:hover { background: var(--card2); }
-	.boat-name { font-size: 13px; font-weight: 600; }
+	.vessel-logo-sm { height: 20px; width: auto; display: block; object-fit: contain; max-width: 80px; flex-shrink: 0; }
+	.boat-btn-text { display: flex; flex-direction: column; gap: 1px; align-items: flex-start; }
+	.boat-name { font-size: 13px; font-weight: 600; line-height: 1.1; white-space: nowrap; }
+	.boat-role-tag {
+		font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+		color: var(--muted); line-height: 1;
+	}
+	.boat-role-tag.master { color: var(--accent); }
+	svg.open { transform: rotate(180deg); }
 
 	/* Boat picker dropdown */
 	.boat-picker {
 		position: absolute; top: 100%; left: 12px;
-		background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-		z-index: 200; box-shadow: 0 4px 16px rgba(0,0,0,0.4); min-width: 160px; overflow: hidden;
+		background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+		z-index: 200; box-shadow: 0 4px 20px rgba(0,0,0,0.5); min-width: 190px; overflow: hidden;
 	}
 	.boat-picker-item {
 		display: flex; justify-content: space-between; align-items: center;
 		width: 100%; padding: 11px 14px; background: none; border: none;
-		color: var(--text); font-size: 14px; cursor: pointer; text-align: left;
+		color: var(--text); font-size: 14px; cursor: pointer; text-align: left; gap: 8px;
 	}
 	.boat-picker-item:hover { background: var(--card2); }
-	.boat-picker-item.active { color: var(--accent); }
+	.boat-picker-item.active .picker-name { color: var(--accent); }
+	.picker-name { flex: 1; font-weight: 500; }
+	.picker-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+	.picker-role {
+		font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+		color: var(--muted); background: var(--card2); border: 1px solid var(--border);
+		border-radius: 3px; padding: 2px 5px;
+	}
+	.picker-role.master { color: var(--accent); border-color: rgba(0,200,255,.3); background: rgba(0,200,255,.07); }
 	.check { color: var(--accent); font-size: 12px; }
+	.picker-divider { height: 1px; background: var(--border); margin: 2px 0; }
+	.boat-picker-add {
+		display: flex; align-items: center; gap: 8px;
+		width: 100%; padding: 10px 14px; background: none; border: none;
+		color: var(--muted); font-size: 13px; cursor: pointer; text-align: left;
+	}
+	.boat-picker-add:hover { color: var(--text); background: var(--card2); }
 
 	.header-center {
 		flex: 1; display: flex; flex-direction: column; align-items: center;
