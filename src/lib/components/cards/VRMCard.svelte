@@ -8,34 +8,75 @@
 	let data         = $state<VRMData | null>(null);
 	let error        = $state('');
 	let now          = $state(Math.floor(Date.now() / 1000));
-	let lastFetchAt  = $state<number | null>(null);   // epoch-s of our last successful API call
+	let lastFetchAt  = $state<number | null>(null);  // epoch-s of our last successful API call
+	let lastKnownTs  = $state<number | null>(null);  // last_ts we've confirmed from the API
+	let polling      = $state(false);                // true = hot-window (waiting for new upload)
 
-	let tickTimer: ReturnType<typeof setInterval>;
+	let nextTimer: ReturnType<typeof setTimeout> | null = null;
+	let tickTimer:  ReturnType<typeof setInterval>;
+	let fetching    = false;
 
 	const cfg = $derived($anchorConfig);
 	function apiReady() { return !!(cfg?.vrm_api_token && cfg?.vrm_installation_id); }
 
-	async function fetchVRM() {
-		try {
-			const { data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy');
-			if (fnErr) { error = fnErr.message; return; }
-			data        = parseVRMDiagnostics(json?.records ?? []);
-			lastFetchAt = Math.floor(Date.now() / 1000);
-			error       = '';
-		} catch (e) { error = String(e); }
+	// Schedule the next fetch after delayMs — self-scheduling, no setInterval needed
+	function schedule(delayMs: number) {
+		if (nextTimer) clearTimeout(nextTimer);
+		nextTimer = setTimeout(fetchVRM, delayMs);
 	}
 
-	// Reactive start — triggers immediately when credentials load
+	async function fetchVRM() {
+		if (fetching) return;
+		fetching = true;
+		try {
+			const { data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy');
+			if (fnErr) { error = fnErr.message; schedule(30_000); return; }
+
+			const parsed = parseVRMDiagnostics(json?.records ?? []);
+			data        = parsed;
+			lastFetchAt = Math.floor(Date.now() / 1000);
+			error       = '';
+
+			const newTs = parsed.last_ts;
+
+			if (newTs && newTs !== lastKnownTs) {
+				// ✓ Fresh upload from Cerbo detected
+				// Schedule next fetch for 5 s before the expected next upload (upload every ~60 s)
+				lastKnownTs = newTs;
+				polling     = false;
+				const msUntilHotWindow = Math.max(5_000, (newTs + 55) * 1000 - Date.now());
+				schedule(msUntilHotWindow);
+			} else {
+				// Same timestamp — Cerbo hasn't pushed new data yet
+				// Enter / stay in hot-window mode: retry every 5 s
+				polling = true;
+				schedule(5_000);
+			}
+		} catch (e) {
+			error = String(e);
+			schedule(30_000);
+		} finally {
+			fetching = false;
+		}
+	}
+
+	// Start self-scheduling loop when credentials are ready
 	$effect(() => {
 		if (!apiReady()) return;
+		lastKnownTs = null;
+		polling     = false;
 		fetchVRM();
-		const timer = setInterval(fetchVRM, 60_000);
-		return () => clearInterval(timer);
+		return () => { if (nextTimer) { clearTimeout(nextTimer); nextTimer = null; } };
 	});
 
 	// Re-fetch immediately when user returns to the tab
 	$effect(() => {
-		const onVisible = () => { if (!document.hidden && apiReady()) fetchVRM(); };
+		const onVisible = () => {
+			if (!document.hidden && apiReady()) {
+				if (nextTimer) { clearTimeout(nextTimer); nextTimer = null; }
+				fetchVRM();
+			}
+		};
 		document.addEventListener('visibilitychange', onVisible);
 		return () => document.removeEventListener('visibilitychange', onVisible);
 	});
@@ -152,6 +193,9 @@
 	<div class="hdr">
 		<span class="card-title">Victron VRM</span>
 		<div class="hdr-right">
+			{#if polling}
+			<span class="poll-spin" title="Warte auf neues VRM-Update…">⟳</span>
+			{/if}
 			{#if data?.last_ts}
 			<!-- Data age: how old is the Cerbo's last upload to VRM cloud -->
 			<span class="data-age" class:age-warn={data.last_ts != null && (now - data.last_ts) > 300}>
@@ -473,6 +517,10 @@
 .data-age.age-warn { color: var(--amber); }
 /* Green dot = we have a recent fetch */
 .fetch-dot { font-size: 8px; color: var(--green); opacity: 0.7; }
+/* Spinning ⟳ = hot-window active (polling for new Cerbo upload) */
+.poll-spin { font-size: 11px; color: var(--accent); opacity: 0.8; display: inline-block;
+	animation: vrm-spin 1.2s linear infinite; }
+@keyframes vrm-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .loading { font-size: 13px; color: var(--muted); }
 .err     { font-size: 13px; color: var(--red); }
