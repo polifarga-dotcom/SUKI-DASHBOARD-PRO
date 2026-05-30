@@ -15,44 +15,70 @@
 		return { srv, key };
 	}
 
+	/** Extract On/Off state from any Shelly status object (Gen1 + Gen2). */
+	function extractState(s: Record<string, unknown>): 0 | 1 | null {
+		// Gen2 / Plus / Pro
+		const sw2 = s['switch:0'] as Record<string, unknown> | undefined;
+		if (sw2 && 'output' in sw2) return sw2.output ? 1 : 0;
+		// Gen1
+		const rels = s['relays'] as Array<{ ison: boolean }> | undefined;
+		if (rels?.length && 'ison' in rels[0]) return rels[0].ison ? 1 : 0;
+		return null;
+	}
+
+	/** Fetch current state for one device via /device/status (authoritative). */
+	async function fetchOneState(srv: string, key: string, id: string): Promise<0 | 1 | null> {
+		try {
+			const r = await fetch(`https://${srv}/device/status`, {
+				method:  'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body:    `auth_key=${encodeURIComponent(key)}&id=${encodeURIComponent(id)}`,
+			});
+			const j = await r.json();
+			const ds = (j?.data?.device_status ?? j?.data) as Record<string, unknown> | null;
+			return ds ? extractState(ds) : null;
+		} catch { return null; }
+	}
+
 	async function fetchDevices() {
 		const api = apiBase();
 		if (!api) return;
 		try {
-			const listRes = await fetch(
-				`https://${api.srv}/interface/device/list?auth_key=${api.key}`
-			);
+			// ── Step 1: device list (names + online status) ──────────────────────
+			const listRes  = await fetch(`https://${api.srv}/interface/device/list?auth_key=${api.key}`);
 			const listJson = await listRes.json();
 
-			// `devices` has names/types; `devices_status` has online + relay state
-			const devsInfo:   Record<string, Record<string, unknown>> = listJson?.data?.devices         ?? {};
-			const devsStatus: Record<string, Record<string, unknown>> = listJson?.data?.devices_status  ?? {};
+			const devsInfo:   Record<string, Record<string, unknown>> = listJson?.data?.devices        ?? {};
+			const devsStatus: Record<string, Record<string, unknown>> = listJson?.data?.devices_status ?? {};
 
 			const ids = [...new Set([...Object.keys(devsInfo), ...Object.keys(devsStatus)])];
 			if (!ids.length) { devices = []; loaded = true; return; }
 
+			// Show names immediately (state still resolving)
 			devices = ids.map(id => {
 				const info   = devsInfo[id]   ?? {};
 				const status = devsStatus[id] ?? {};
-
-				const name   = (info.name   as string | undefined)
-				            ?? (status.name  as string | undefined)
-				            ?? id;
-				const online = Boolean(status.online);
-
-				// Gen2 / Plus / Pro: { "switch:0": { output: true } }
-				const sw2 = status['switch:0'] as Record<string, unknown> | undefined;
-				// Gen1:               { "relays": [{ ison: true }] }
-				const relays = status['relays'] as Array<{ ison: boolean }> | undefined;
-
-				let state: 0 | 1 | null = null;
-				if (sw2 && 'output' in sw2)                      state = sw2.output ? 1 : 0;
-				else if (relays?.length && 'ison' in relays[0])  state = relays[0].ison ? 1 : 0;
-
-				return { id, name, online, state };
+				return {
+					id,
+					name:   ((info.name ?? status.name ?? id) as string),
+					online: Boolean(status.online),
+					state:  extractState(status),   // best-effort from list; may be null
+				};
 			}).sort((a, b) => a.name.localeCompare(b.name));
 
 			loaded = true;
+
+			// ── Step 2: authoritative per-device status in parallel ───────────────
+			const states = await Promise.all(
+				ids.map(id => fetchOneState(api.srv, api.key, id).then(state => ({ id, state })))
+			);
+
+			// Merge: only overwrite if we got a real value
+			devices = devices.map(dev => {
+				const found = states.find(s => s.id === dev.id);
+				return found?.state !== null ? { ...dev, state: found!.state } : dev;
+			});
+
 		} catch {
 			loaded = true;
 		}
