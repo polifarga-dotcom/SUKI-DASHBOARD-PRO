@@ -23,7 +23,21 @@
 	let showEntryModal  = $state(false);
 	let showPastTrips   = $state(false);
 	let saving          = $state(false);
-	let autoLogTimer:   ReturnType<typeof setInterval>;
+	let autoLogTimer:    ReturnType<typeof setInterval>;
+	let autoCheckTimer:  ReturnType<typeof setInterval>;
+
+	// ── Auto-trip engine state ────────────────────────────────────────────────
+	const SOG_TRIP_KN      = 1.5;
+	const CONFIRM_START_MS = 2  * 60_000;   // must move 2 min → auto-start
+	const CONFIRM_STOP_MS  = 15 * 60_000;   // must be slow 15 min → auto-stop
+
+	type AutoMode = 'idle' | 'watching' | 'recording' | 'countdown';
+	let autoEnabled      = $state(true);
+	let autoMode         = $state<AutoMode>('idle');
+	let fastSince        = $state<number | null>(null);
+	let slowSince        = $state<number | null>(null);
+	let isAutoTrip       = $state(false);
+	let countdownMinutes = $state(15);
 
 	// ── Trip modal form ───────────────────────────────────────────────────────
 	let tripName      = $state('');
@@ -297,13 +311,178 @@
 		entryNotes = ''; entrySails = ''; entryManualSOG = ''; entryManualCOG = '';
 	}
 
+	// ── Reverse geocoding (Nominatim / OSM — free, no key) ───────────────────
+	async function reverseGeocode(lat: number, lon: number): Promise<string> {
+		try {
+			const r = await fetch(
+				`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10`,
+				{ headers: { 'User-Agent': 'SUKI-Dashboard-Pro/1.0 sailing@suki.boat' } }
+			);
+			if (!r.ok) throw new Error('');
+			const j = await r.json();
+			const a = j.address ?? {};
+			// Prefer maritime/coastal names; fall back to town/city
+			return a.bay ?? a.sea ?? a.body_of_water ?? a.island ?? a.archipelago ??
+			       a.village ?? a.town ?? a.city_district ?? a.city ??
+			       a.county ?? j.name ??
+			       `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`;
+		} catch {
+			return `${lat.toFixed(3)}°, ${lon.toFixed(3)}°`;
+		}
+	}
+
+	// ── Weather summary string for auto-entries ───────────────────────────────
+	function buildWeatherSummary(): string {
+		const parts: string[] = [];
+		const w = liveWind(); const wd = liveWindDir();
+		if (w != null)              parts.push(`Wind ${w.toFixed(0)} kn ${dirAbbr(wd)}`);
+		if (wave.wave_height_m != null) parts.push(`Wave ${wave.wave_height_m} m`);
+		if (wave.wave_period_s  != null) parts.push(`${wave.wave_period_s} s`);
+		if (liveBaro()  != null)    parts.push(`${liveBaro()} hPa`);
+		if (liveAirT()  != null)    parts.push(`Air ${liveAirT()}°C`);
+		if (liveWaterT() != null)   parts.push(`Water ${liveWaterT()}°C`);
+		return parts.join(' · ');
+	}
+
+	// ── Auto-trip: start ──────────────────────────────────────────────────────
+	async function autoStartTrip() {
+		if ($activeTrip || !boat) return;
+		const lat = liveLat(); const lon = liveLon();
+		const place = (lat != null && lon != null) ? await reverseGeocode(lat, lon) : null;
+		const wx    = buildWeatherSummary();
+
+		const { data } = await supabase
+			.from('log_trips')
+			.insert({
+				boat_id:    boat.id,
+				name:       place ?? 'Auto trip',
+				from_port:  place,
+				started_at: new Date().toISOString(),
+				notes:      wx || null,
+			})
+			.select().single();
+
+		if (data) {
+			const trip = data as LogTrip;
+			isAutoTrip = true;
+			activeTrip.set(trip);
+			allTrips.update(ts => [trip, ...ts]);
+			tripEntries.set([]);
+			lastEntryPos = null;
+			await insertEntry({
+				source: 'auto',
+				notes: [place ? `Departure from ${place}` : 'Departure', wx].filter(Boolean).join(' · '),
+			});
+		}
+	}
+
+	// ── Auto-trip: stop ───────────────────────────────────────────────────────
+	async function autoStopTrip(reason: string) {
+		const at = $activeTrip;
+		if (!at) return;
+		const lat = liveLat(); const lon = liveLon();
+		const place = (lat != null && lon != null) ? await reverseGeocode(lat, lon) : null;
+		const wx    = buildWeatherSummary();
+
+		await insertEntry({
+			source: 'auto',
+			notes: [[place ? `Arrival at ${place}` : 'Arrival', wx].filter(Boolean).join(' · '), `(${reason})`].join(' '),
+		});
+
+		// Final stats
+		const currentEntries = $tripEntries;
+		const sogsWithVal = currentEntries.filter(e => e.sog_kn != null).map(e => e.sog_kn as number);
+		const avgSog = sogsWithVal.length
+			? +(sogsWithVal.reduce((a, b) => a + b, 0) / sogsWithVal.length).toFixed(2)
+			: null;
+		const engHours = (() => {
+			const sorted = [...currentEntries].sort((a,b) => a.logged_at < b.logged_at ? -1 : 1);
+			const first  = sorted.find(e => e.engine_hours != null)?.engine_hours;
+			const last   = [...sorted].reverse().find(e => e.engine_hours != null)?.engine_hours;
+			if (first == null || last == null) return null;
+			return +Math.max(0, last - first).toFixed(2);
+		})();
+
+		const patch: Partial<LogTrip> = {
+			ended_at:     new Date().toISOString(),
+			to_port:      place,
+			name:         at.from_port && place ? `${at.from_port} → ${place}` : (at.name ?? 'Auto trip'),
+			avg_sog_kn:   avgSog,
+			engine_hours: engHours,
+		};
+		await supabase.from('log_trips').update(patch).eq('id', at.id);
+		const finished = { ...(at as LogTrip), ...patch };
+		allTrips.update(ts => ts.map(t => t.id === at.id ? finished : t));
+		activeTrip.set(null);
+		tripEntries.set([]);
+		isAutoTrip    = false;
+		autoMode      = 'idle';
+		slowSince     = null;
+		fastSince     = null;
+		countdownMinutes = 15;
+	}
+
+	// ── Auto-trip: check (runs every 30 s) ────────────────────────────────────
+	async function checkAutoTrip() {
+		if (!autoEnabled || !boat) return;
+		const now      = Date.now();
+		const sog      = liveSog();
+		const anchorOn = $anchorConfig?.active ?? false;
+		const trip     = $activeTrip;
+
+		// Anchor alarm activated → stop auto trip immediately
+		if (anchorOn && isAutoTrip && trip) {
+			await autoStopTrip('anchor alarm set');
+			return;
+		}
+
+		const moving = sog != null && sog >= SOG_TRIP_KN;
+
+		if (moving) {
+			slowSince        = null;
+			countdownMinutes = 15;
+
+			if (!trip) {
+				if (fastSince == null) fastSince = now;
+				autoMode = 'watching';
+				if (now - fastSince >= CONFIRM_START_MS) {
+					autoMode = 'recording';
+					fastSince = null;
+					await autoStartTrip();
+				}
+			} else if (isAutoTrip) {
+				autoMode = 'recording';
+			}
+
+		} else {
+			// Not moving (or no data)
+			fastSince = null;
+
+			if (trip && isAutoTrip) {
+				if (slowSince == null) slowSince = now;
+				const elapsed = now - slowSince;
+				countdownMinutes = Math.max(0, Math.ceil((CONFIRM_STOP_MS - elapsed) / 60_000));
+				autoMode = 'countdown';
+				if (elapsed >= CONFIRM_STOP_MS) {
+					await autoStopTrip('< 1.5 kn for 15 min');
+				}
+			} else if (!trip) {
+				autoMode = 'idle';
+				fastSince = null;
+			}
+		}
+	}
+
 	// ── Auto-log every 60 minutes ─────────────────────────────────────────────
 	function startAutoLog() {
+		// Hourly position/weather snapshot while any trip is running
 		autoLogTimer = setInterval(() => {
-			if ($activeTrip) {
-				insertEntry({ source: 'auto' });
-			}
-		}, 60 * 60 * 1000);
+			if ($activeTrip) insertEntry({ source: 'auto' });
+		}, 60 * 60_000);
+
+		// Auto-trip detection every 30 s
+		autoCheckTimer = setInterval(checkAutoTrip, 30_000);
+		checkAutoTrip();  // immediate first check
 	}
 
 	// ── All-time statistics ───────────────────────────────────────────────────
@@ -323,10 +502,10 @@
 	$effect(() => {
 		const b = boat;
 		if (b) { loadLogbook(); startAutoLog(); }
-		return () => clearInterval(autoLogTimer);
+		return () => { clearInterval(autoLogTimer); clearInterval(autoCheckTimer); };
 	});
 
-	onDestroy(() => clearInterval(autoLogTimer));
+	onDestroy(() => { clearInterval(autoLogTimer); clearInterval(autoCheckTimer); });
 
 	const at    = $derived($activeTrip);
 	const trips = $derived($allTrips);
@@ -408,6 +587,35 @@
 	</div>
 	{:else if !loaded}
 	<div class="log-loading">Loading logbook…</div>
+	{/if}
+
+	<!-- ── Auto-trip status bar ────────────────────────────────────────────── -->
+	{#if isAdmin}
+	{#if autoEnabled}
+	<div class="auto-bar"
+		class:auto-watching={autoMode === 'watching'}
+		class:auto-recording={autoMode === 'recording'}
+		class:auto-countdown={autoMode === 'countdown'}>
+		<div class="auto-bar-left">
+			<span class="auto-dot" class:dot-idle={autoMode === 'idle'} class:dot-watching={autoMode === 'watching'} class:dot-recording={autoMode === 'recording'} class:dot-countdown={autoMode === 'countdown'}></span>
+			{#if autoMode === 'idle'}
+				<span class="auto-status">Auto-trip: watching for movement ≥ {SOG_TRIP_KN} kn</span>
+			{:else if autoMode === 'watching'}
+				<span class="auto-status">Moving · auto-start in ~{CONFIRM_START_MS / 60_000} min…</span>
+			{:else if autoMode === 'recording'}
+				<span class="auto-status">Auto-trip recording</span>
+			{:else if autoMode === 'countdown'}
+				<span class="auto-status">⏱ Speed below {SOG_TRIP_KN} kn · auto-stop in {countdownMinutes} min</span>
+			{/if}
+		</div>
+		<button class="auto-toggle-btn" onclick={() => { autoEnabled = false; autoMode = 'idle'; }}>Off</button>
+	</div>
+	{:else}
+	<div class="auto-bar auto-disabled">
+		<span class="auto-status">Auto-trip detection: off</span>
+		<button class="auto-toggle-btn" onclick={() => { autoEnabled = true; checkAutoTrip(); }}>On</button>
+	</div>
+	{/if}
 	{/if}
 
 	<!-- ── Log entries (active trip) ──────────────────────────────────────── -->
@@ -793,4 +1001,32 @@
 		font-size: 12px; background: var(--border); border-radius: 4px; padding: 2px 7px;
 	}
 	.prev-chip.eng { color: var(--amber); }
+
+	/* ── Auto-trip status bar ─────────────────────────────────────────────── */
+	.auto-bar {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 8px 12px; border-radius: 8px;
+		background: var(--card); border: 1px solid var(--border);
+		font-size: 12px; gap: 8px;
+	}
+	.auto-bar.auto-watching  { border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.05); }
+	.auto-bar.auto-recording { border-color: rgba(34,197,94,.35);  background: rgba(34,197,94,.05);  }
+	.auto-bar.auto-countdown { border-color: rgba(249,115,22,.4);  background: rgba(249,115,22,.06); }
+	.auto-bar.auto-disabled  { opacity: 0.55; }
+	.auto-bar-left { display: flex; align-items: center; gap: 8px; }
+	.auto-dot {
+		width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+		background: var(--muted);
+	}
+	.auto-dot.dot-idle      { background: var(--muted); opacity: 0.5; }
+	.auto-dot.dot-watching  { background: var(--amber); animation: pulse-live 2s ease-in-out infinite; }
+	.auto-dot.dot-recording { background: var(--green); animation: pulse-live 2s ease-in-out infinite; }
+	.auto-dot.dot-countdown { background: #f97316; }
+	.auto-status { color: var(--muted); line-height: 1.3; }
+	.auto-toggle-btn {
+		font-size: 11px; background: var(--card2); border: 1px solid var(--border);
+		border-radius: 5px; padding: 4px 10px; cursor: pointer; color: var(--text);
+		flex-shrink: 0;
+	}
+	.auto-toggle-btn:hover { background: var(--border); }
 </style>
