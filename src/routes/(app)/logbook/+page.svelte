@@ -23,10 +23,40 @@
 	// ── UI state ──────────────────────────────────────────────────────────────
 	let showTripModal   = $state(false);
 	let showEntryModal  = $state(false);
-	let showPastTrips   = $state(false);
 	let saving          = $state(false);
 	let autoLogTimer:    ReturnType<typeof setInterval>;
 	let autoCheckTimer:  ReturnType<typeof setInterval>;
+
+	// ── Realtime subscription (receives server-inserted entries) ──────────────
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let realtimeChannel: any = null;
+
+	function subscribeToActiveTrip(tripId: string) {
+		if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+		realtimeChannel = supabase
+			.channel(`trip-${tripId}`)
+			.on(
+				'postgres_changes',
+				{ event: 'INSERT', schema: 'public', table: 'log_entries', filter: `trip_id=eq.${tripId}` },
+				(payload: { new: LogEntry }) => {
+					const entry = payload.new;
+					tripEntries.update(es => {
+						// deduplicate: browser may have just inserted this same row
+						if (es.find(e => e.id === entry.id)) return es;
+						pushLog(`[server] ${entry.lat?.toFixed(4) ?? '?'}° ${entry.lon?.toFixed(4) ?? '?'}°  ${entry.sog_kn?.toFixed(1) ?? '—'} kn`);
+						return [entry, ...es].slice(0, 200);
+					});
+				}
+			)
+			.subscribe();
+	}
+
+	function unsubscribeTrip() {
+		if (realtimeChannel) {
+			supabase.removeChannel(realtimeChannel);
+			realtimeChannel = null;
+		}
+	}
 
 	// ── Auto-trip engine state ────────────────────────────────────────────────
 	const SOG_TRIP_KN      = 1.5;
@@ -70,6 +100,38 @@
 			localStorage.setItem('autoTripEnabled', String(autoEnabled));
 		}
 	});
+
+	// ── Past trips filter + sort + expand ────────────────────────────────────
+	type FilterRange = 'week' | 'month' | 'year' | 'all';
+	let filterRange     = $state<FilterRange>('all');
+	let sortDesc        = $state(true);
+	let expandedTripId  = $state<string | null>(null);
+	let expandedEntries = $state<LogEntry[]>([]);
+	let expandedLoading = $state(false);
+
+	const filteredPastTrips = $derived(() => {
+		let ts = $allTrips.filter(tr => tr.ended_at != null);
+		const now = Date.now();
+		const days: Record<FilterRange, number> = { week: 7, month: 30, year: 365, all: Infinity };
+		const limit = days[filterRange] * 86_400_000;
+		if (filterRange !== 'all') ts = ts.filter(t => now - new Date(t.started_at).getTime() < limit);
+		return sortDesc ? ts : [...ts].reverse();
+	});
+
+	async function toggleTripExpand(tripId: string) {
+		if (expandedTripId === tripId) {
+			expandedTripId = null; expandedEntries = []; return;
+		}
+		expandedTripId = tripId; expandedLoading = true; expandedEntries = [];
+		const { data } = await supabase
+			.from('log_entries')
+			.select('*')
+			.eq('trip_id', tripId)
+			.order('logged_at', { ascending: false })
+			.limit(100);
+		expandedEntries = (data ?? []) as LogEntry[];
+		expandedLoading = false;
+	}
 
 	// ── Trip modal form ───────────────────────────────────────────────────────
 	let tripName      = $state('');
@@ -167,8 +229,8 @@
 		activeTrip.set(active);
 
 		if (active) {
-			// Limit to 200 most-recent entries — trips with 60 s tracking can
-			// accumulate 1 440 rows/day; full history is queried at trip end.
+			// Limit to 200 most-recent entries — trips with 120 s tracking can
+			// accumulate 720 rows/day; full history is queried at trip end.
 			const { data: entries } = await supabase
 				.from('log_entries')
 				.select('*')
@@ -176,8 +238,10 @@
 				.order('logged_at', { ascending: false })
 				.limit(200);
 			tripEntries.set((entries ?? []) as LogEntry[]);
+			subscribeToActiveTrip(active.id);
 		} else {
 			tripEntries.set([]);
+			unsubscribeTrip();
 		}
 
 		logLoaded.set(true);
@@ -313,6 +377,7 @@
 			allTrips.update(ts => [trip, ...ts]);
 			tripEntries.set([]);
 			lastEntryPos = null;
+			subscribeToActiveTrip(trip.id);
 			// First entry: departure
 			await insertEntry({ source: 'auto', notes: `Departure from ${tripFromPort || 'unknown'}` });
 		}
@@ -347,6 +412,7 @@
 		allTrips.update(ts => ts.map(t => t.id === at.id ? finished : t));
 		activeTrip.set(null);
 		tripEntries.set([]);
+		unsubscribeTrip();
 		saving = false;
 	}
 
@@ -417,6 +483,7 @@
 				from_port:  place,
 				started_at: new Date().toISOString(),
 				notes:      wx || null,
+				is_auto:    true,
 			})
 			.select().single();
 
@@ -429,6 +496,7 @@
 			allTrips.update(ts => [trip, ...ts]);
 			tripEntries.set([]);
 			lastEntryPos = null;
+			subscribeToActiveTrip(trip.id);
 			await insertEntry({
 				source: 'auto',
 				notes: [place ? `Departure from ${place}` : 'Departure', wx].filter(Boolean).join(' · '),
@@ -468,6 +536,7 @@
 		allTrips.update(ts => ts.map(t => t.id === at.id ? finished : t));
 		activeTrip.set(null);
 		tripEntries.set([]);
+		unsubscribeTrip();
 		isAutoTrip       = false;
 		autoMode         = 'idle';
 		slowSince        = null;
@@ -586,12 +655,14 @@
 		}
 	}
 
-	// ── Auto-log every 60 seconds ─────────────────────────────────────────────
+	// ── Auto-log every 120 seconds ────────────────────────────────────────────
 	function startAutoLog() {
-		// 60-second position/weather snapshot while any trip is running
+		// 120-second position/weather snapshot while any trip is running.
+		// Matches the server-side Edge Function cadence (pg_cron every 2 min).
+		// The Edge Function's 110-second duplicate guard ensures no double entries.
 		autoLogTimer = setInterval(() => {
 			if ($activeTrip) insertEntry({ source: 'auto' });
-		}, 60_000);
+		}, 120_000);
 
 		// Auto-trip detection every 30 s
 		autoCheckTimer = setInterval(checkAutoTrip, 30_000);
@@ -625,7 +696,7 @@
 		return () => { clearInterval(autoLogTimer); clearInterval(autoCheckTimer); };
 	});
 
-	onDestroy(() => { clearInterval(autoLogTimer); clearInterval(autoCheckTimer); });
+	onDestroy(() => { clearInterval(autoLogTimer); clearInterval(autoCheckTimer); unsubscribeTrip(); });
 
 	const at    = $derived($activeTrip);
 	const trips = $derived($allTrips);
@@ -842,25 +913,42 @@
 
 	<!-- ── Past trips ─────────────────────────────────────────────────────── -->
 	{#if trips.filter(tr => tr.ended_at != null).length > 0}
-	<div class="section-header" style="margin-top:16px">
-		<span class="section-title">Past trips</span>
-		<button class="btn-toggle" onclick={() => { showPastTrips = !showPastTrips; }}>
-			{showPastTrips ? 'Hide' : 'Show'}
+
+	<!-- Filter + sort controls -->
+	<div class="filter-row">
+		<div class="filter-tabs">
+			{#each (['week', 'month', 'year', 'all'] as FilterRange[]) as r}
+				<button class="filter-tab" class:active={filterRange === r} onclick={() => { filterRange = r; }}>
+					{r === 'week' ? '7d' : r === 'month' ? '30d' : r === 'year' ? '1y' : 'All'}
+				</button>
+			{/each}
+		</div>
+		<button class="sort-btn" onclick={() => { sortDesc = !sortDesc; }}>
+			{sortDesc ? '↓ Newest' : '↑ Oldest'}
 		</button>
 	</div>
 
-	{#if showPastTrips}
 	<div class="past-trips">
-		{#each trips.filter(tr => tr.ended_at != null) as trip (trip.id)}
+		{#each filteredPastTrips() as trip (trip.id)}
 		{@const pct = sailRatio(trip)}
-		<div class="past-trip-card">
-			<div class="past-trip-header">
-				<span class="past-trip-name">{trip.name ?? 'Unnamed trip'}</span>
-				<span class="past-trip-dates">{fmtDate(trip.started_at)} – {trip.ended_at ? fmtDate(trip.ended_at) : '?'}</span>
+		{@const isExpanded = expandedTripId === trip.id}
+		<div class="past-trip-card" class:expanded={isExpanded}>
+			<!-- Clickable header row -->
+			<div class="past-trip-header" onclick={() => toggleTripExpand(trip.id)} role="button" tabindex="0"
+				 onkeydown={(e) => e.key === 'Enter' && toggleTripExpand(trip.id)}>
+				<div class="past-trip-header-left">
+					<span class="past-trip-name">{trip.name ?? 'Unnamed trip'}</span>
+					{#if trip.from_port || trip.to_port}
+						<span class="past-trip-route">{trip.from_port ?? '?'} → {trip.to_port ?? '?'}</span>
+					{/if}
+				</div>
+				<div class="past-trip-header-right">
+					<span class="past-trip-dates">{fmtDate(trip.started_at)}</span>
+					<span class="expand-icon">{isExpanded ? '▲' : '▼'}</span>
+				</div>
 			</div>
-			{#if trip.from_port || trip.to_port}
-				<span class="past-trip-route">{trip.from_port ?? '?'} → {trip.to_port ?? '?'}</span>
-			{/if}
+
+			<!-- Stats row (always visible) -->
 			<div class="past-ratio">
 				<div class="ratio-bar mini">
 					<div class="ratio-sail" style="width:{pct}%; background:{ratioColor(pct)}"></div>
@@ -875,10 +963,57 @@
 				<span class="past-chip">{fmtDuration(trip.started_at, trip.ended_at)}</span>
 			</div>
 			{#if trip.notes}<p class="past-trip-notes">{trip.notes}</p>{/if}
+
+			<!-- Expandable entries -->
+			{#if isExpanded}
+			<div class="expanded-entries">
+				{#if expandedLoading}
+					<div class="expanded-loading">Loading entries…</div>
+				{:else if expandedEntries.length === 0}
+					<div class="expanded-loading">No entries found.</div>
+				{:else}
+				<div class="expanded-header">
+					<span class="section-title">Entries · {expandedEntries.length}</span>
+				</div>
+				<div class="entry-list">
+					{#each expandedEntries as e (e.id)}
+					<div class="entry-row" class:auto={e.source === 'auto'}>
+						<div class="entry-time">
+							<span class="entry-hhmm">{fmtTime(e.logged_at)}</span>
+							<span class="entry-date">{fmtDate(e.logged_at)}</span>
+							{#if e.source === 'auto'}<span class="entry-auto-tag">auto</span>{/if}
+						</div>
+						<div class="entry-body">
+							<div class="entry-nav">
+								{#if e.sog_kn != null}<span class="entry-chip">{e.sog_kn.toFixed(1)} kn</span>{/if}
+								{#if e.cog_deg != null}<span class="entry-chip">{dirAbbr(e.cog_deg)}</span>{/if}
+								{#if e.engine_rpm != null}<span class="entry-chip eng">⚙ {e.engine_rpm} rpm{e.engine_temp_c != null ? ` · ${e.engine_temp_c.toFixed(0)}°C` : ''}</span>{/if}
+								{#if e.sails}<span class="entry-chip sail">{e.sails}</span>{/if}
+								{#if e.distance_nm != null && e.distance_nm > 0}
+									<span class="entry-chip dist">+{e.distance_nm.toFixed(1)} nm</span>
+								{/if}
+							</div>
+							<div class="entry-env">
+								{#if e.wind_speed_kn != null}<span class="entry-env-item">💨 {e.wind_speed_kn.toFixed(0)} kn {dirAbbr(e.wind_dir_deg)}</span>{/if}
+								{#if e.wave_height_m != null}<span class="entry-env-item">🌊 {e.wave_height_m} m</span>{/if}
+								{#if e.baro_hpa != null}<span class="entry-env-item">📊 {e.baro_hpa.toFixed(0)} hPa</span>{/if}
+								{#if e.air_temp_c != null}<span class="entry-env-item">🌡 {e.air_temp_c.toFixed(0)}°</span>{/if}
+							</div>
+							{#if e.notes}<p class="entry-notes">{e.notes}</p>{/if}
+						</div>
+					</div>
+					{/each}
+				</div>
+				{/if}
+			</div>
+			{/if}
 		</div>
 		{/each}
+
+		{#if filteredPastTrips().length === 0}
+		<div class="no-trips">No trips in this period.</div>
+		{/if}
 	</div>
-	{/if}
 	{/if}
 </div>
 
@@ -1024,9 +1159,6 @@
 		font-size: 11px; font-weight: 700; text-transform: uppercase;
 		letter-spacing: 0.6px; color: var(--muted);
 	}
-	.btn-toggle {
-		font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0;
-	}
 
 	/* ── Log entries ──────────────────────────────────────────────────────── */
 	.entry-list { display: flex; flex-direction: column; gap: 0; }
@@ -1079,10 +1211,9 @@
 		background: var(--card); border: 1px solid var(--border); border-radius: 8px;
 		padding: 12px;
 	}
-	.past-trip-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 2px; }
 	.past-trip-name  { font-size: 14px; font-weight: 600; }
 	.past-trip-dates { font-size: 11px; color: var(--muted); white-space: nowrap; }
-	.past-trip-route { font-size: 11px; color: var(--muted); display: block; margin-bottom: 8px; }
+	.past-trip-route { font-size: 11px; color: var(--muted); display: block; }
 	.past-ratio { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 	.past-ratio-lbl { font-size: 11px; color: var(--muted); white-space: nowrap; }
 	.past-stats { display: flex; gap: 5px; flex-wrap: wrap; }
@@ -1166,6 +1297,46 @@
 		flex-shrink: 0;
 	}
 	.auto-toggle-btn:hover { background: var(--border); }
+
+	/* ── Filter + sort row ───────────────────────────────────────────────────── */
+	.filter-row {
+		display: flex; justify-content: space-between; align-items: center;
+		margin-top: 16px;
+	}
+	.filter-tabs { display: flex; gap: 4px; }
+	.filter-tab {
+		font-size: 11px; padding: 4px 10px; border-radius: 5px;
+		border: 1px solid var(--border); background: var(--card2);
+		color: var(--muted); cursor: pointer;
+	}
+	.filter-tab.active {
+		background: rgba(0,200,255,.12); border-color: var(--accent); color: var(--accent);
+		font-weight: 600;
+	}
+	.sort-btn {
+		font-size: 11px; padding: 4px 10px; border-radius: 5px;
+		border: 1px solid var(--border); background: var(--card2);
+		color: var(--muted); cursor: pointer;
+	}
+	.sort-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+	/* ── Past trip card (expandable) ─────────────────────────────────────────── */
+	.past-trip-header {
+		display: flex; justify-content: space-between; align-items: flex-start;
+		gap: 8px; margin-bottom: 8px; cursor: pointer; user-select: none;
+	}
+	.past-trip-header:hover .past-trip-name { color: var(--accent); }
+	.past-trip-header-left { display: flex; flex-direction: column; gap: 2px; }
+	.past-trip-header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+	.expand-icon { font-size: 10px; color: var(--muted); }
+	.past-trip-card.expanded { border-color: rgba(0,200,255,.2); }
+	.expanded-entries {
+		margin-top: 10px; padding-top: 10px;
+		border-top: 1px solid var(--border);
+	}
+	.expanded-header { margin-bottom: 6px; }
+	.expanded-loading { font-size: 12px; color: var(--muted); padding: 8px 0; text-align: center; }
+	.no-trips { font-size: 13px; color: var(--muted); text-align: center; padding: 16px 0; }
 
 	/* ── Auto-log terminal ───────────────────────────────────────────────────── */
 	.terminal {

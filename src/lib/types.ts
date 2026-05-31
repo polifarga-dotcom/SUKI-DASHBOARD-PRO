@@ -185,21 +185,23 @@ export type UserRole = {
 export type RelayDevice = 'victron_relay' | 'shelly';
 
 export type LogTrip = {
-	id:           string;
-	boat_id:      string;
-	name:         string | null;
-	from_port:    string | null;
-	to_port:      string | null;
-	started_at:   string;         // ISO
-	ended_at:     string | null;  // null = active
-	total_nm:     number | null;
-	sail_nm:      number | null;
-	motor_nm:     number | null;
-	avg_sog_kn:   number | null;
-	max_sog_kn:   number | null;
-	engine_hours: number | null;
-	notes:        string | null;
-	created_at:   string;
+	id:               string;
+	boat_id:          string;
+	name:             string | null;
+	from_port:        string | null;
+	to_port:          string | null;
+	started_at:       string;         // ISO
+	ended_at:         string | null;  // null = active
+	total_nm:         number | null;
+	sail_nm:          number | null;
+	motor_nm:         number | null;
+	avg_sog_kn:       number | null;
+	max_sog_kn:       number | null;
+	engine_hours:     number | null;
+	notes:            string | null;
+	created_at:       string;
+	is_auto:          boolean;        // true = started by auto-trip engine
+	auto_slow_since:  string | null;  // set by server when speed < 1.5 kn
 };
 
 export type LogEntry = {
