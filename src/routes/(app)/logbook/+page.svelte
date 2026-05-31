@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
+	import 'leaflet/dist/leaflet.css';
 	import { supabase } from '$lib/supabase.js';
 	import { telemetry } from '$lib/stores/telemetry.js';
 	import { vrmData } from '$lib/stores/vrm.js';
@@ -41,9 +42,8 @@
 				(payload: { new: LogEntry }) => {
 					const entry = payload.new;
 					tripEntries.update(es => {
-						// deduplicate: browser may have just inserted this same row
 						if (es.find(e => e.id === entry.id)) return es;
-						pushLog(`[server] ${entry.lat?.toFixed(4) ?? '?'}° ${entry.lon?.toFixed(4) ?? '?'}°  ${entry.sog_kn?.toFixed(1) ?? '—'} kn`);
+						pushLog(`[srv] ${entry.lat?.toFixed(4) ?? '?'} ${entry.lon?.toFixed(4) ?? '?'}  ${entry.sog_kn?.toFixed(1) ?? '-'} kn`);
 						return [entry, ...es].slice(0, 200);
 					});
 				}
@@ -60,11 +60,10 @@
 
 	// ── Auto-trip engine state ────────────────────────────────────────────────
 	const SOG_TRIP_KN      = 1.5;
-	const CONFIRM_START_MS = 1  * 60_000;   // must move 1 min → auto-start
-	const CONFIRM_STOP_MS  = 15 * 60_000;   // must be slow 15 min → auto-stop
+	const CONFIRM_START_MS = 1  * 60_000;
+	const CONFIRM_STOP_MS  = 15 * 60_000;
 
 	type AutoMode = 'idle' | 'watching' | 'recording' | 'countdown';
-	// Persist across page navigations / app restarts
 	let autoEnabled = $state(
 		typeof localStorage !== 'undefined'
 			? localStorage.getItem('autoTripEnabled') !== 'false'
@@ -76,15 +75,13 @@
 	let isAutoTrip       = $state(false);
 	let countdownMinutes = $state(15);
 
-	// ── Cerbo-offline VRM fallback (plain vars — not rendered) ────────────────
-	// When Cerbo SOG drops to null, we wait 90 s then check if the VRM GPS
-	// position has moved > 100 m. If so, the boat is still underway.
+	// ── Cerbo-offline VRM fallback ────────────────────────────────────────────
 	let cerboLossTime: number | null = null;
 	let vrmPosAtLoss: { lat: number; lon: number } | null = null;
 	const VRM_FALLBACK_WAIT_MS = 90_000;
 	const VRM_MOVE_THRESHOLD_M = 100;
 
-	// ── Terminal log (live feed while auto-recording) ─────────────────────────
+	// ── Terminal log ──────────────────────────────────────────────────────────
 	const MAX_LOG = 10;
 	let terminalLines = $state<string[]>([]);
 	function pushLog(msg: string) {
@@ -94,20 +91,16 @@
 		terminalLines = [`${ts}  ${msg}`, ...terminalLines].slice(0, MAX_LOG);
 	}
 
-	// Write back to localStorage whenever autoEnabled changes
 	$effect(() => {
 		if (typeof localStorage !== 'undefined') {
 			localStorage.setItem('autoTripEnabled', String(autoEnabled));
 		}
 	});
 
-	// ── Past trips filter + sort + expand ────────────────────────────────────
+	// ── Past trips filter + sort ──────────────────────────────────────────────
 	type FilterRange = 'week' | 'month' | 'year' | 'all';
-	let filterRange     = $state<FilterRange>('all');
-	let sortDesc        = $state(true);
-	let expandedTripId  = $state<string | null>(null);
-	let expandedEntries = $state<LogEntry[]>([]);
-	let expandedLoading = $state(false);
+	let filterRange = $state<FilterRange>('all');
+	let sortDesc    = $state(true);
 
 	const filteredPastTrips = $derived(() => {
 		let ts = $allTrips.filter(tr => tr.ended_at != null);
@@ -118,29 +111,257 @@
 		return sortDesc ? ts : [...ts].reverse();
 	});
 
+	// ── Expanded trip state ───────────────────────────────────────────────────
+	let expandedTripId    = $state<string | null>(null);
+	let expandedEntries   = $state<LogEntry[]>([]);   // first + last entry
+	let expandedLoading   = $state(false);
+	let expandedEntryCount = $state(0);
+	let showAllEntries    = $state(false);
+	let expandedAllEntries = $state<LogEntry[]>([]);
+	let allEntriesLoading  = $state(false);
+
+	// ── Trip map (lazy Leaflet, built when trip is expanded) ──────────────────
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let L_ref: any = null;
+	let expandedMapEl = $state<HTMLDivElement | null>(null);
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let expandedMapInst: any = null;
+	let expandedMapPositions = $state<{ lat: number; lon: number }[]>([]);
+
+	async function ensureLeaflet() {
+		if (!L_ref) {
+			L_ref = await import('leaflet');
+			// CSS is imported statically at module level — no dynamic inject needed
+		}
+		return L_ref as typeof import('leaflet');
+	}
+
+	async function initTripMap() {
+		if (!expandedMapEl || expandedMapPositions.length === 0) return;
+		if (expandedMapInst) { expandedMapInst.remove(); expandedMapInst = null; }
+
+		const L = await ensureLeaflet();
+
+		await new Promise(r => setTimeout(r, 50));
+		if (!expandedMapEl) return;  // may have been removed while awaiting
+
+		expandedMapInst = L.map(expandedMapEl, { zoomControl: false, attributionControl: false });
+
+		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+			maxNativeZoom: 19, maxZoom: 22,
+		}).addTo(expandedMapInst);
+
+		L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+			maxNativeZoom: 18, maxZoom: 22, opacity: 0.9,
+		}).addTo(expandedMapInst);
+
+		const latlngs = expandedMapPositions.map(p => [p.lat, p.lon] as [number, number]);
+
+		if (latlngs.length > 1) {
+			L.polyline(latlngs, { color: '#00c8ff', weight: 2.5, opacity: 0.85 }).addTo(expandedMapInst);
+		}
+
+		// Start marker — green
+		if (latlngs.length > 0) {
+			const startIcon = L.divIcon({
+				className: '',
+				html: '<div style="width:10px;height:10px;border-radius:50%;background:#22c55e;border:2px solid #fff;box-shadow:0 0 4px rgba(34,197,94,.8)"></div>',
+				iconSize: [10, 10], iconAnchor: [5, 5],
+			});
+			L.marker(latlngs[0], { icon: startIcon }).addTo(expandedMapInst);
+		}
+
+		// End marker — accent
+		if (latlngs.length > 1) {
+			const endIcon = L.divIcon({
+				className: '',
+				html: '<div style="width:12px;height:12px;border-radius:50%;background:#00c8ff;border:2px solid #fff;box-shadow:0 0 6px rgba(0,200,255,.8)"></div>',
+				iconSize: [12, 12], iconAnchor: [6, 6],
+			});
+			L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).addTo(expandedMapInst);
+		}
+
+		expandedMapInst.invalidateSize();
+
+		if (latlngs.length > 1) {
+			expandedMapInst.fitBounds(L.latLngBounds(latlngs), { padding: [24, 24], maxZoom: 14 });
+		} else {
+			expandedMapInst.setView(latlngs[0], 11);
+		}
+	}
+
+	function centerTripMap() {
+		if (!expandedMapInst || !L_ref || expandedMapPositions.length === 0) return;
+		const L = L_ref as typeof import('leaflet');
+		const latlngs = expandedMapPositions.map(p => [p.lat, p.lon] as [number, number]);
+		if (latlngs.length > 1) {
+			expandedMapInst.fitBounds(L.latLngBounds(latlngs), { padding: [24, 24], maxZoom: 14 });
+		} else {
+			expandedMapInst.setView(latlngs[0], 11);
+		}
+	}
+
 	async function toggleTripExpand(tripId: string) {
 		if (expandedTripId === tripId) {
-			expandedTripId = null; expandedEntries = []; return;
+			// Collapse
+			expandedMapInst?.remove();
+			expandedMapInst = null;
+			expandedTripId    = null;
+			expandedEntries   = [];
+			expandedAllEntries = [];
+			expandedMapPositions = [];
+			expandedEntryCount = 0;
+			showAllEntries    = false;
+			return;
 		}
-		expandedTripId = tripId; expandedLoading = true; expandedEntries = [];
-		const { data } = await supabase
-			.from('log_entries')
-			.select('*')
-			.eq('trip_id', tripId)
-			.order('logged_at', { ascending: false })
-			.limit(100);
-		expandedEntries = (data ?? []) as LogEntry[];
+		// Cleanup previous
+		expandedMapInst?.remove();
+		expandedMapInst = null;
+
+		expandedTripId    = tripId;
+		showAllEntries    = false;
+		allEntriesLoading = false;
+		expandedLoading   = true;
+		expandedEntries   = [];
+		expandedAllEntries = [];
+		expandedMapPositions = [];
+		expandedEntryCount = 0;
+
+		// Parallel: first entry, last entry, count, all positions for map
+		const [firstRes, lastRes, countRes, posRes] = await Promise.all([
+			supabase.from('log_entries').select('*')
+				.eq('trip_id', tripId).order('logged_at', { ascending: true }).limit(1),
+			supabase.from('log_entries').select('*')
+				.eq('trip_id', tripId).order('logged_at', { ascending: false }).limit(1),
+			supabase.from('log_entries').select('id', { count: 'exact', head: true })
+				.eq('trip_id', tripId),
+			supabase.from('log_entries').select('lat, lon')
+				.eq('trip_id', tripId)
+				.not('lat', 'is', null)
+				.not('lon', 'is', null)
+				.order('logged_at', { ascending: true })
+				.limit(1000),
+		]);
+
+		const first = firstRes.data?.[0] as LogEntry | undefined;
+		const last  = lastRes.data?.[0]  as LogEntry | undefined;
+
+		if (first && last && first.id !== last.id) {
+			expandedEntries = [first, last];
+		} else if (first) {
+			expandedEntries = [first];
+		}
+
+		expandedEntryCount   = countRes.count ?? 0;
+		expandedMapPositions = (posRes.data ?? []).filter(
+			(p): p is { lat: number; lon: number } => p.lat != null && p.lon != null
+		);
 		expandedLoading = false;
+
+		await tick();   // DOM renders map container + entry list
+		if (expandedMapEl) await initTripMap();
+	}
+
+	async function loadAllEntries(tripId: string) {
+		showAllEntries    = true;
+		allEntriesLoading = true;
+		expandedAllEntries = [];
+		const { data } = await supabase.from('log_entries').select('*')
+			.eq('trip_id', tripId).order('logged_at', { ascending: false }).limit(500);
+		expandedAllEntries = (data ?? []) as LogEntry[];
+		allEntriesLoading = false;
+	}
+
+	// ── Edit trip ──────────────────────────────────────────────────────────────
+	let editingTrip  = $state<LogTrip | null>(null);
+	let editName     = $state('');
+	let editFromPort = $state('');
+	let editToPort   = $state('');
+	let editNotes    = $state('');
+
+	function openEditTrip(trip: LogTrip, e: Event) {
+		e.stopPropagation();
+		editingTrip  = trip;
+		editName     = trip.name ?? '';
+		editFromPort = trip.from_port ?? '';
+		editToPort   = trip.to_port ?? '';
+		editNotes    = trip.notes ?? '';
+	}
+
+	async function saveEditTrip() {
+		if (!editingTrip || saving) return;
+		saving = true;
+		const patch: Partial<LogTrip> = {
+			name:      editName.trim()     || null,
+			from_port: editFromPort.trim() || null,
+			to_port:   editToPort.trim()   || null,
+			notes:     editNotes.trim()    || null,
+		};
+		await supabase.from('log_trips').update(patch)
+			.eq('id', editingTrip.id).eq('boat_id', editingTrip.boat_id);
+		allTrips.update(ts => ts.map(t => t.id === editingTrip!.id ? { ...t, ...patch } : t));
+		saving = false;
+		editingTrip = null;
+	}
+
+	async function deleteTripSingle(trip: LogTrip, e: Event) {
+		e.stopPropagation();
+		if (!confirm(`Delete "${trip.name ?? 'Unnamed trip'}" and all its log entries?`)) return;
+		saving = true;
+		await supabase.from('log_entries').delete().eq('trip_id', trip.id).eq('boat_id', trip.boat_id);
+		await supabase.from('log_trips').delete().eq('id', trip.id).eq('boat_id', trip.boat_id);
+		allTrips.update(ts => ts.filter(t => t.id !== trip.id));
+		if (expandedTripId === trip.id) {
+			expandedMapInst?.remove(); expandedMapInst = null;
+			expandedTripId = null; expandedEntries = []; expandedMapPositions = [];
+		}
+		saving = false;
+	}
+
+	// ── Selection mode ─────────────────────────────────────────────────────────
+	let selectionMode   = $state(false);
+	let selectedTripIds = $state<Set<string>>(new Set());
+
+	function toggleSelect(tripId: string) {
+		const s = new Set(selectedTripIds);
+		if (s.has(tripId)) s.delete(tripId); else s.add(tripId);
+		selectedTripIds = s;
+	}
+
+	function selectAll() {
+		selectedTripIds = new Set(filteredPastTrips().map(t => t.id));
+	}
+
+	function clearSelection() {
+		selectedTripIds = new Set();
+		selectionMode = false;
+	}
+
+	async function deleteSelected() {
+		if (selectedTripIds.size === 0 || saving) return;
+		if (!confirm(`Delete ${selectedTripIds.size} trip${selectedTripIds.size === 1 ? '' : 's'} and all their log entries? This cannot be undone.`)) return;
+		saving = true;
+		const ids = [...selectedTripIds];
+		await supabase.from('log_entries').delete().in('trip_id', ids).eq('boat_id', boat!.id);
+		await supabase.from('log_trips').delete().in('id', ids).eq('boat_id', boat!.id);
+		allTrips.update(ts => ts.filter(t => !selectedTripIds.has(t.id)));
+		if (expandedTripId && selectedTripIds.has(expandedTripId)) {
+			expandedMapInst?.remove(); expandedMapInst = null;
+			expandedTripId = null; expandedEntries = []; expandedMapPositions = [];
+		}
+		selectedTripIds = new Set();
+		selectionMode = false;
+		saving = false;
 	}
 
 	// ── Trip modal form ───────────────────────────────────────────────────────
-	let tripName      = $state('');
-	let tripFromPort  = $state('');
-	let tripToPort    = $state('');
+	let tripName     = $state('');
+	let tripFromPort = $state('');
+	let tripToPort   = $state('');
 
-	// ── Manual entry form (pre-filled from live data) ─────────────────────────
-	let entryNotes    = $state('');
-	let entrySails    = $state('');
+	// ── Manual entry form ─────────────────────────────────────────────────────
+	let entryNotes     = $state('');
+	let entrySails     = $state('');
 	let entryManualSOG = $state<string>('');
 	let entryManualCOG = $state<string>('');
 
@@ -150,7 +371,6 @@
 	const liveSog   = $derived(() => t?.nav_sog_ms != null ? +(t.nav_sog_ms * 1.94384).toFixed(2) : null);
 	const liveCog   = $derived(() => t?.nav_hdg_rad != null ? +(t.nav_hdg_rad * 180 / Math.PI).toFixed(1) : null);
 	const liveWind  = $derived(() => t?.env_tws_ms  != null ? +(t.env_tws_ms * 1.94384).toFixed(1) : null);
-	// True wind direction = heading + TWA (in degrees)
 	const liveWindDir = $derived(() => {
 		if (t?.nav_hdg_rad == null || t?.env_twa_rad == null) return null;
 		return +((((t.nav_hdg_rad + t.env_twa_rad) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1);
@@ -164,38 +384,29 @@
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
 	function fmtDuration(startIso: string, endIso?: string | null): string {
-		const ms   = (endIso ? new Date(endIso) : new Date()).getTime() - new Date(startIso).getTime();
-		const h    = Math.floor(ms / 3_600_000);
-		const m    = Math.floor((ms % 3_600_000) / 60_000);
+		const ms = (endIso ? new Date(endIso) : new Date()).getTime() - new Date(startIso).getTime();
+		const h  = Math.floor(ms / 3_600_000);
+		const m  = Math.floor((ms % 3_600_000) / 60_000);
 		return `${h}h ${m}m`;
 	}
-
 	function fmtTime(iso: string): string {
 		return new Date(iso).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
 	}
-
 	function fmtDate(iso: string): string {
 		return new Date(iso).toLocaleDateString('en', { month: 'short', day: 'numeric' });
 	}
-
 	function fmtNm(nm: number | null): string {
 		return nm != null ? nm.toFixed(1) + ' nm' : '—';
 	}
-
 	function dirAbbr(deg: number | null): string {
 		if (deg == null) return '—';
 		const d = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
 		return d[Math.round(deg / 22.5) % 16];
 	}
-
-	// Sailing vs motor ratio (0–100, sail %)
 	function sailRatio(trip: LogTrip | null): number {
 		if (!trip?.total_nm || trip.total_nm === 0) return 0;
-		const sail = trip.sail_nm ?? 0;
-		return Math.round((sail / trip.total_nm) * 100);
+		return Math.round(((trip.sail_nm ?? 0) / trip.total_nm) * 100);
 	}
-
-	// Color for ratio bar: green = sail, orange = motor
 	function ratioColor(pct: number): string {
 		if (pct >= 70) return 'var(--green)';
 		if (pct >= 40) return 'var(--amber)';
@@ -208,18 +419,10 @@
 		logLoaded.set(false);
 
 		const [tripsRes, entriesRes] = await Promise.all([
-			supabase
-				.from('log_trips')
-				.select('*')
-				.eq('boat_id', boat.id)
+			supabase.from('log_trips').select('*').eq('boat_id', boat.id)
 				.order('started_at', { ascending: false }),
-			supabase
-				.from('log_entries')
-				.select('*')
-				.eq('boat_id', boat.id)
-				.is('trip_id', null)
-				.order('logged_at', { ascending: false })
-				.limit(50),
+			supabase.from('log_entries').select('*').eq('boat_id', boat.id)
+				.is('trip_id', null).order('logged_at', { ascending: false }).limit(50),
 		]);
 
 		const trips = (tripsRes.data ?? []) as LogTrip[];
@@ -229,14 +432,13 @@
 		activeTrip.set(active);
 
 		if (active) {
-			// Limit to 200 most-recent entries — trips with 120 s tracking can
-			// accumulate 720 rows/day; full history is queried at trip end.
+			// Sync is_auto flag from DB (important after app restart)
+			isAutoTrip = active.is_auto;
+			autoMode   = 'recording';
+
 			const { data: entries } = await supabase
-				.from('log_entries')
-				.select('*')
-				.eq('trip_id', active.id)
-				.order('logged_at', { ascending: false })
-				.limit(200);
+				.from('log_entries').select('*').eq('trip_id', active.id)
+				.order('logged_at', { ascending: false }).limit(200);
 			tripEntries.set((entries ?? []) as LogEntry[]);
 			subscribeToActiveTrip(active.id);
 		} else {
@@ -247,58 +449,42 @@
 		logLoaded.set(true);
 	}
 
-	// ── Distance tracking (nm since last entry) ───────────────────────────────
+	// ── Distance tracking ─────────────────────────────────────────────────────
 	let lastEntryPos: { lat: number; lon: number } | null = null;
 
 	function calcDistanceSinceLast(lat: number, lon: number): number {
 		if (!lastEntryPos) return 0;
-		const m  = haversine(lastEntryPos.lat, lastEntryPos.lon, lat, lon);
-		return +(m / 1852).toFixed(3);
+		return +(haversine(lastEntryPos.lat, lastEntryPos.lon, lat, lon) / 1852).toFixed(3);
 	}
 
-	// Final accurate distance + stats from all DB entries (used at trip end)
 	async function recalcFromDB(tripId: string) {
-		const { data } = await supabase
-			.from('log_entries')
+		const { data } = await supabase.from('log_entries')
 			.select('distance_nm, engine_on, sog_kn, engine_hours, logged_at')
-			.eq('trip_id', tripId)
-			.order('logged_at', { ascending: true });
+			.eq('trip_id', tripId).order('logged_at', { ascending: true });
 		if (!data?.length) return null;
-
 		const totalNm = +data.reduce((s, e) => s + (e.distance_nm ?? 0), 0).toFixed(3);
 		const sailNm  = +data.filter(e => !e.engine_on).reduce((s, e) => s + (e.distance_nm ?? 0), 0).toFixed(3);
-		const motorNm = +data.filter(e => e.engine_on).reduce( (s, e) => s + (e.distance_nm ?? 0), 0).toFixed(3);
-
+		const motorNm = +data.filter(e =>  e.engine_on).reduce((s, e) => s + (e.distance_nm ?? 0), 0).toFixed(3);
 		const sogsVal = data.filter(e => e.sog_kn != null).map(e => e.sog_kn as number);
 		const avgSog  = sogsVal.length
-			? +(sogsVal.reduce((a, b) => a + b, 0) / sogsVal.length).toFixed(2)
-			: null;
-
+			? +(sogsVal.reduce((a, b) => a + b, 0) / sogsVal.length).toFixed(2) : null;
 		const withEng  = data.filter(e => e.engine_hours != null);
 		const engHours = withEng.length >= 2
 			? +Math.max(0, (withEng.at(-1)!.engine_hours as number) - (withEng[0].engine_hours as number)).toFixed(2)
 			: null;
-
 		return { totalNm, sailNm, motorNm, avgSog, engHours };
 	}
 
-	// Update running trip totals (sail_nm / motor_nm) based on new entry
 	async function updateTripTotals(tripId: string, distNm: number, engineOn: boolean) {
 		const current = $activeTrip;
 		if (!current) return;
-
 		const patch: Partial<LogTrip> = {
-			total_nm:  +(((current.total_nm ?? 0) + distNm).toFixed(3)),
-			sail_nm:   +(((current.sail_nm  ?? 0) + (engineOn ? 0 : distNm)).toFixed(3)),
-			motor_nm:  +(((current.motor_nm ?? 0) + (engineOn ? distNm : 0)).toFixed(3)),
+			total_nm: +(((current.total_nm ?? 0) + distNm).toFixed(3)),
+			sail_nm:  +(((current.sail_nm  ?? 0) + (engineOn ? 0 : distNm)).toFixed(3)),
+			motor_nm: +(((current.motor_nm ?? 0) + (engineOn ? distNm : 0)).toFixed(3)),
 		};
-
 		const sog = liveSog();
-		if (sog != null) {
-			const currentMax = current.max_sog_kn ?? 0;
-			if (sog > currentMax) patch.max_sog_kn = sog;
-		}
-
+		if (sog != null && sog > (current.max_sog_kn ?? 0)) patch.max_sog_kn = sog;
 		await supabase.from('log_trips').update(patch).eq('id', tripId);
 		activeTrip.update(tr => tr ? { ...tr, ...patch } : tr);
 	}
@@ -306,52 +492,35 @@
 	// ── Insert a log entry ────────────────────────────────────────────────────
 	async function insertEntry(opts: {
 		source: 'auto' | 'manual';
-		notes?: string;
-		sails?: string;
-		sogOverride?: number;
-		cogOverride?: number;
+		notes?: string; sails?: string;
+		sogOverride?: number; cogOverride?: number;
 	}) {
 		if (!boat) return;
-		const at    = $activeTrip;
-		const lat   = liveLat();
-		const lon   = liveLon();
-		const sog   = opts.sogOverride ?? liveSog();
-		const cog   = opts.cogOverride ?? liveCog();
+		const at  = $activeTrip;
+		const lat = liveLat(); const lon = liveLon();
+		const sog = opts.sogOverride ?? liveSog();
+		const cog = opts.cogOverride ?? liveCog();
 		const engOn = liveEngOn();
-
 		const distNm = (lat != null && lon != null) ? calcDistanceSinceLast(lat, lon) : 0;
-
 		const entry: Omit<LogEntry, 'id' | 'created_at'> = {
-			trip_id:       at?.id ?? null,
-			boat_id:       boat.id,
-			logged_at:     new Date().toISOString(),
-			lat, lon,
-			cog_deg:       cog,
-			sog_kn:        sog,
-			distance_nm:   distNm > 0 ? distNm : null,
-			engine_on:     engOn,
-			engine_rpm:    t?.eng_rpm ?? null,
-			engine_hours:  liveEngH(),
-			engine_temp_c: liveEngT(),
-			sails:         opts.sails?.trim() || null,
-			wind_speed_kn: liveWind(),
-			wind_dir_deg:  liveWindDir(),
-			baro_hpa:      liveBaro(),
-			air_temp_c:    liveAirT(),
-			water_temp_c:  liveWaterT(),
-			wave_height_m: wave.wave_height_m,
-			wave_period_s: wave.wave_period_s,
-			notes:         opts.notes?.trim() || null,
-			source:        opts.source,
+			trip_id: at?.id ?? null, boat_id: boat.id,
+			logged_at: new Date().toISOString(), lat, lon,
+			cog_deg: cog, sog_kn: sog,
+			distance_nm: distNm > 0 ? distNm : null,
+			engine_on: engOn, engine_rpm: t?.eng_rpm ?? null,
+			engine_hours: liveEngH(), engine_temp_c: liveEngT(),
+			sails: opts.sails?.trim() || null,
+			wind_speed_kn: liveWind(), wind_dir_deg: liveWindDir(),
+			baro_hpa: liveBaro(), air_temp_c: liveAirT(), water_temp_c: liveWaterT(),
+			wave_height_m: wave.wave_height_m, wave_period_s: wave.wave_period_s,
+			notes: opts.notes?.trim() || null, source: opts.source,
 		};
-
 		const { data } = await supabase.from('log_entries').insert(entry).select().single();
-
 		if (data) {
 			tripEntries.update(es => [data as LogEntry, ...es]);
 			if (lat != null && lon != null) lastEntryPos = { lat, lon };
 			if (at && distNm > 0) await updateTripTotals(at.id, distNm, engOn);
-			pushLog(`+ entry  ${lat?.toFixed(4) ?? '?'}° ${lon?.toFixed(4) ?? '?'}°  ${sog?.toFixed(1) ?? '—'} kn  ${engOn ? '⚙ engine' : '⛵ sail'}${distNm > 0 ? `  +${distNm.toFixed(2)} nm` : ''}`);
+			pushLog(`+ ${lat?.toFixed(4) ?? '?'} ${lon?.toFixed(4) ?? '?'}  ${sog?.toFixed(1) ?? '-'} kn  ${engOn ? '[eng]' : '[sail]'}${distNm > 0 ? `  +${distNm.toFixed(2)} nm` : ''}`);
 		}
 	}
 
@@ -359,30 +528,22 @@
 	async function startTrip() {
 		if (!boat || saving) return;
 		saving = true;
-		const { data } = await supabase
-			.from('log_trips')
-			.insert({
-				boat_id:    boat.id,
-				name:       tripName.trim() || null,
-				from_port:  tripFromPort.trim() || null,
-				to_port:    tripToPort.trim() || null,
-				started_at: new Date().toISOString(),
-			})
-			.select()
-			.single();
-
+		const { data } = await supabase.from('log_trips').insert({
+			boat_id: boat.id, name: tripName.trim() || null,
+			from_port: tripFromPort.trim() || null, to_port: tripToPort.trim() || null,
+			started_at: new Date().toISOString(),
+		}).select().single();
 		if (data) {
 			const trip = data as LogTrip;
+			isAutoTrip = false;
+			autoMode   = 'recording';
 			activeTrip.set(trip);
 			allTrips.update(ts => [trip, ...ts]);
-			tripEntries.set([]);
-			lastEntryPos = null;
+			tripEntries.set([]); lastEntryPos = null;
 			subscribeToActiveTrip(trip.id);
-			// First entry: departure
 			await insertEntry({ source: 'auto', notes: `Departure from ${tripFromPort || 'unknown'}` });
 		}
-		saving = false;
-		showTripModal = false;
+		saving = false; showTripModal = false;
 		tripName = ''; tripFromPort = ''; tripToPort = '';
 	}
 
@@ -392,27 +553,22 @@
 		if (!at || saving) return;
 		saving = true;
 		await insertEntry({ source: 'auto', notes: `Arrival at ${at.to_port || 'destination'}` });
-
-		// Recalculate all distances accurately from DB (avoids floating-point
-		// drift from incremental updates during 60-second tracking)
 		const stats = await recalcFromDB(at.id);
-
 		const patch: Partial<LogTrip> = {
-			ended_at:     new Date().toISOString(),
-			total_nm:     stats?.totalNm ?? at.total_nm,
-			sail_nm:      stats?.sailNm  ?? at.sail_nm,
-			motor_nm:     stats?.motorNm ?? at.motor_nm,
+			ended_at: new Date().toISOString(),
+			total_nm: stats?.totalNm ?? at.total_nm,
+			sail_nm:  stats?.sailNm  ?? at.sail_nm,
+			motor_nm: stats?.motorNm ?? at.motor_nm,
 			avg_sog_kn:   stats?.avgSog  ?? null,
 			engine_hours: stats?.engHours ?? null,
 		};
 		await supabase.from('log_trips').update(patch).eq('id', at.id);
 		activeTrip.update(tr => tr ? { ...tr, ...patch } : tr);
-
 		const finished = { ...(at as LogTrip), ...patch };
 		allTrips.update(ts => ts.map(t => t.id === at.id ? finished : t));
-		activeTrip.set(null);
-		tripEntries.set([]);
-		unsubscribeTrip();
+		activeTrip.set(null); tripEntries.set([]); unsubscribeTrip();
+		isAutoTrip = false; autoMode = 'idle';
+		fastSince = null; slowSince = null; countdownMinutes = 15;
 		saving = false;
 	}
 
@@ -421,41 +577,31 @@
 		if (saving) return;
 		saving = true;
 		await insertEntry({
-			source: 'manual',
-			notes:  entryNotes,
-			sails:  entrySails,
+			source: 'manual', notes: entryNotes, sails: entrySails,
 			sogOverride: entryManualSOG ? +entryManualSOG : undefined,
 			cogOverride: entryManualCOG ? +entryManualCOG : undefined,
 		});
-		saving = false;
-		showEntryModal = false;
+		saving = false; showEntryModal = false;
 		entryNotes = ''; entrySails = ''; entryManualSOG = ''; entryManualCOG = '';
 	}
 
-	// ── Reverse geocoding (Nominatim / OSM — free, no key) ───────────────────
+	// ── Reverse geocoding ─────────────────────────────────────────────────────
 	async function reverseGeocode(lat: number, lon: number): Promise<string> {
 		try {
 			const r = await fetch(
 				`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10&accept-language=en`,
-				{ headers: {
-					'User-Agent': 'SUKI-Dashboard-Pro/1.0 sailing@suki.boat',
-					'Accept-Language': 'en',
-				} }
+				{ headers: { 'User-Agent': 'SUKI-Dashboard-Pro/1.0 sailing@suki.boat', 'Accept-Language': 'en' } }
 			);
 			if (!r.ok) throw new Error('');
-			const j = await r.json();
-			const a = j.address ?? {};
-			// Prefer maritime/coastal names; fall back to town/city
+			const j = await r.json(); const a = j.address ?? {};
 			return a.bay ?? a.sea ?? a.body_of_water ?? a.island ?? a.archipelago ??
 			       a.village ?? a.town ?? a.city_district ?? a.city ??
-			       a.county ?? j.name ??
-			       `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`;
+			       a.county ?? j.name ?? `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`;
 		} catch {
 			return `${lat.toFixed(3)}°, ${lon.toFixed(3)}°`;
 		}
 	}
 
-	// ── Weather summary string for auto-entries ───────────────────────────────
 	function buildWeatherSummary(): string {
 		const parts: string[] = [];
 		const w = liveWind(); const wd = liveWindDir();
@@ -474,32 +620,21 @@
 		const lat = liveLat(); const lon = liveLon();
 		const place = (lat != null && lon != null) ? await reverseGeocode(lat, lon) : null;
 		const wx    = buildWeatherSummary();
-
-		const { data } = await supabase
-			.from('log_trips')
-			.insert({
-				boat_id:    boat.id,
-				name:       place ?? 'Auto trip',
-				from_port:  place,
-				started_at: new Date().toISOString(),
-				notes:      wx || null,
-				is_auto:    true,
-			})
-			.select().single();
-
+		const { data } = await supabase.from('log_trips').insert({
+			boat_id: boat.id, name: place ?? 'Auto trip', from_port: place,
+			started_at: new Date().toISOString(), notes: wx || null, is_auto: true,
+		}).select().single();
 		if (data) {
 			const trip = data as LogTrip;
-			isAutoTrip = true;
-			terminalLines = [];   // fresh log for new trip
-			pushLog(`▶▶ Auto-trip started · ${place ?? 'position recorded'}`);
-			activeTrip.set(trip);
-			allTrips.update(ts => [trip, ...ts]);
-			tripEntries.set([]);
-			lastEntryPos = null;
+			isAutoTrip = true; autoMode = 'recording';
+			terminalLines = [];
+			pushLog(`>> Auto-trip started - ${place ?? 'position recorded'}`);
+			activeTrip.set(trip); allTrips.update(ts => [trip, ...ts]);
+			tripEntries.set([]); lastEntryPos = null;
 			subscribeToActiveTrip(trip.id);
 			await insertEntry({
 				source: 'auto',
-				notes: [place ? `Departure from ${place}` : 'Departure', wx].filter(Boolean).join(' · '),
+				notes: [place ? `Departure from ${place}` : 'Departure', wx].filter(Boolean).join(' - '),
 			});
 		}
 	}
@@ -510,54 +645,44 @@
 		if (!at) return;
 		const lat = liveLat(); const lon = liveLon();
 		const place = (lat != null && lon != null) ? await reverseGeocode(lat, lon) : null;
-		pushLog(`■ Auto-trip stopped · ${place ?? 'unknown'} · ${reason}`);
-		const wx    = buildWeatherSummary();
-
+		pushLog(`[stop] ${place ?? 'unknown'} - ${reason}`);
+		const wx = buildWeatherSummary();
 		await insertEntry({
 			source: 'auto',
-			notes: [[place ? `Arrival at ${place}` : 'Arrival', wx].filter(Boolean).join(' · '), `(${reason})`].join(' '),
+			notes: [[place ? `Arrival at ${place}` : 'Arrival', wx].filter(Boolean).join(' - '), `(${reason})`].join(' '),
 		});
-
-		// Final accurate stats recalculated from all DB entries
 		const stats = await recalcFromDB(at.id);
-
 		const patch: Partial<LogTrip> = {
-			ended_at:     new Date().toISOString(),
-			to_port:      place,
-			name:         at.from_port && place ? `${at.from_port} → ${place}` : (at.name ?? 'Auto trip'),
-			total_nm:     stats?.totalNm ?? at.total_nm,
-			sail_nm:      stats?.sailNm  ?? at.sail_nm,
-			motor_nm:     stats?.motorNm ?? at.motor_nm,
-			avg_sog_kn:   stats?.avgSog  ?? null,
+			ended_at: new Date().toISOString(), to_port: place,
+			name: at.from_port && place ? `${at.from_port} → ${place}` : (at.name ?? 'Auto trip'),
+			total_nm: stats?.totalNm ?? at.total_nm, sail_nm:  stats?.sailNm  ?? at.sail_nm,
+			motor_nm: stats?.motorNm ?? at.motor_nm, avg_sog_kn: stats?.avgSog ?? null,
 			engine_hours: stats?.engHours ?? null,
 		};
 		await supabase.from('log_trips').update(patch).eq('id', at.id);
 		const finished = { ...(at as LogTrip), ...patch };
 		allTrips.update(ts => ts.map(t => t.id === at.id ? finished : t));
-		activeTrip.set(null);
-		tripEntries.set([]);
-		unsubscribeTrip();
-		isAutoTrip       = false;
-		autoMode         = 'idle';
-		slowSince        = null;
-		fastSince        = null;
-		countdownMinutes = 15;
-		cerboLossTime    = null;
-		vrmPosAtLoss     = null;
+		activeTrip.set(null); tripEntries.set([]); unsubscribeTrip();
+		isAutoTrip = false; autoMode = 'idle';
+		slowSince = null; fastSince = null; countdownMinutes = 15;
+		cerboLossTime = null; vrmPosAtLoss = null;
 	}
 
 	// ── Auto-trip: check (runs every 30 s) ────────────────────────────────────
+	// Applies auto-stop logic to ALL active trips, not just is_auto ones.
 	async function checkAutoTrip() {
-		if (!autoEnabled || !boat) return;
+		// Skip until logbook is loaded (prevents false auto-start before active trip is known)
+		if (!autoEnabled || !boat || !$logLoaded) return;
+
 		const now      = Date.now();
 		const sog      = liveSog();
 		const anchorOn = $anchorConfig?.active ?? false;
 		const trip     = $activeTrip;
-		const v        = vrm;   // VRM snapshot for offline fallback
+		const v        = vrm;
 
-		// Anchor alarm activated → stop auto trip immediately
-		if (anchorOn && isAutoTrip && trip) {
-			pushLog(`⚓ Anchor alarm active — stopping trip`);
+		// Anchor alarm → stop any active trip immediately
+		if (anchorOn && trip) {
+			pushLog(`[anchor] Alarm active - stopping trip`);
 			await autoStopTrip('anchor alarm set');
 			return;
 		}
@@ -565,128 +690,109 @@
 		// ── Determine movement ────────────────────────────────────────────────
 		let moving = sog != null && sog >= SOG_TRIP_KN;
 
-		// Cerbo offline fallback: if Cerbo has no SOG data (sog === null) and
-		// a trip is active, check VRM GPS displacement as a proxy.
-		// • First 90 s: give Cerbo benefit of the doubt (temporary outage)
-		// • After 90 s: compare VRM GPS positions; > 100 m → still underway
-		if (sog === null && isAutoTrip && trip) {
+		// Cerbo offline fallback for any active trip
+		if (sog === null && trip) {
 			if (v?.gps_lat != null && v?.gps_lon != null) {
 				if (cerboLossTime === null) {
-					// Mark when Cerbo went offline and snapshot VRM position
-					cerboLossTime = now;
-					vrmPosAtLoss  = { lat: v.gps_lat, lon: v.gps_lon };
-					pushLog(`📡 Cerbo offline — monitoring VRM GPS`);
-					moving = true;   // benefit of the doubt for first window
+					cerboLossTime = now; vrmPosAtLoss = { lat: v.gps_lat, lon: v.gps_lon };
+					pushLog(`[sat] Cerbo offline - monitoring VRM GPS`);
+					moving = true;
 				} else if (now - cerboLossTime < VRM_FALLBACK_WAIT_MS) {
-					moving = true;   // still within grace period
+					moving = true;
 				} else {
-					// 90 s elapsed — measure VRM displacement
 					const dist = haversine(vrmPosAtLoss!.lat, vrmPosAtLoss!.lon, v.gps_lat, v.gps_lon);
-					// Refresh baseline for the next check cycle
-					vrmPosAtLoss  = { lat: v.gps_lat, lon: v.gps_lon };
-					cerboLossTime = now;
+					vrmPosAtLoss = { lat: v.gps_lat, lon: v.gps_lon }; cerboLossTime = now;
 					if (dist > VRM_MOVE_THRESHOLD_M) {
 						moving = true;
-						pushLog(`📡 VRM GPS +${Math.round(dist)} m — still underway`);
+						pushLog(`[sat] VRM GPS +${Math.round(dist)} m - underway`);
 					} else {
-						pushLog(`📡 VRM GPS +${Math.round(dist)} m — possibly stopped`);
+						pushLog(`[sat] VRM GPS +${Math.round(dist)} m - possibly stopped`);
 					}
 				}
 			} else {
-				// No VRM GPS available — treat same as "no data" (start countdown)
-				if (cerboLossTime === null) pushLog(`📡 Cerbo offline — no VRM GPS fallback`);
+				if (cerboLossTime === null) pushLog(`[sat] Cerbo offline - no VRM GPS`);
 				cerboLossTime ??= now;
 			}
 		} else if (sog !== null && cerboLossTime !== null) {
-			// Cerbo came back online — clear fallback state
-			cerboLossTime = null;
-			vrmPosAtLoss  = null;
-			pushLog(`✅ Cerbo back online`);
+			cerboLossTime = null; vrmPosAtLoss = null;
+			pushLog(`[ok] Cerbo back online`);
 		}
 
 		// ── State machine ─────────────────────────────────────────────────────
 		if (moving) {
-			slowSince        = null;
-			countdownMinutes = 15;
+			slowSince = null; countdownMinutes = 15;
 
 			if (!trip) {
+				// No active trip — watch for auto-start
 				if (fastSince == null) {
 					fastSince = now;
 					const sogStr = sog != null ? `${sog.toFixed(1)} kn` : 'VRM GPS';
-					pushLog(`▶ ${sogStr} — confirming movement…`);
+					pushLog(`> ${sogStr} - confirming movement...`);
 				}
 				autoMode = 'watching';
 				if (now - fastSince >= CONFIRM_START_MS) {
-					autoMode  = 'recording';
-					fastSince = null;
-					pushLog(`▶▶ Confirmed — launching auto-trip`);
+					autoMode = 'recording'; fastSince = null;
+					pushLog(`>> Confirmed - launching auto-trip`);
 					await autoStartTrip();
 				}
-			} else if (isAutoTrip) {
+			} else {
+				// Active trip (auto or manual) + moving = recording
 				autoMode = 'recording';
-				const lat     = liveLat(); const lon = liveLon();
-				const wind    = liveWind(); const windDir = liveWindDir();
-				const sogDisp = sog != null ? `${sog.toFixed(1)} kn` : `VRM GPS`;
-				pushLog(
-					`◉ ${sogDisp}  ${lat?.toFixed(4) ?? '?'}° ${lon?.toFixed(4) ?? '?'}°` +
-					(wind != null ? `  💨 ${wind.toFixed(0)} kn ${windDir != null ? dirAbbr(windDir) : ''}` : '')
-				);
+				if (isAutoTrip) {
+					const lat     = liveLat(); const lon = liveLon();
+					const wind    = liveWind(); const windDir = liveWindDir();
+					const sogDisp = sog != null ? `${sog.toFixed(1)} kn` : 'VRM GPS';
+					pushLog(
+						`[rec] ${sogDisp}  ${lat?.toFixed(4) ?? '?'} ${lon?.toFixed(4) ?? '?'}` +
+						(wind != null ? `  ${wind.toFixed(0)} kn ${windDir != null ? dirAbbr(windDir) : ''}` : '')
+					);
+				}
 			}
-
 		} else {
 			fastSince = null;
 
-			if (trip && isAutoTrip) {
+			if (trip) {
+				// Slow / stopped — countdown for ALL trips
 				if (slowSince == null) {
 					slowSince = now;
-					pushLog(`⚠ Speed < ${SOG_TRIP_KN} kn — auto-stop in ${countdownMinutes} min`);
+					pushLog(`[!] Speed < ${SOG_TRIP_KN} kn - auto-stop in ${countdownMinutes} min`);
 				}
 				const elapsed = now - slowSince;
 				countdownMinutes = Math.max(0, Math.ceil((CONFIRM_STOP_MS - elapsed) / 60_000));
 				autoMode = 'countdown';
-				pushLog(`⏱ ${countdownMinutes} min to stop  ${sog?.toFixed(1) ?? '0.0'} kn`);
+				if (isAutoTrip) pushLog(`[T-${countdownMinutes}] ${sog?.toFixed(1) ?? '0.0'} kn`);
 				if (elapsed >= CONFIRM_STOP_MS) {
 					await autoStopTrip('< 1.5 kn for 15 min');
 				}
-			} else if (!trip) {
-				autoMode  = 'idle';
-				fastSince = null;
+			} else {
+				autoMode = 'idle'; fastSince = null;
 			}
 		}
 	}
 
-	// ── Auto-log every 120 seconds ────────────────────────────────────────────
+	// ── Auto-log every 120 s ──────────────────────────────────────────────────
 	function startAutoLog() {
-		// 120-second position/weather snapshot while any trip is running.
-		// Matches the server-side Edge Function cadence (pg_cron every 2 min).
-		// The Edge Function's 110-second duplicate guard ensures no double entries.
 		autoLogTimer = setInterval(() => {
 			if ($activeTrip) insertEntry({ source: 'auto' });
 		}, 120_000);
-
-		// Auto-trip detection every 30 s
 		autoCheckTimer = setInterval(checkAutoTrip, 30_000);
-		checkAutoTrip();  // immediate first check
+		checkAutoTrip();
 	}
 
 	// ── All-time statistics ───────────────────────────────────────────────────
 	const stats = $derived(() => {
 		const trips = $allTrips.filter(tr => tr.ended_at != null);
 		if (!trips.length) return null;
-		const totalNm    = trips.reduce((s, t) => s + (t.total_nm ?? 0), 0);
-		const sailNm     = trips.reduce((s, t) => s + (t.sail_nm  ?? 0), 0);
-		const motorNm    = trips.reduce((s, t) => s + (t.motor_nm ?? 0), 0);
-		const engHours   = trips.reduce((s, t) => s + (t.engine_hours ?? 0), 0);
-		const maxSog     = Math.max(...trips.map(t => t.max_sog_kn ?? 0));
-		const sailPct    = totalNm > 0 ? Math.round(sailNm / totalNm * 100) : 0;
+		const totalNm  = trips.reduce((s, t) => s + (t.total_nm ?? 0), 0);
+		const sailNm   = trips.reduce((s, t) => s + (t.sail_nm  ?? 0), 0);
+		const motorNm  = trips.reduce((s, t) => s + (t.motor_nm ?? 0), 0);
+		const engHours = trips.reduce((s, t) => s + (t.engine_hours ?? 0), 0);
+		const maxSog   = Math.max(...trips.map(t => t.max_sog_kn ?? 0));
+		const sailPct  = totalNm > 0 ? Math.round(sailNm / totalNm * 100) : 0;
 		return { totalNm, sailNm, motorNm, engHours, maxSog, sailPct, tripCount: trips.length };
 	});
 
 	// ── Init ──────────────────────────────────────────────────────────────────
-	// NOTE: startAutoLog() → checkAutoTrip() reads liveSog / $anchorConfig /
-	// $activeTrip synchronously. Wrapping with untrack() prevents those stores
-	// from becoming dependencies of this effect (which would cause the entire
-	// logbook to re-mount on every 3-second telemetry update).
 	$effect(() => {
 		const b = boat;
 		if (b) {
@@ -696,10 +802,14 @@
 		return () => { clearInterval(autoLogTimer); clearInterval(autoCheckTimer); };
 	});
 
-	onDestroy(() => { clearInterval(autoLogTimer); clearInterval(autoCheckTimer); unsubscribeTrip(); });
+	onDestroy(() => {
+		clearInterval(autoLogTimer); clearInterval(autoCheckTimer);
+		unsubscribeTrip();
+		expandedMapInst?.remove();
+	});
 
-	const at    = $derived($activeTrip);
-	const trips = $derived($allTrips);
+	const at      = $derived($activeTrip);
+	const trips   = $derived($allTrips);
 	const entries = $derived($tripEntries);
 	const loaded  = $derived($logLoaded);
 	const isAdmin = $derived(role === 'admin');
@@ -724,7 +834,6 @@
 			<span class="trip-duration">{fmtDuration(at.started_at)}</span>
 		</div>
 
-		<!-- Sailing vs motor ratio bar -->
 		<div class="ratio-section">
 			<div class="ratio-bar-wrap">
 				<div class="ratio-bar">
@@ -733,13 +842,12 @@
 				</div>
 			</div>
 			<div class="ratio-labels">
-				<span class="ratio-label sail">⛵ {fmtNm(at.sail_nm)} sail ({pct}%)</span>
-				<span class="ratio-label motor">⚙️ {fmtNm(at.motor_nm)} motor ({100-pct}%)</span>
-				<span class="ratio-label total">∑ {fmtNm(at.total_nm)}</span>
+				<span class="ratio-label sail">Sail {fmtNm(at.sail_nm)} ({pct}%)</span>
+				<span class="ratio-label motor">Motor {fmtNm(at.motor_nm)} ({100-pct}%)</span>
+				<span class="ratio-label total">{fmtNm(at.total_nm)}</span>
 			</div>
 		</div>
 
-		<!-- Current snapshot row -->
 		<div class="trip-snapshot">
 			{#if liveSog() != null}
 				<div class="snap-item"><span class="snap-val">{liveSog()}</span><span class="snap-lbl">kn SOG</span></div>
@@ -760,7 +868,6 @@
 			{/if}
 		</div>
 
-		<!-- Actions -->
 		{#if isAdmin}
 		<div class="trip-actions">
 			<button class="btn-entry" onclick={() => { showEntryModal = true; }}>+ Log entry</button>
@@ -770,9 +877,13 @@
 	</div>
 
 	{:else if loaded && isAdmin}
-	<!-- ── No active trip → start CTA ─────────────────────────────────────── -->
 	<div class="start-cta">
-		<div class="start-icon">⚓</div>
+		<svg viewBox="0 0 20 20" width="36" height="36" fill="none" stroke="var(--muted)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:4px">
+			<circle cx="10" cy="4.5" r="1.8"/>
+			<line x1="10" y1="6.3" x2="10" y2="16"/>
+			<line x1="5.5" y1="9.5" x2="14.5" y2="9.5"/>
+			<path d="M5.5 16 a4.5 3.5 0 0 0 9 0"/>
+		</svg>
 		<div class="start-text">No active trip</div>
 		<button class="btn-start" onclick={() => { showTripModal = true; }}>Start trip</button>
 	</div>
@@ -794,9 +905,9 @@
 			{:else if autoMode === 'watching'}
 				<span class="auto-status">Moving · auto-start in ~{CONFIRM_START_MS / 60_000} min…</span>
 			{:else if autoMode === 'recording'}
-				<span class="auto-status">Auto-trip recording</span>
+				<span class="auto-status">{isAutoTrip ? 'Auto-trip recording' : 'Trip active · speed monitoring on'}</span>
 			{:else if autoMode === 'countdown'}
-				<span class="auto-status">⏱ Speed below {SOG_TRIP_KN} kn · auto-stop in {countdownMinutes} min</span>
+				<span class="auto-status">Speed below {SOG_TRIP_KN} kn · auto-stop in {countdownMinutes} min</span>
 			{/if}
 		</div>
 		<button class="auto-toggle-btn" onclick={() => { autoEnabled = false; autoMode = 'idle'; }}>Off</button>
@@ -809,14 +920,12 @@
 	{/if}
 	{/if}
 
-	<!-- ── Auto-log terminal (visible while recording) ───────────────────── -->
+	<!-- ── Auto-log terminal (visible while auto-recording) ──────────────────── -->
 	{#if autoEnabled && isAutoTrip && terminalLines.length > 0}
 	<div class="terminal">
 		<div class="terminal-hdr">
-			<span class="terminal-title">
-				<span class="terminal-dot"></span>AUTO LOG
-			</span>
-			<span class="terminal-meta">{terminalLines.length} / {MAX_LOG} lines</span>
+			<span class="terminal-title"><span class="terminal-dot"></span>AUTO LOG</span>
+			<span class="terminal-meta">{terminalLines.length} / {MAX_LOG}</span>
 		</div>
 		<div class="terminal-body">
 			{#each terminalLines as line, i}
@@ -843,26 +952,13 @@
 				<div class="entry-nav">
 					{#if e.sog_kn != null}<span class="entry-chip">{e.sog_kn.toFixed(1)} kn</span>{/if}
 					{#if e.cog_deg != null}<span class="entry-chip">{dirAbbr(e.cog_deg)}</span>{/if}
-					{#if e.engine_rpm != null}<span class="entry-chip eng">⚙ {e.engine_rpm} rpm{e.engine_temp_c != null ? ` · ${e.engine_temp_c.toFixed(0)}°C` : ''}</span>{/if}
+					{#if e.engine_rpm != null}<span class="entry-chip eng">eng {e.engine_rpm} rpm{e.engine_temp_c != null ? ` · ${e.engine_temp_c.toFixed(0)}°C` : ''}</span>{/if}
 					{#if e.sails}<span class="entry-chip sail">{e.sails}</span>{/if}
 					{#if e.distance_nm != null && e.distance_nm > 0}
 						<span class="entry-chip dist">+{e.distance_nm.toFixed(1)} nm</span>
 					{/if}
 				</div>
-				<div class="entry-env">
-					{#if e.wind_speed_kn != null}
-						<span class="entry-env-item">💨 {e.wind_speed_kn.toFixed(0)} kn {dirAbbr(e.wind_dir_deg)}</span>
-					{/if}
-					{#if e.wave_height_m != null}
-						<span class="entry-env-item">🌊 {e.wave_height_m} m</span>
-					{/if}
-					{#if e.baro_hpa != null}
-						<span class="entry-env-item">📊 {e.baro_hpa.toFixed(0)} hPa</span>
-					{/if}
-					{#if e.air_temp_c != null}
-						<span class="entry-env-item">🌡 {e.air_temp_c.toFixed(0)}°</span>
-					{/if}
-				</div>
+				{@render entryEnv(e)}
 				{#if e.notes}<p class="entry-notes">{e.notes}</p>{/if}
 			</div>
 		</div>
@@ -877,44 +973,25 @@
 		<span class="section-title">All-time · {s.tripCount} trip{s.tripCount === 1 ? '' : 's'}</span>
 	</div>
 	<div class="stats-grid">
+		<div class="stat-card"><span class="stat-val">{s.totalNm.toFixed(0)}</span><span class="stat-lbl">nm sailed</span></div>
 		<div class="stat-card">
-			<span class="stat-val">{s.totalNm.toFixed(0)}</span>
-			<span class="stat-lbl">nm sailed</span>
+			<div class="stat-ratio"><div class="ratio-bar mini">
+				<div class="ratio-sail" style="width:{s.sailPct}%; background:{ratioColor(s.sailPct)}"></div>
+				<div class="ratio-motor" style="width:{100-s.sailPct}%"></div>
+			</div></div>
+			<span class="stat-val">{s.sailPct}%</span><span class="stat-lbl">under sail</span>
 		</div>
-		<div class="stat-card">
-			<!-- Sail ratio bar (all-time) -->
-			<div class="stat-ratio">
-				<div class="ratio-bar mini">
-					<div class="ratio-sail" style="width:{s.sailPct}%; background:{ratioColor(s.sailPct)}"></div>
-					<div class="ratio-motor" style="width:{100-s.sailPct}%"></div>
-				</div>
-			</div>
-			<span class="stat-val">{s.sailPct}%</span>
-			<span class="stat-lbl">under sail</span>
-		</div>
-		<div class="stat-card">
-			<span class="stat-val">{s.sailNm.toFixed(0)}</span>
-			<span class="stat-lbl">nm sail</span>
-		</div>
-		<div class="stat-card">
-			<span class="stat-val">{s.motorNm.toFixed(0)}</span>
-			<span class="stat-lbl">nm motor</span>
-		</div>
-		<div class="stat-card">
-			<span class="stat-val">{s.engHours.toFixed(0)}</span>
-			<span class="stat-lbl">engine hours</span>
-		</div>
-		<div class="stat-card">
-			<span class="stat-val">{s.maxSog.toFixed(1)}</span>
-			<span class="stat-lbl">max kn ever</span>
-		</div>
+		<div class="stat-card"><span class="stat-val">{s.sailNm.toFixed(0)}</span><span class="stat-lbl">nm sail</span></div>
+		<div class="stat-card"><span class="stat-val">{s.motorNm.toFixed(0)}</span><span class="stat-lbl">nm motor</span></div>
+		<div class="stat-card"><span class="stat-val">{s.engHours.toFixed(0)}</span><span class="stat-lbl">engine hours</span></div>
+		<div class="stat-card"><span class="stat-val">{s.maxSog.toFixed(1)}</span><span class="stat-lbl">max kn ever</span></div>
 	</div>
 	{/if}
 
 	<!-- ── Past trips ─────────────────────────────────────────────────────── -->
 	{#if trips.filter(tr => tr.ended_at != null).length > 0}
 
-	<!-- Filter + sort controls -->
+	<!-- Filter + sort + selection controls -->
 	<div class="filter-row">
 		<div class="filter-tabs">
 			{#each (['week', 'month', 'year', 'all'] as FilterRange[]) as r}
@@ -923,19 +1000,61 @@
 				</button>
 			{/each}
 		</div>
-		<button class="sort-btn" onclick={() => { sortDesc = !sortDesc; }}>
-			{sortDesc ? '↓ Newest' : '↑ Oldest'}
+		<div class="filter-right">
+			<button class="sort-btn" onclick={() => { sortDesc = !sortDesc; }}>{sortDesc ? '↓' : '↑'}</button>
+			{#if isAdmin}
+			<button class="select-btn" class:active={selectionMode}
+				onclick={() => { selectionMode = !selectionMode; if (!selectionMode) selectedTripIds = new Set(); }}>
+				Select
+			</button>
+			{/if}
+		</div>
+	</div>
+
+	<!-- Selection action bar -->
+	{#if selectionMode && isAdmin}
+	<div class="selection-bar">
+		<div class="selection-bar-left">
+			<button class="sel-action-btn" onclick={selectAll}>All</button>
+			<button class="sel-action-btn" onclick={clearSelection}>None</button>
+			<span class="sel-count">{selectedTripIds.size} selected</span>
+		</div>
+		<button class="sel-delete-btn" disabled={selectedTripIds.size === 0 || saving}
+			onclick={deleteSelected}>
+			Delete ({selectedTripIds.size})
 		</button>
 	</div>
+	{/if}
 
 	<div class="past-trips">
 		{#each filteredPastTrips() as trip (trip.id)}
 		{@const pct = sailRatio(trip)}
 		{@const isExpanded = expandedTripId === trip.id}
-		<div class="past-trip-card" class:expanded={isExpanded}>
+		{@const isSelected = selectedTripIds.has(trip.id)}
+		<div class="past-trip-card" class:expanded={isExpanded} class:selected={isSelected}>
+
 			<!-- Clickable header row -->
-			<div class="past-trip-header" onclick={() => toggleTripExpand(trip.id)} role="button" tabindex="0"
-				 onkeydown={(e) => e.key === 'Enter' && toggleTripExpand(trip.id)}>
+			<div class="past-trip-header" onclick={() => !selectionMode && toggleTripExpand(trip.id)}
+				role="button" tabindex="0"
+				onkeydown={(e) => e.key === 'Enter' && !selectionMode && toggleTripExpand(trip.id)}>
+
+				{#if selectionMode}
+				<!-- Selection checkbox -->
+				<button class="trip-checkbox" onclick={(e) => { e.stopPropagation(); toggleSelect(trip.id); }}
+					aria-label={isSelected ? 'Deselect' : 'Select'}>
+					{#if isSelected}
+					<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+						<rect x="1.5" y="1.5" width="13" height="13" rx="2.5" fill="rgba(0,200,255,.15)"/>
+						<polyline points="4,8 7,11 12,5"/>
+					</svg>
+					{:else}
+					<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round">
+						<rect x="1.5" y="1.5" width="13" height="13" rx="2.5"/>
+					</svg>
+					{/if}
+				</button>
+				{/if}
+
 				<div class="past-trip-header-left">
 					<span class="past-trip-name">{trip.name ?? 'Unnamed trip'}</span>
 					{#if trip.from_port || trip.to_port}
@@ -944,39 +1063,121 @@
 				</div>
 				<div class="past-trip-header-right">
 					<span class="past-trip-dates">{fmtDate(trip.started_at)}</span>
-					<span class="expand-icon">{isExpanded ? '▲' : '▼'}</span>
+					{#if isAdmin && !selectionMode}
+					<button class="trip-icon-btn" onclick={(e) => openEditTrip(trip, e)} title="Edit trip">
+						<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M11.5 2.5 a1.5 1.5 0 0 1 2.1 2.1 L5 13 l-3 1 1-3 8.5-8.5z"/>
+						</svg>
+					</button>
+					<button class="trip-icon-btn trip-icon-btn-del" onclick={(e) => deleteTripSingle(trip, e)} title="Delete trip">
+						<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="2,4 14,4"/>
+							<path d="M5 4 V2.5 a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5V4"/>
+							<rect x="3" y="4" width="10" height="9" rx="1.5"/>
+							<line x1="6.5" y1="7" x2="6.5" y2="11"/>
+							<line x1="9.5" y1="7" x2="9.5" y2="11"/>
+						</svg>
+					</button>
+					{/if}
+					<span class="expand-icon">
+						<svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+							{#if isExpanded}
+							<polyline points="2,8 6,4 10,8"/>
+							{:else}
+							<polyline points="2,4 6,8 10,4"/>
+							{/if}
+						</svg>
+					</span>
 				</div>
 			</div>
 
-			<!-- Stats row (always visible) -->
+			<!-- Stats row -->
 			<div class="past-ratio">
-				<div class="ratio-bar mini">
+				<div class="ratio-bar mini" style="flex:1">
 					<div class="ratio-sail" style="width:{pct}%; background:{ratioColor(pct)}"></div>
 					<div class="ratio-motor" style="width:{100-pct}%"></div>
 				</div>
-				<span class="past-ratio-lbl">⛵ {pct}% · {fmtNm(trip.total_nm)}</span>
+				<span class="past-ratio-lbl">Sail {pct}% · {fmtNm(trip.total_nm)}</span>
 			</div>
 			<div class="past-stats">
 				{#if trip.avg_sog_kn != null}<span class="past-chip">avg {trip.avg_sog_kn.toFixed(1)} kn</span>{/if}
 				{#if trip.max_sog_kn != null}<span class="past-chip">max {trip.max_sog_kn.toFixed(1)} kn</span>{/if}
-				{#if trip.engine_hours != null}<span class="past-chip">⚙ {trip.engine_hours.toFixed(1)} h</span>{/if}
+				{#if trip.engine_hours != null}<span class="past-chip">eng {trip.engine_hours.toFixed(1)} h</span>{/if}
 				<span class="past-chip">{fmtDuration(trip.started_at, trip.ended_at)}</span>
 			</div>
 			{#if trip.notes}<p class="past-trip-notes">{trip.notes}</p>{/if}
 
-			<!-- Expandable entries -->
+			<!-- ── Expanded section ───────────────────────────────────────── -->
 			{#if isExpanded}
 			<div class="expanded-entries">
+
+				<!-- Map -->
+				<div class="trip-map-wrap">
+					<div bind:this={expandedMapEl} class="trip-map-el"></div>
+					{#if expandedLoading}
+					<div class="trip-map-overlay">Loading track…</div>
+					{:else if expandedMapPositions.length === 0}
+					<div class="trip-map-overlay">No GPS positions recorded</div>
+					{/if}
+					<div class="trip-map-controls">
+						<button class="trip-map-btn" onclick={() => expandedMapInst?.zoomIn()} aria-label="Zoom in">+</button>
+						<button class="trip-map-btn" onclick={() => expandedMapInst?.zoomOut()} aria-label="Zoom out">−</button>
+						<button class="trip-map-btn trip-map-btn-center" onclick={centerTripMap} aria-label="Fit track">
+							<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+								<circle cx="8" cy="8" r="3"/>
+								<line x1="8" y1="1" x2="8" y2="4"/>
+								<line x1="8" y1="12" x2="8" y2="15"/>
+								<line x1="1" y1="8" x2="4" y2="8"/>
+								<line x1="12" y1="8" x2="15" y2="8"/>
+							</svg>
+						</button>
+					</div>
+				</div>
+
+				<!-- First + last entries -->
 				{#if expandedLoading}
-					<div class="expanded-loading">Loading entries…</div>
-				{:else if expandedEntries.length === 0}
-					<div class="expanded-loading">No entries found.</div>
+				<div class="expanded-loading">Loading entries…</div>
+				{:else if expandedEntries.length > 0 && !showAllEntries}
+				<div class="endpoint-list">
+					{#each expandedEntries as e, i (e.id)}
+					<div class="endpoint-row">
+						<span class="ep-label" class:ep-start={i === 0} class:ep-end={i === expandedEntries.length - 1 && expandedEntries.length > 1}>
+							{i === 0 ? 'Departure' : 'Arrival'}
+						</span>
+						<div class="endpoint-body">
+							<div class="endpoint-time">{fmtDate(e.logged_at)} {fmtTime(e.logged_at)}</div>
+							<div class="entry-nav" style="margin-bottom:0">
+								{#if e.sog_kn != null}<span class="entry-chip">{e.sog_kn.toFixed(1)} kn</span>{/if}
+								{#if e.cog_deg != null}<span class="entry-chip">{dirAbbr(e.cog_deg)}</span>{/if}
+								{#if e.distance_nm != null && e.distance_nm > 0}<span class="entry-chip dist">+{e.distance_nm.toFixed(1)} nm</span>{/if}
+							</div>
+							{#if e.notes}<p class="entry-notes" style="margin:4px 0 0">{e.notes}</p>{/if}
+						</div>
+					</div>
+					{/each}
+				</div>
+
+				{#if expandedEntryCount > expandedEntries.length}
+				<button class="show-all-btn" onclick={() => loadAllEntries(trip.id)}>
+					<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+						<line x1="3" y1="5" x2="13" y2="5"/>
+						<line x1="3" y1="8" x2="13" y2="8"/>
+						<line x1="3" y1="11" x2="9" y2="11"/>
+					</svg>
+					Show all {expandedEntryCount} entries
+				</button>
+				{/if}
+
+				{:else if showAllEntries}
+				{#if allEntriesLoading}
+				<div class="expanded-loading">Loading all entries…</div>
 				{:else}
 				<div class="expanded-header">
-					<span class="section-title">Entries · {expandedEntries.length}</span>
+					<span class="section-title">All entries · {expandedAllEntries.length}</span>
+					<button class="show-all-btn" style="margin-top:0" onclick={() => { showAllEntries = false; }}>Show less</button>
 				</div>
 				<div class="entry-list">
-					{#each expandedEntries as e (e.id)}
+					{#each expandedAllEntries as e (e.id)}
 					<div class="entry-row" class:auto={e.source === 'auto'}>
 						<div class="entry-time">
 							<span class="entry-hhmm">{fmtTime(e.logged_at)}</span>
@@ -987,24 +1188,19 @@
 							<div class="entry-nav">
 								{#if e.sog_kn != null}<span class="entry-chip">{e.sog_kn.toFixed(1)} kn</span>{/if}
 								{#if e.cog_deg != null}<span class="entry-chip">{dirAbbr(e.cog_deg)}</span>{/if}
-								{#if e.engine_rpm != null}<span class="entry-chip eng">⚙ {e.engine_rpm} rpm{e.engine_temp_c != null ? ` · ${e.engine_temp_c.toFixed(0)}°C` : ''}</span>{/if}
+								{#if e.engine_rpm != null}<span class="entry-chip eng">eng {e.engine_rpm} rpm{e.engine_temp_c != null ? ` · ${e.engine_temp_c.toFixed(0)}°C` : ''}</span>{/if}
 								{#if e.sails}<span class="entry-chip sail">{e.sails}</span>{/if}
-								{#if e.distance_nm != null && e.distance_nm > 0}
-									<span class="entry-chip dist">+{e.distance_nm.toFixed(1)} nm</span>
-								{/if}
+								{#if e.distance_nm != null && e.distance_nm > 0}<span class="entry-chip dist">+{e.distance_nm.toFixed(1)} nm</span>{/if}
 							</div>
-							<div class="entry-env">
-								{#if e.wind_speed_kn != null}<span class="entry-env-item">💨 {e.wind_speed_kn.toFixed(0)} kn {dirAbbr(e.wind_dir_deg)}</span>{/if}
-								{#if e.wave_height_m != null}<span class="entry-env-item">🌊 {e.wave_height_m} m</span>{/if}
-								{#if e.baro_hpa != null}<span class="entry-env-item">📊 {e.baro_hpa.toFixed(0)} hPa</span>{/if}
-								{#if e.air_temp_c != null}<span class="entry-env-item">🌡 {e.air_temp_c.toFixed(0)}°</span>{/if}
-							</div>
+							{@render entryEnv(e)}
 							{#if e.notes}<p class="entry-notes">{e.notes}</p>{/if}
 						</div>
 					</div>
 					{/each}
 				</div>
 				{/if}
+				{/if}
+
 			</div>
 			{/if}
 		</div>
@@ -1033,9 +1229,32 @@
 	</label>
 	<div class="modal-actions">
 		<button class="btn-cancel" onclick={() => { showTripModal = false; }}>Cancel</button>
-		<button class="btn-primary" onclick={startTrip} disabled={saving}>
-			{saving ? 'Starting…' : 'Start trip'}
-		</button>
+		<button class="btn-primary" onclick={startTrip} disabled={saving}>{saving ? 'Starting…' : 'Start trip'}</button>
+	</div>
+</div>
+</div>
+{/if}
+
+<!-- ── Edit trip modal ───────────────────────────────────────────────────── -->
+{#if editingTrip}
+<div class="modal-backdrop" onclick={() => { editingTrip = null; }}>
+<div class="modal" onclick={(e) => e.stopPropagation()}>
+	<div class="modal-title">Edit trip</div>
+	<label class="modal-label">Trip name
+		<input class="modal-input" bind:value={editName} placeholder="Trip name" />
+	</label>
+	<label class="modal-label">From port
+		<input class="modal-input" bind:value={editFromPort} placeholder="Departure port" />
+	</label>
+	<label class="modal-label">To port
+		<input class="modal-input" bind:value={editToPort} placeholder="Destination port" />
+	</label>
+	<label class="modal-label">Notes
+		<textarea class="modal-textarea" bind:value={editNotes} placeholder="Trip notes…" rows="2"></textarea>
+	</label>
+	<div class="modal-actions">
+		<button class="btn-cancel" onclick={() => { editingTrip = null; }}>Cancel</button>
+		<button class="btn-primary" onclick={saveEditTrip} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
 	</div>
 </div>
 </div>
@@ -1046,16 +1265,13 @@
 <div class="modal-backdrop" onclick={() => { showEntryModal = false; }}>
 <div class="modal" onclick={(e) => e.stopPropagation()}>
 	<div class="modal-title">Log entry</div>
-
-	<!-- Pre-filled snapshot -->
 	<div class="entry-preview">
 		{#if liveLat() != null}<span class="prev-chip">{liveLat()?.toFixed(4)}° {liveLon()?.toFixed(4)}°</span>{/if}
 		{#if liveSog() != null}<span class="prev-chip">{liveSog()} kn</span>{/if}
-		{#if liveWind() != null}<span class="prev-chip">💨 {liveWind()} kn</span>{/if}
-		{#if wave.wave_height_m != null}<span class="prev-chip">🌊 {wave.wave_height_m} m</span>{/if}
-		{#if liveEngOn()}<span class="prev-chip eng">⚙ Engine on</span>{/if}
+		{#if liveWind() != null}<span class="prev-chip">{liveWind()} kn wind</span>{/if}
+		{#if wave.wave_height_m != null}<span class="prev-chip">{wave.wave_height_m} m wave</span>{/if}
+		{#if liveEngOn()}<span class="prev-chip eng">Engine on</span>{/if}
 	</div>
-
 	<label class="modal-label">Sails set
 		<input class="modal-input" bind:value={entrySails} placeholder="e.g. Full main + genoa" />
 	</label>
@@ -1064,13 +1280,58 @@
 	</label>
 	<div class="modal-actions">
 		<button class="btn-cancel" onclick={() => { showEntryModal = false; }}>Cancel</button>
-		<button class="btn-primary" onclick={submitManualEntry} disabled={saving}>
-			{saving ? 'Saving…' : 'Save entry'}
-		</button>
+		<button class="btn-primary" onclick={submitManualEntry} disabled={saving}>{saving ? 'Saving…' : 'Save entry'}</button>
 	</div>
 </div>
 </div>
 {/if}
+
+<!-- ── Env data snippet (reused in entry lists) ───────────────────────────── -->
+{#snippet entryEnv(e: LogEntry)}
+{#if e.wind_speed_kn != null || e.wave_height_m != null || e.baro_hpa != null || e.air_temp_c != null}
+<div class="entry-env">
+	{#if e.wind_speed_kn != null}
+	<span class="entry-env-item">
+		<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
+			<path d="M1 4.5h6.5a2 2 0 0 0 0-3"/><path d="M1 7.5h8.5a2 2 0 0 0 0-3"/>
+			<path d="M1 10.5h5a2 2 0 0 0 0-3"/>
+		</svg>
+		{e.wind_speed_kn.toFixed(0)} kn {dirAbbr(e.wind_dir_deg)}
+	</span>
+	{/if}
+	{#if e.wave_height_m != null}
+	<span class="entry-env-item">
+		<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
+			<path d="M1 7 C2.5 5 4 9 5.5 7 C7 5 8.5 9 10 7 C11 6 12 6.5 13 6.5"/>
+			<path d="M1 10.5 C2.5 8.5 4 12.5 5.5 10.5 C7 8.5 8.5 12.5 10 10.5 C11 9.5 12 10 13 10"/>
+		</svg>
+		{e.wave_height_m} m
+	</span>
+	{/if}
+	{#if e.baro_hpa != null}
+	<span class="entry-env-item">
+		<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
+			<circle cx="7" cy="8" r="4.5"/>
+			<path d="M7 8 L9 5.5"/>
+			<line x1="3.8" y1="11" x2="4.7" y2="10.1"/>
+			<line x1="9.6" y1="10.8" x2="10.3" y2="10"/>
+		</svg>
+		{e.baro_hpa.toFixed(0)} hPa
+	</span>
+	{/if}
+	{#if e.air_temp_c != null}
+	<span class="entry-env-item">
+		<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
+			<circle cx="7" cy="10.5" r="2"/><line x1="7" y1="8.5" x2="7" y2="3"/>
+			<line x1="7" y1="4.5" x2="9" y2="4.5"/>
+			<line x1="7" y1="6.5" x2="9" y2="6.5"/>
+		</svg>
+		{e.air_temp_c.toFixed(0)}°C
+	</span>
+	{/if}
+</div>
+{/if}
+{/snippet}
 
 <style>
 	.log-page {
@@ -1096,7 +1357,6 @@
 	.trip-route { font-size: 12px; color: var(--muted); }
 	.trip-duration { font-size: 12px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
 
-	/* Ratio bar */
 	.ratio-section { margin-bottom: 10px; }
 	.ratio-bar-wrap { margin-bottom: 5px; }
 	.ratio-bar {
@@ -1106,14 +1366,10 @@
 	.ratio-bar.mini { height: 5px; border-radius: 3px; }
 	.ratio-sail  { height: 100%; transition: width 0.4s; }
 	.ratio-motor { height: 100%; background: #6b7280; flex: 1; }
-	.ratio-labels {
-		display: flex; gap: 10px; flex-wrap: wrap;
-		font-size: 11px; color: var(--muted);
-	}
+	.ratio-labels { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
 	.ratio-label { white-space: nowrap; }
 	.ratio-label.total { margin-left: auto; font-weight: 600; color: var(--text); }
 
-	/* Snapshot row */
 	.trip-snapshot {
 		display: flex; gap: 12px; flex-wrap: wrap;
 		padding: 10px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
@@ -1137,13 +1393,10 @@
 	.btn-end:hover { background: rgba(239,68,68,.2); }
 	.btn-end:disabled { opacity: 0.5; cursor: default; }
 
-	/* Start CTA */
 	.start-cta {
-		display: flex; flex-direction: column; align-items: center; gap: 10px;
-		padding: 32px 0; background: var(--card); border: 1px solid var(--border);
-		border-radius: 10px;
+		display: flex; flex-direction: column; align-items: center; gap: 8px;
+		padding: 28px 0; background: var(--card); border: 1px solid var(--border); border-radius: 10px;
 	}
-	.start-icon { font-size: 32px; }
 	.start-text { font-size: 14px; color: var(--muted); }
 	.btn-start {
 		padding: 10px 28px; background: var(--accent); color: #000;
@@ -1168,15 +1421,16 @@
 	}
 	.entry-row:last-child { border-bottom: none; }
 	.entry-row.auto { opacity: 0.8; }
-
 	.entry-time {
 		display: flex; flex-direction: column; align-items: flex-end;
 		min-width: 46px; flex-shrink: 0; gap: 2px; padding-top: 1px;
 	}
-	.entry-hhmm { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+	.entry-hhmm { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
 	.entry-date { font-size: 9px; color: var(--muted); }
-	.entry-auto-tag { font-size: 8px; color: var(--muted); background: var(--card2); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; }
-
+	.entry-auto-tag {
+		font-size: 8px; color: var(--muted); background: var(--card2);
+		border: 1px solid var(--border); border-radius: 3px; padding: 0 3px;
+	}
 	.entry-body { flex: 1; min-width: 0; }
 	.entry-nav  { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 4px; }
 	.entry-chip {
@@ -1186,17 +1440,15 @@
 	.entry-chip.eng  { color: var(--amber); border-color: rgba(251,191,36,.3); }
 	.entry-chip.sail { color: var(--accent); border-color: rgba(0,200,255,.3); }
 	.entry-chip.dist { color: var(--green); border-color: rgba(0,220,130,.3); }
-
 	.entry-env { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 3px; }
-	.entry-env-item { font-size: 11px; color: var(--muted); }
+	.entry-env-item {
+		display: flex; align-items: center; gap: 3px;
+		font-size: 11px; color: var(--muted);
+	}
 	.entry-notes { font-size: 12px; color: var(--text); margin: 0; line-height: 1.4; }
 
 	/* ── Stats grid ───────────────────────────────────────────────────────── */
-	.stats-grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 8px;
-	}
+	.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 	.stat-card {
 		background: var(--card); border: 1px solid var(--border); border-radius: 8px;
 		padding: 12px 10px; display: flex; flex-direction: column; align-items: center; gap: 4px;
@@ -1209,8 +1461,10 @@
 	.past-trips { display: flex; flex-direction: column; gap: 8px; }
 	.past-trip-card {
 		background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-		padding: 12px;
+		padding: 12px; transition: border-color 0.2s;
 	}
+	.past-trip-card.expanded { border-color: rgba(0,200,255,.2); }
+	.past-trip-card.selected { border-color: rgba(0,200,255,.4); background: rgba(0,200,255,.04); }
 	.past-trip-name  { font-size: 14px; font-weight: 600; }
 	.past-trip-dates { font-size: 11px; color: var(--muted); white-space: nowrap; }
 	.past-trip-route { font-size: 11px; color: var(--muted); display: block; }
@@ -1223,11 +1477,39 @@
 	}
 	.past-trip-notes { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
 
+	/* Trip header row */
+	.past-trip-header {
+		display: flex; align-items: flex-start; gap: 8px;
+		margin-bottom: 8px; cursor: pointer; user-select: none;
+	}
+	.past-trip-header:hover .past-trip-name { color: var(--accent); }
+	.past-trip-header-left { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+	.past-trip-header-right {
+		display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+	}
+	.expand-icon { color: var(--muted); display: flex; align-items: center; }
+
+	/* Edit / delete icon buttons */
+	.trip-icon-btn {
+		width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+		background: none; border: 1px solid transparent; border-radius: 5px;
+		color: var(--muted); cursor: pointer; transition: all 0.15s;
+		flex-shrink: 0;
+	}
+	.trip-icon-btn:hover { background: var(--card2); border-color: var(--border); color: var(--accent); }
+	.trip-icon-btn-del:hover { color: var(--red); border-color: rgba(239,68,68,.3); }
+
+	/* Selection checkbox */
+	.trip-checkbox {
+		width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+		background: none; border: none; cursor: pointer; padding: 0; flex-shrink: 0;
+	}
+
 	/* ── Modals ───────────────────────────────────────────────────────────── */
 	.modal-backdrop {
 		position: fixed; inset: 0; background: rgba(0,0,0,0.6);
 		display: flex; align-items: flex-end; justify-content: center;
-		z-index: 500; padding: 0;
+		z-index: 500;
 	}
 	.modal {
 		background: var(--card); border: 1px solid var(--border);
@@ -1260,14 +1542,11 @@
 	}
 	.btn-primary:disabled { opacity: 0.5; cursor: default; }
 
-	/* Entry modal preview */
 	.entry-preview {
 		display: flex; gap: 5px; flex-wrap: wrap;
 		padding: 8px; background: var(--card2); border: 1px solid var(--border); border-radius: 7px;
 	}
-	.prev-chip {
-		font-size: 12px; background: var(--border); border-radius: 4px; padding: 2px 7px;
-	}
+	.prev-chip { font-size: 12px; background: var(--border); border-radius: 4px; padding: 2px 7px; }
 	.prev-chip.eng { color: var(--amber); }
 
 	/* ── Auto-trip status bar ─────────────────────────────────────────────── */
@@ -1278,27 +1557,23 @@
 		font-size: 12px; gap: 8px;
 	}
 	.auto-bar.auto-watching  { border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.05); }
-	.auto-bar.auto-recording { border-color: rgba(34,197,94,.35);  background: rgba(34,197,94,.05);  }
+	.auto-bar.auto-recording { border-color: rgba(34,197,94,.35);  background: rgba(34,197,94,.05); }
 	.auto-bar.auto-countdown { border-color: rgba(249,115,22,.4);  background: rgba(249,115,22,.06); }
 	.auto-bar.auto-disabled  { opacity: 0.55; }
 	.auto-bar-left { display: flex; align-items: center; gap: 8px; }
-	.auto-dot {
-		width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-		background: var(--muted);
-	}
-	.auto-dot.dot-idle      { background: var(--muted); opacity: 0.5; }
+	.auto-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+	.auto-dot.dot-idle      { opacity: 0.5; }
 	.auto-dot.dot-watching  { background: var(--amber); animation: pulse-live 2s ease-in-out infinite; }
 	.auto-dot.dot-recording { background: var(--green); animation: pulse-live 2s ease-in-out infinite; }
 	.auto-dot.dot-countdown { background: #f97316; }
 	.auto-status { color: var(--muted); line-height: 1.3; }
 	.auto-toggle-btn {
 		font-size: 11px; background: var(--card2); border: 1px solid var(--border);
-		border-radius: 5px; padding: 4px 10px; cursor: pointer; color: var(--text);
-		flex-shrink: 0;
+		border-radius: 5px; padding: 4px 10px; cursor: pointer; color: var(--text); flex-shrink: 0;
 	}
 	.auto-toggle-btn:hover { background: var(--border); }
 
-	/* ── Filter + sort row ───────────────────────────────────────────────────── */
+	/* ── Filter + sort row ────────────────────────────────────────────────── */
 	.filter-row {
 		display: flex; justify-content: space-between; align-items: center;
 		margin-top: 16px;
@@ -1310,72 +1585,128 @@
 		color: var(--muted); cursor: pointer;
 	}
 	.filter-tab.active {
-		background: rgba(0,200,255,.12); border-color: var(--accent); color: var(--accent);
-		font-weight: 600;
+		background: rgba(0,200,255,.12); border-color: var(--accent);
+		color: var(--accent); font-weight: 600;
 	}
-	.sort-btn {
+	.filter-right { display: flex; gap: 4px; }
+	.sort-btn, .select-btn {
 		font-size: 11px; padding: 4px 10px; border-radius: 5px;
 		border: 1px solid var(--border); background: var(--card2);
 		color: var(--muted); cursor: pointer;
 	}
-	.sort-btn:hover { border-color: var(--accent); color: var(--accent); }
+	.sort-btn:hover, .select-btn:hover { border-color: var(--accent); color: var(--accent); }
+	.select-btn.active { background: rgba(0,200,255,.12); border-color: var(--accent); color: var(--accent); }
 
-	/* ── Past trip card (expandable) ─────────────────────────────────────────── */
-	.past-trip-header {
-		display: flex; justify-content: space-between; align-items: flex-start;
-		gap: 8px; margin-bottom: 8px; cursor: pointer; user-select: none;
+	/* ── Selection bar ────────────────────────────────────────────────────── */
+	.selection-bar {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 6px 10px; border-radius: 7px;
+		background: rgba(0,200,255,.06); border: 1px solid rgba(0,200,255,.2);
+		gap: 8px;
 	}
-	.past-trip-header:hover .past-trip-name { color: var(--accent); }
-	.past-trip-header-left { display: flex; flex-direction: column; gap: 2px; }
-	.past-trip-header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-	.expand-icon { font-size: 10px; color: var(--muted); }
-	.past-trip-card.expanded { border-color: rgba(0,200,255,.2); }
+	.selection-bar-left { display: flex; align-items: center; gap: 6px; }
+	.sel-action-btn {
+		font-size: 11px; padding: 3px 8px; border-radius: 4px;
+		border: 1px solid var(--border); background: var(--card2);
+		color: var(--muted); cursor: pointer;
+	}
+	.sel-action-btn:hover { color: var(--accent); border-color: var(--accent); }
+	.sel-count { font-size: 11px; color: var(--muted); }
+	.sel-delete-btn {
+		font-size: 11px; padding: 4px 12px; border-radius: 5px;
+		border: 1px solid rgba(239,68,68,.3); background: rgba(239,68,68,.08);
+		color: var(--red); cursor: pointer; font-weight: 600;
+	}
+	.sel-delete-btn:hover { background: rgba(239,68,68,.16); }
+	.sel-delete-btn:disabled { opacity: 0.4; cursor: default; }
+
+	/* ── Expanded trip section ────────────────────────────────────────────── */
 	.expanded-entries {
 		margin-top: 10px; padding-top: 10px;
 		border-top: 1px solid var(--border);
 	}
-	.expanded-header { margin-bottom: 6px; }
+	.expanded-header {
+		display: flex; justify-content: space-between; align-items: center;
+		margin-bottom: 6px;
+	}
 	.expanded-loading { font-size: 12px; color: var(--muted); padding: 8px 0; text-align: center; }
 	.no-trips { font-size: 13px; color: var(--muted); text-align: center; padding: 16px 0; }
 
-	/* ── Auto-log terminal ───────────────────────────────────────────────────── */
+	/* ── Trip map ─────────────────────────────────────────────────────────── */
+	.trip-map-wrap {
+		position: relative; height: 200px; background: #0a1520;
+		border-radius: 7px; overflow: hidden; margin-bottom: 10px;
+	}
+	.trip-map-el { width: 100%; height: 100%; }
+	.trip-map-overlay {
+		position: absolute; inset: 0;
+		display: flex; align-items: center; justify-content: center;
+		font-size: 12px; color: var(--muted);
+		background: rgba(8,16,28,.85);
+	}
+	:global(.trip-map-el .leaflet-tile-pane) { filter: brightness(0.82) saturate(0.9); }
+	.trip-map-controls {
+		position: absolute; top: 8px; right: 8px;
+		display: flex; flex-direction: column; gap: 4px; z-index: 1000;
+	}
+	.trip-map-btn {
+		width: 28px; height: 28px;
+		background: rgba(8,16,28,.82); border: 1px solid rgba(255,255,255,.15);
+		border-radius: 6px; color: var(--text); font-size: 16px; font-weight: 500;
+		display: flex; align-items: center; justify-content: center;
+		cursor: pointer; padding: 0;
+	}
+	.trip-map-btn:hover { background: rgba(0,200,255,.18); border-color: rgba(0,200,255,.4); }
+	.trip-map-btn-center { margin-top: 4px; color: #00c8ff; }
+
+	/* ── Endpoint entries (first + last) ──────────────────────────────────── */
+	.endpoint-list { display: flex; flex-direction: column; gap: 0; margin-bottom: 8px; }
+	.endpoint-row {
+		display: flex; gap: 10px; padding: 8px 0;
+		border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+	}
+	.endpoint-row:last-child { border-bottom: none; }
+	.ep-label {
+		font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+		min-width: 52px; flex-shrink: 0; padding-top: 2px; color: var(--muted);
+	}
+	.ep-label.ep-start { color: var(--green); }
+	.ep-label.ep-end   { color: var(--accent); }
+	.endpoint-body { flex: 1; min-width: 0; }
+	.endpoint-time { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+
+	.show-all-btn {
+		display: flex; align-items: center; gap: 6px;
+		width: 100%; padding: 8px 0; font-size: 12px; color: var(--accent);
+		background: none; border: none; border-top: 1px solid var(--border);
+		cursor: pointer; margin-top: 4px;
+	}
+	.show-all-btn:hover { color: var(--text); }
+
+	/* ── Auto-log terminal ────────────────────────────────────────────────── */
 	.terminal {
-		background: #030a03;
-		border: 1px solid rgba(0, 220, 130, 0.22);
-		border-radius: 8px;
-		overflow: hidden;
-		font-family: 'SF Mono', 'Fira Code', 'Menlo', 'Monaco', monospace;
+		background: #030a03; border: 1px solid rgba(0,220,130,.22);
+		border-radius: 8px; overflow: hidden;
+		font-family: 'SF Mono','Fira Code','Menlo','Monaco',monospace;
 	}
 	.terminal-hdr {
 		display: flex; justify-content: space-between; align-items: center;
-		padding: 5px 10px;
-		background: rgba(0, 220, 130, 0.07);
-		border-bottom: 1px solid rgba(0, 220, 130, 0.14);
+		padding: 5px 10px; background: rgba(0,220,130,.07);
+		border-bottom: 1px solid rgba(0,220,130,.14);
 	}
 	.terminal-title {
 		display: flex; align-items: center; gap: 6px;
-		font-size: 10px; font-weight: 700; letter-spacing: 1px;
-		color: var(--green);
+		font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--green);
 	}
 	.terminal-dot {
-		width: 6px; height: 6px; border-radius: 50%;
-		background: var(--green);
+		width: 6px; height: 6px; border-radius: 50%; background: var(--green);
 		animation: pulse-live 2s ease-in-out infinite;
 	}
-	.terminal-meta { font-size: 10px; color: rgba(0, 220, 130, 0.4); }
-	.terminal-body {
-		padding: 7px 10px;
-		display: flex; flex-direction: column; gap: 1px;
-	}
+	.terminal-meta { font-size: 10px; color: rgba(0,220,130,.4); }
+	.terminal-body { padding: 7px 10px; display: flex; flex-direction: column; gap: 1px; }
 	.terminal-line {
-		font-size: 11px;
-		color: rgba(100, 220, 150, 0.55);
-		white-space: pre;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		line-height: 1.65;
+		font-size: 11px; color: rgba(100,220,150,.55);
+		white-space: pre; overflow: hidden; text-overflow: ellipsis; line-height: 1.65;
 	}
-	.terminal-line.terminal-line-fresh {
-		color: #7effa0;
-	}
+	.terminal-line.terminal-line-fresh { color: #7effa0; }
 </style>

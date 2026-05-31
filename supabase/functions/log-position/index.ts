@@ -306,8 +306,8 @@ Deno.serve(async (req: Request) => {
       await supabase.from('log_trips').update(patch).eq('id', trip.id).eq('boat_id', boatId);
     }
 
-    // ── Auto-stop check (only for is_auto trips) ──────────────────────────────
-    if (trip.is_auto) {
+    // ── Auto-stop check (all active trips — auto or manual) ──────────────────
+    {
       const underway = (gps.speed_kn ?? 0) >= 1.5;
 
       if (!underway) {

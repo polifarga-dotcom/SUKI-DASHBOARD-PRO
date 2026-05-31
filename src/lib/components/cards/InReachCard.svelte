@@ -4,6 +4,10 @@
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { inreachPoints, inreachStale } from '$lib/stores/inreach.js';
 	import type { InReachPoint } from '$lib/types.js';
+	// Static CSS import — must be at module level so Vite bundles it upfront.
+	// Dynamic `await import('leaflet/dist/leaflet.css')` inside initMap() injects a
+	// stylesheet mid-render which resets scroll position on iOS Safari.
+	import 'leaflet/dist/leaflet.css';
 
 	// ── Leaflet ──────────────────────────────────────────────────────────────
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -171,11 +175,13 @@
 
 	// ── Init map ──────────────────────────────────────────────────────────────
 	async function initMap() {
-		await new Promise(r => requestAnimationFrame(r));
-		await new Promise(r => requestAnimationFrame(r));
+		// Wait for the DOM to stabilise before creating the Leaflet instance.
+		// Two RAF rounds used to be enough but on some iOS versions still triggered
+		// a blank-tile flash. A short timeout gives the layout engine one full paint
+		// cycle so the container has its final dimensions before Leaflet measures it.
+		await new Promise(r => setTimeout(r, 50));
 
 		L = await import('leaflet') as typeof import('leaflet');
-		await import('leaflet/dist/leaflet.css');
 
 		if (!mapEl) return;
 		map = L.map(mapEl, { zoomControl: false, attributionControl: false });
