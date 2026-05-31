@@ -98,6 +98,7 @@
 	const liveWaterT = $derived(() => t?.temp_water   != null ? +(t.temp_water - 273.15).toFixed(1) : null);
 	const liveEngOn  = $derived(() => (t?.eng_rpm ?? 0) > 200);
 	const liveEngH   = $derived(() => t?.eng_run_sec  != null ? +(t.eng_run_sec / 3600).toFixed(2) : null);
+	const liveEngT   = $derived(() => t?.eng_temp_k   != null ? +(t.eng_temp_k - 273.15).toFixed(1) : null);
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
 	function fmtDuration(startIso: string, endIso?: string | null): string {
@@ -267,6 +268,7 @@
 			engine_on:     engOn,
 			engine_rpm:    t?.eng_rpm ?? null,
 			engine_hours:  liveEngH(),
+			engine_temp_c: liveEngT(),
 			sails:         opts.sails?.trim() || null,
 			wind_speed_kn: liveWind(),
 			wind_dir_deg:  liveWindDir(),
@@ -770,7 +772,7 @@
 				<div class="entry-nav">
 					{#if e.sog_kn != null}<span class="entry-chip">{e.sog_kn.toFixed(1)} kn</span>{/if}
 					{#if e.cog_deg != null}<span class="entry-chip">{dirAbbr(e.cog_deg)}</span>{/if}
-					{#if e.engine_on}<span class="entry-chip eng">⚙ {e.engine_rpm ?? '—'} rpm</span>{/if}
+					{#if e.engine_rpm != null}<span class="entry-chip eng">⚙ {e.engine_rpm} rpm{e.engine_temp_c != null ? ` · ${e.engine_temp_c.toFixed(0)}°C` : ''}</span>{/if}
 					{#if e.sails}<span class="entry-chip sail">{e.sails}</span>{/if}
 					{#if e.distance_nm != null && e.distance_nm > 0}
 						<span class="entry-chip dist">+{e.distance_nm.toFixed(1)} nm</span>

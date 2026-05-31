@@ -215,6 +215,7 @@ export type LogEntry = {
 	engine_on:      boolean;
 	engine_rpm:     number | null;
 	engine_hours:   number | null;
+	engine_temp_c:  number | null;
 	sails:          string | null;
 	wind_speed_kn:  number | null;
 	wind_dir_deg:   number | null;
