@@ -32,6 +32,19 @@
 			</svg>`
 		},
 		{
+			href: '/weather', label: 'Weather',
+			icon: `<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<circle cx="8" cy="7" r="2.8"/>
+				<line x1="8" y1="1.5" x2="8" y2="3"/>
+				<line x1="8" y1="11" x2="8" y2="12.5"/>
+				<line x1="2.5" y1="3.5" x2="3.5" y2="4.5"/>
+				<line x1="12.5" y1="3.5" x2="13.5" y2="4.5"/>
+				<line x1="1.5" y1="7" x2="3" y2="7"/>
+				<line x1="13" y1="7" x2="14.5" y2="7"/>
+				<path d="M8 12.5 Q9 10.5 11 11 Q11.5 9 13.5 9.5 Q15.5 9.5 15.5 11.5 Q17 11.5 17.5 13 Q18 14.5 16.5 15 H7 Q5.5 14.5 8 12.5Z"/>
+			</svg>`
+		},
+		{
 			href: '/logbook', label: 'Log',
 			icon: `<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
 				<rect x="4" y="2" width="12" height="16" rx="1.5"/>

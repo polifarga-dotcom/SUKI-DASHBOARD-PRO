@@ -7,8 +7,6 @@
 	import RigCard from '$lib/components/cards/RigCard.svelte';
 	import ShellyCard from '$lib/components/cards/ShellyCard.svelte';
 	import VRMCard from '$lib/components/cards/VRMCard.svelte';
-	import InReachCard from '$lib/components/cards/InReachCard.svelte';
-	import WeatherCard from '$lib/components/cards/WeatherCard.svelte';
 </script>
 
 <svelte:head><title>Vessel · SUKI PRO</title></svelte:head>
@@ -25,8 +23,6 @@
 	<RigCard t={$telemetry} />
 	<ShellyCard />
 	<VRMCard />
-	<WeatherCard />
-	<div class="inreach-wrap"><InReachCard /></div>
 </div>
 
 <style>
@@ -46,9 +42,6 @@
 		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 		gap: 12px;
 	}
-
-	/* InReach card spans full width (has a map inside) */
-	.inreach-wrap { grid-column: 1 / -1; }
 
 	@media (max-width: 480px) {
 		.grid { grid-template-columns: 1fr; }
