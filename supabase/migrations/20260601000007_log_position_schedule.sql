@@ -17,7 +17,7 @@ SELECT cron.schedule(
                  'Authorization', 'Bearer ' || (
                    SELECT decrypted_secret
                    FROM   vault.decrypted_secrets
-                   WHERE  name = 'service_role_key'
+                   WHERE  name = 'cron_secret'
                    LIMIT  1
                  )
                ),

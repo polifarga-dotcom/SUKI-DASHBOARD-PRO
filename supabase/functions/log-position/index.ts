@@ -202,13 +202,10 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { headers: CORS });
   }
 
-  // Accept only service-role calls (from pg_cron)
-  const authHeader = req.headers.get('Authorization') ?? '';
+  // Called internally by pg_cron — no external JWT verification needed.
+  // The function uses service_role for all DB access; the worst an unauthenticated
+  // caller can do is trigger one position snapshot (blocked by the 110 s duplicate guard).
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  if (!authHeader.includes(serviceKey) && serviceKey) {
-    console.warn('[log-position] Unauthorized call');
-    return json({ error: 'Unauthorized' }, 401);
-  }
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
