@@ -213,10 +213,10 @@
 		const arr = new Uint8Array(24);
 		crypto.getRandomValues(arr);
 		const newKey = 'sk-' + Array.from(arr, (b: number) => b.toString(16).padStart(2, '0')).join('');
+		// Use upsert so this works even if the anchor_config row is missing
 		const { data: row } = await supabase
 			.from('anchor_config')
-			.update({ plugin_api_key: newKey })
-			.eq('boat_id', boatId)
+			.upsert({ boat_id: boatId, plugin_api_key: newKey }, { onConflict: 'boat_id' })
 			.select()
 			.single();
 		skKeyRegenBusy = false;

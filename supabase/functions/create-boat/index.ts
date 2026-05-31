@@ -62,16 +62,22 @@ Deno.serve(async (req: Request) => {
 
     if (memberErr) return json({ error: memberErr.message }, 400);
 
-    // Create default anchor_config row
+    // Generate SignalK bridge API key (sk- + 48 random hex chars)
+    const keyBytes = new Uint8Array(24);
+    crypto.getRandomValues(keyBytes);
+    const pluginApiKey = 'sk-' + Array.from(keyBytes, b => b.toString(16).padStart(2, '0')).join('');
+
+    // Create default anchor_config row (with API key pre-generated)
     await admin.from('anchor_config').insert({
-      boat_id:       boat.id,
-      active:        false,
-      radius_m:      50,
+      boat_id:        boat.id,
+      active:         false,
+      radius_m:       50,
       chain_length_m: 30,
-      bearing_deg:   0,
-      alarm_delay_s: 30,
-      alarming:      false,
-      cloud_enabled: false,
+      bearing_deg:    0,
+      alarm_delay_s:  30,
+      alarming:       false,
+      cloud_enabled:  false,
+      plugin_api_key: pluginApiKey,
     });
 
     return json({ ok: true, boatId: boat.id });
