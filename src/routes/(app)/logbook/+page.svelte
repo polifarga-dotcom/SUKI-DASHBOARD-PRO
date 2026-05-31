@@ -894,9 +894,8 @@
 			{#if wave.wave_height_m != null}
 				<div class="snap-item"><span class="snap-val">{wave.wave_height_m}</span><span class="snap-lbl">m wave</span></div>
 			{/if}
-			{@const motorH = (liveEngH() != null && at.engine_hours_start != null)
-				? +Math.max(0, liveEngH()! - at.engine_hours_start).toFixed(2) : null}
-			{#if motorH != null}
+			{#if liveEngH() != null && at.engine_hours_start != null}
+				{@const motorH = +Math.max(0, liveEngH()! - at.engine_hours_start).toFixed(2)}
 				<div class="snap-item" class:eng-on={liveEngOn()}>
 					<span class="snap-val">{motorH.toFixed(1)}</span><span class="snap-lbl">motor h</span>
 				</div>
@@ -1549,15 +1548,6 @@
 	.expand-icon { color: var(--muted); display: flex; align-items: center; }
 
 	/* Edit / delete icon buttons */
-	.trip-icon-btn {
-		width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
-		background: none; border: 1px solid transparent; border-radius: 5px;
-		color: var(--muted); cursor: pointer; transition: all 0.15s;
-		flex-shrink: 0;
-	}
-	.trip-icon-btn:hover { background: var(--card2); border-color: var(--border); color: var(--accent); }
-	.trip-icon-btn-del:hover { color: var(--red); border-color: rgba(239,68,68,.3); }
-
 	/* Expanded-section action buttons (edit / delete) */
 	.trip-expanded-actions {
 		display: flex; gap: 8px; padding: 12px 12px 4px; border-top: 1px solid var(--border);
