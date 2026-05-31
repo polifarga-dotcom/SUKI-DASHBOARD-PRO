@@ -184,6 +184,50 @@ export type UserRole = {
 
 export type RelayDevice = 'victron_relay' | 'shelly';
 
+export type LogTrip = {
+	id:           string;
+	boat_id:      string;
+	name:         string | null;
+	from_port:    string | null;
+	to_port:      string | null;
+	started_at:   string;         // ISO
+	ended_at:     string | null;  // null = active
+	total_nm:     number | null;
+	sail_nm:      number | null;
+	motor_nm:     number | null;
+	avg_sog_kn:   number | null;
+	max_sog_kn:   number | null;
+	engine_hours: number | null;
+	notes:        string | null;
+	created_at:   string;
+};
+
+export type LogEntry = {
+	id:             string;
+	trip_id:        string | null;
+	boat_id:        string;
+	logged_at:      string;         // ISO
+	lat:            number | null;
+	lon:            number | null;
+	cog_deg:        number | null;
+	sog_kn:         number | null;
+	distance_nm:    number | null;
+	engine_on:      boolean;
+	engine_rpm:     number | null;
+	engine_hours:   number | null;
+	sails:          string | null;
+	wind_speed_kn:  number | null;
+	wind_dir_deg:   number | null;
+	baro_hpa:       number | null;
+	air_temp_c:     number | null;
+	water_temp_c:   number | null;
+	wave_height_m:  number | null;
+	wave_period_s:  number | null;
+	notes:          string | null;
+	source:         'auto' | 'manual';
+	created_at:     string;
+};
+
 export type InReachPoint = {
   lat: number;
   lon: number;

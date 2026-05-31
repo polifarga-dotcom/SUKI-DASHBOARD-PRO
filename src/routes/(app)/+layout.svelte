@@ -32,6 +32,15 @@
 			</svg>`
 		},
 		{
+			href: '/logbook', label: 'Log',
+			icon: `<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<rect x="4" y="2" width="12" height="16" rx="1.5"/>
+				<line x1="7" y1="6" x2="13" y2="6"/>
+				<line x1="7" y1="9" x2="13" y2="9"/>
+				<line x1="7" y1="12" x2="10" y2="12"/>
+			</svg>`
+		},
+		{
 			href: '/settings', label: 'Settings',
 			icon: `<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 				<line x1="3" y1="6" x2="17" y2="6"/>
