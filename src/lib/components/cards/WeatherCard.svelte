@@ -11,11 +11,12 @@
 		dir:    number;
 		precip: number;
 		wmo:    number;
-		// waves (null if marine data unavailable at this location)
-		waveH:  number | null;
-		waveP:  number | null;
-		waveD:  number | null;
-		swellH: number | null;
+		// sea state (null if marine data unavailable at this location)
+		waveH:  number | null;   // wave height m
+		waveP:  number | null;   // wave period s
+		waveD:  number | null;   // wave direction °
+		swellH: number | null;   // swell height m
+		swellD: number | null;   // swell direction °
 	};
 
 	let hours     = $state<WxHour[]>([]);
@@ -229,13 +230,13 @@
 					`https://api.open-meteo.com/v1/forecast` +
 					`?latitude=${p.lat}&longitude=${p.lon}` +
 					`&hourly=temperature_2m,precipitation_probability,weathercode,windspeed_10m,windgusts_10m,winddirection_10m` +
-					`&wind_speed_unit=kn&forecast_days=2&timezone=auto`
+					`&wind_speed_unit=kn&forecast_days=3&timezone=auto`
 				),
 				fetch(
 					`https://marine-api.open-meteo.com/v1/marine` +
 					`?latitude=${p.lat}&longitude=${p.lon}` +
-					`&hourly=wave_height,wave_period,wave_direction,swell_wave_height` +
-					`&forecast_days=2&timezone=auto`
+					`&hourly=wave_height,wave_period,wave_direction,swell_wave_height,swell_wave_direction` +
+					`&forecast_days=3&timezone=auto`
 				).catch(() => null),
 			]);
 
@@ -261,17 +262,18 @@
 					dir:    Math.round(wj.hourly.winddirection_10m[i]),
 					precip: wj.hourly.precipitation_probability?.[i] ?? 0,
 					wmo:    wj.hourly.weathercode[i],
-					waveH:  mhr?.wave_height[i]       != null ? Math.round((mhr.wave_height[i] as number) * 10) / 10 : null,
-					waveP:  mhr?.wave_period[i]       != null ? Math.round(mhr.wave_period[i] as number) : null,
-					waveD:  mhr?.wave_direction[i]    != null ? Math.round(mhr.wave_direction[i] as number) : null,
-					swellH: mhr?.swell_wave_height[i] != null ? Math.round((mhr.swell_wave_height[i] as number) * 10) / 10 : null,
+					waveH:  mhr?.wave_height[i]           != null ? Math.round((mhr.wave_height[i] as number) * 10) / 10 : null,
+					waveP:  mhr?.wave_period[i]           != null ? Math.round(mhr.wave_period[i] as number) : null,
+					waveD:  mhr?.wave_direction[i]        != null ? Math.round(mhr.wave_direction[i] as number) : null,
+					swellH: mhr?.swell_wave_height[i]     != null ? Math.round((mhr.swell_wave_height[i] as number) * 10) / 10 : null,
+					swellD: mhr?.swell_wave_direction[i]  != null ? Math.round(mhr.swell_wave_direction[i] as number) : null,
 				}))
 				.filter(h => {
 					const ms = new Date(h.time).getTime();
 					const hr = new Date(h.time).getHours();
 					return ms >= cutoff && hr % 3 === 0;
 				})
-				.slice(0, 17);
+				.slice(0, 25);   // current slot + 24 × 3h = 72 h
 
 			// Publish current wave snapshot to shared store (logbook reads it)
 			if (hours.length > 0) {
@@ -321,7 +323,7 @@
 				<line x1="3.5" y1="16.5" x2="5" y2="15"/>
 				<line x1="15" y1="5" x2="16.5" y2="3.5"/>
 			</svg>
-			Weather · 48 h
+			Weather · 72 h
 		</span>
 		<span class="wx-meta">
 			{#if updatedAt}
@@ -343,38 +345,50 @@
 		<!-- ── Current conditions ──────────────────────────────────────── -->
 		{@const now = hours[0]}
 		<div class="wx-now">
-			<div class="wx-now-wind">
-				<svg class="wx-arrow" style="transform: rotate({now.dir}deg)"
-					viewBox="0 0 12 18" width="22" height="22" fill="currentColor">
-					<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
-				</svg>
-				<span class="wx-now-speed" style="color:{windColor(now.wind)}">{now.wind}</span>
-				<span class="wx-now-unit">kn</span>
-				<span class="wx-now-sep">·</span>
-				<span class="wx-now-gusts">G {now.gusts} kn</span>
-				<span class="wx-now-sep">·</span>
-				<span class="wx-now-dir">{dirAbbr(now.dir)}</span>
-			</div>
-			<div class="wx-now-right">
+			<!-- Top row: wind | weather -->
+			<div class="wx-now-top">
+				<div class="wx-now-wind">
+					<svg class="wx-arrow" style="transform: rotate({now.dir}deg)"
+						viewBox="0 0 12 18" width="22" height="22" fill="currentColor">
+						<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
+					</svg>
+					<span class="wx-now-speed" style="color:{windColor(now.wind)}">{now.wind}</span>
+					<span class="wx-now-unit">kn</span>
+					<span class="wx-now-sep">·</span>
+					<span class="wx-now-gusts">G {now.gusts} kn</span>
+					<span class="wx-now-sep">·</span>
+					<span class="wx-now-dir">{dirAbbr(now.dir)}</span>
+				</div>
 				<div class="wx-now-cond">
 					<span class="wx-now-emoji">{wmoEmoji(now.wmo)}</span>
 					<span class="wx-now-temp">{now.temp}°C</span>
 					{#if now.precip > 0}<span class="wx-now-precip">{now.precip}%</span>{/if}
 				</div>
-				{#if now.waveH != null}
-				<div class="wx-now-wave">
-					<!-- wave icon -->
-					<svg viewBox="0 0 16 10" width="14" height="9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+			</div>
+			<!-- Sea-state row (only when marine data available) -->
+			{#if now.waveH != null}
+			<div class="wx-now-sea">
+				<div class="wx-now-sea-item">
+					<svg viewBox="0 0 16 10" width="13" height="8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 						<path d="M1 7 Q3 3 5 7 Q7 11 9 7 Q11 3 13 7 Q14 9 15 7"/>
 					</svg>
-					<span style="color:{waveColor(now.waveH)}">{now.waveH} m</span>
-					{#if now.waveP != null}<span class="wx-wave-dim">{now.waveP} s</span>{/if}
-					{#if now.swellH != null && now.swellH >= 0.1}
-						<span class="wx-wave-dim">· swell {now.swellH} m</span>
-					{/if}
+					<span class="wx-sea-lbl">Wave</span>
+					<span class="wx-sea-val" style="color:{waveColor(now.waveH)}">{now.waveH} m</span>
+					{#if now.waveP != null}<span class="wx-sea-dim">{now.waveP} s</span>{/if}
+					{#if now.waveD != null}<span class="wx-sea-dir">{dirAbbr(now.waveD)}</span>{/if}
+				</div>
+				{#if now.swellH != null && now.swellH >= 0.1}
+				<div class="wx-now-sea-item">
+					<svg viewBox="0 0 16 10" width="13" height="8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.6">
+						<path d="M1 8 Q4 4 7 8 Q10 12 13 8 Q14 6.5 15 8"/>
+					</svg>
+					<span class="wx-sea-lbl">Swell</span>
+					<span class="wx-sea-val">{now.swellH} m</span>
+					{#if now.swellD != null}<span class="wx-sea-dir">{dirAbbr(now.swellD)}</span>{/if}
 				</div>
 				{/if}
 			</div>
+			{/if}
 		</div>
 
 		<!-- ── Forecast rows ──────────────────────────────────────────── -->
@@ -396,12 +410,15 @@
 					<span class="wx-gust">G{h.gusts}</span>
 					<span class="wx-wdir">{dirAbbr(h.dir)}</span>
 					<span class="wx-temp">{h.temp}°</span>
-					{#if h.waveH != null}
-						<span class="wx-wave-cell" style="color:{waveColor(h.waveH)}">{h.waveH}m</span>
-					{:else}
-						<span class="wx-wave-cell"></span>
-					{/if}
-					{#if h.precip > 0}<span class="wx-precip">{h.precip}%</span>{/if}
+					<!-- Sea state: right-aligned block -->
+					<div class="wx-sea-block">
+						{#if h.waveH != null}
+							<span class="wx-sea-wave" style="color:{waveColor(h.waveH)}">{h.waveH}m {h.waveD != null ? dirAbbr(h.waveD) : ''}</span>
+						{/if}
+						{#if h.swellH != null && h.swellH >= 0.1}
+							<span class="wx-sea-swell">{h.swellH}m{h.swellD != null ? ' '+dirAbbr(h.swellD) : ''}</span>
+						{/if}
+					</div>
 				</div>
 			{/each}
 		</div>
@@ -465,29 +482,40 @@
 
 	.wx-empty { font-size: 13px; color: var(--muted); padding-bottom: 4px; }
 
-	/* Current */
+	/* Current conditions */
 	.wx-now {
-		display: flex; justify-content: space-between; align-items: flex-start;
-		padding: 10px 12px; margin: 0 -12px;
+		display: flex; flex-direction: column; gap: 0;
+		margin: 0 -12px;
 		background: var(--card2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
 	}
-	.wx-now-wind { display: flex; align-items: center; gap: 6px; }
-	.wx-arrow { flex-shrink: 0; color: var(--muted); }
+	.wx-now-top {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 10px 12px;
+	}
+	.wx-now-wind  { display: flex; align-items: center; gap: 6px; }
+	.wx-arrow     { flex-shrink: 0; color: var(--muted); }
 	.wx-now-speed { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
 	.wx-now-unit  { font-size: 12px; color: var(--muted); }
 	.wx-now-sep   { color: var(--border); }
 	.wx-now-gusts { font-size: 12px; color: var(--muted); }
 	.wx-now-dir   { font-size: 13px; font-weight: 600; }
-	.wx-now-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
 	.wx-now-cond  { display: flex; align-items: center; gap: 6px; }
 	.wx-now-emoji { font-size: 18px; line-height: 1; }
 	.wx-now-temp  { font-size: 15px; font-weight: 600; }
 	.wx-now-precip{ font-size: 11px; color: #60a5fa; }
-	.wx-now-wave  { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
-	.wx-wave-dim  { font-size: 10px; color: var(--muted); font-weight: 400; }
+	/* Sea-state row (wave + swell) */
+	.wx-now-sea {
+		display: flex; gap: 16px; padding: 7px 12px;
+		border-top: 1px solid var(--border);
+	}
+	.wx-now-sea-item { display: flex; align-items: center; gap: 5px; }
+	.wx-sea-lbl  { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+	.wx-sea-val  { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+	.wx-sea-dim  { font-size: 11px; color: var(--muted); }
+	.wx-sea-dir  { font-size: 11px; font-weight: 600; color: var(--text); }
 
 	/* Forecast */
-	.wx-forecast { margin: 0 -12px; max-height: 280px; overflow-y: auto; }
+	.wx-forecast { margin: 0 -12px; max-height: 360px; overflow-y: auto; }
 	.wx-day-sep {
 		font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
 		color: var(--muted); padding: 6px 12px 3px; border-top: 1px solid var(--border);
@@ -496,22 +524,27 @@
 
 	.wx-row {
 		display: grid;
-		grid-template-columns: 36px 18px 16px 28px 20px 32px 38px 24px 34px auto;
+		grid-template-columns: 36px 18px 16px 28px 18px 30px 36px 22px 1fr;
 		align-items: center; gap: 4px;
-		padding: 5px 12px;
+		padding: 4px 12px;
 		border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 		font-size: 12px; font-variant-numeric: tabular-nums;
 	}
 	.wx-row:last-child { border-bottom: none; }
-	.wx-time      { color: var(--muted); }
-	.wx-icon      { font-size: 13px; text-align: center; }
-	.wx-wspd      { font-weight: 700; text-align: right; }
-	.wx-wunit     { font-size: 10px; color: var(--muted); }
-	.wx-gust      { font-size: 11px; color: var(--muted); }
-	.wx-wdir      { font-size: 11px; color: var(--text); }
-	.wx-temp      { color: var(--muted); text-align: right; }
-	.wx-wave-cell { font-size: 11px; font-weight: 600; }
-	.wx-precip    { font-size: 10px; color: #60a5fa; }
+	.wx-time  { color: var(--muted); }
+	.wx-icon  { font-size: 13px; text-align: center; }
+	.wx-wspd  { font-weight: 700; text-align: right; }
+	.wx-wunit { font-size: 10px; color: var(--muted); }
+	.wx-gust  { font-size: 11px; color: var(--muted); }
+	.wx-wdir  { font-size: 11px; color: var(--text); }
+	.wx-temp  { color: var(--muted); text-align: right; }
+	/* Sea block — right-aligned, stacked wave + swell */
+	.wx-sea-block {
+		display: flex; flex-direction: column; align-items: flex-end;
+		gap: 1px; justify-self: end;
+	}
+	.wx-sea-wave  { font-size: 11px; font-weight: 600; }
+	.wx-sea-swell { font-size: 10px; color: var(--muted); }
 
 	/* Moon section */
 	.wx-moon-section { padding: 10px 0 4px; border-top: 1px solid var(--border); }
