@@ -435,9 +435,7 @@
 						<span class="wx-moon-label">{n.label}</span>
 						<span class="wx-moon-name">{n.phase.name}</span>
 						<span class="wx-moon-times">
-							🌅 {n.rise ? fmtLocalTime(n.rise) : '—'}
-							<span class="wx-times-sep">·</span>
-							🌇 {n.set ? fmtLocalTime(n.set) : '—'}
+							{n.rise ? fmtLocalTime(n.rise) : '—'} – {n.set ? fmtLocalTime(n.set) : '—'}
 						</span>
 					</div>
 					<div class="wx-moon-right">
@@ -571,8 +569,7 @@
 		display: block; font-size: 10px; color: var(--muted);
 		font-variant-numeric: tabular-nums; margin-top: 1px;
 	}
-	.wx-times-sep  { margin: 0 3px; opacity: 0.4; }
-	.wx-moon-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.wx-moon-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 	.wx-illum-bar  {
 		width: 44px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;
 	}
