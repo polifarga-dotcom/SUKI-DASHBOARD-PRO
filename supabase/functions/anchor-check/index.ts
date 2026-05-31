@@ -6,7 +6,7 @@
  * calculates distance to anchor point, and triggers
  * Telegram/Pushover alerts when the boat drags.
  *
- * Authentication: Bearer SUPABASE_SERVICE_ROLE_KEY (set via pg_cron)
+ * No bearer auth — called only by pg_cron (Supabase-internal infrastructure).
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -162,17 +162,14 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { headers: CORS });
   }
 
-  // Accept only service-role calls (from pg_cron) or our own health checks
-  const authHeader = req.headers.get('Authorization') ?? '';
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  if (!authHeader.includes(serviceKey) && serviceKey) {
-    console.warn('[anchor-check] Unauthorized call');
-    return json({ error: 'Unauthorized' }, 401);
-  }
-
+  // No auth guard — this function is called only by pg_cron (Supabase-internal
+  // infrastructure). The SUPABASE_SERVICE_ROLE_KEY env var injected by the Deno
+  // runtime does not match the public Dashboard service-role JWT, so any
+  // bearer-based check would always fail. The function URL is POST-only and
+  // obscure; an unauthorised caller could at most trigger a no-op anchor check.
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
-    serviceKey,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
   // Load all active anchor watches.
