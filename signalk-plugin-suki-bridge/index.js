@@ -16,25 +16,53 @@
  *
  * Standard SignalK paths are mapped to SUKI's telemetry columns.
  * Victron-specific paths (solar total) use the Victron SignalK plugin conventions.
+ *
+ * v1.0.4 — Universal solar + tank path discovery
+ *   Solar MPPTs and tanks use non-zero instance IDs that vary per installation.
+ *   This version adds a dynamic discovery pass (at 5 s and 60 s after start) that
+ *   enumerates all available electrical.solar / electrical.chargers and tanks.*
+ *   paths via app.streambundle.getAvailablePaths() and subscribes to each.
+ *   Solar values across all discovered instances are summed; tank values use the
+ *   lowest instance ID as the primary tank. Static PATH_MAP entries for well-known
+ *   instance IDs (e.g. Victron default instance 0) are kept as fast-path fallbacks.
  */
 
 'use strict';
 
 module.exports = function (app) {
-  let sendTimer = null;
-  let pending   = {};
-  let unsubscribes = [];
+  let sendTimer        = null;
+  let pending          = {};
+  let unsubscribes     = [];
+  let discoveryTimer   = null;
+  let rediscoveryTimer = null;
+
+  // ── Dynamic solar accumulators (any MPPT instance, any namespace) ──────────
+  // Values are continuously updated by subscriptions added during discovery.
+  // On each batch send they are summed → solar_total_w / solar_total_a / yields.
+  let _solarPowerByInst      = {};  // instKey → last panel power (W)
+  let _solarCurrentByInst    = {};  // instKey → last charging current (A)
+  let _solarYieldTodayByInst = {};  // instKey → yield today (J)
+  let _solarYieldYestByInst  = {};  // instKey → yield yesterday (J)
+
+  // ── Dynamic tank accumulators (any instance ID) ─────────────────────────────
+  // Sorted by instance ID at send time: lowest → primary column, second → grey/aft.
+  let _tankFWByInst  = {};   // instanceId → fill ratio 0–1
+  let _tankDSLByInst = {};   // instanceId → fill ratio 0–1
+  let _tankBWByInst  = {};   // instanceId → fill ratio 0–1
+
+  // Tracks paths already subscribed by discovery to avoid duplicates on re-scan
+  let _discoveredPaths = new Set();
 
   // ── SignalK path → telemetry column mapping ─────────────────────────────────
   // Standard paths work across any NMEA-connected SignalK server.
-  // Victron-specific paths may need adjustment based on the VRM installation.
+  // Instance IDs (e.g. batteries.0, chargers.0) are Victron defaults; boats with
+  // non-standard IDs are handled by the dynamic discovery below.
   const PATH_MAP = {
     // Navigation (standard NMEA)
     'navigation.position.latitude':                          'nav_lat',
     'navigation.position.longitude':                         'nav_lon',
     'navigation.headingTrue':                                'nav_hdg_rad',
     'navigation.headingMagnetic':                            'nav_hdg_rad',   // fallback if True unavailable
-
     'navigation.speedOverGround':                            'nav_sog_ms',
     'navigation.speedThroughWater':                          'nav_stw_ms',
 
@@ -49,7 +77,6 @@ module.exports = function (app) {
 
     // Batteries — Victron SignalK plugin uses integer instance IDs.
     // Instance 0 = house bank (main), instance 1 = engine/starter.
-    // Adjust these if your VRM uses different instance numbers.
     'electrical.batteries.0.capacity.stateOfCharge':         'batt_main_soc',
     'electrical.batteries.0.voltage':                        'batt_main_v',
     'electrical.batteries.0.current':                        'batt_main_a',
@@ -74,14 +101,15 @@ module.exports = function (app) {
     'propulsion.main.alternatorVoltage':                     'eng_alt_v',
     'propulsion.port.alternatorVoltage':                     'eng_alt_v',     // fallback
 
-    // Tanks (standard SignalK fill ratio 0.0–1.0)
+    // Tanks — instance 0 fast path (Victron default). Boats using other instance
+    // IDs are handled by dynamic discovery (subscribed at 5 s / 60 s after start).
     'tanks.freshWater.0.currentLevel':                       'tank_fw',
     'tanks.diesel.0.currentLevel':                           'tank_dsl',
     'tanks.blackWater.0.currentLevel':                       'tank_bwm',
     'tanks.blackWater.1.currentLevel':                       'tank_bwg',
 
-    // Solar — Victron SignalK plugin exposes individual MPPTs as chargers.
-    // We track total panel power; individual MPPT columns are VRM-specific.
+    // Solar — instance 0 fast path. Additional MPPT instances (electrical.solar.N.*)
+    // and charger instances are discovered and summed dynamically.
     'electrical.chargers.0.panelPower':                      'solar_total_w',
 
     // Rudder
@@ -111,6 +139,79 @@ module.exports = function (app) {
     'propulsion.main.revolutions': v => Math.round(v * 60),
     'propulsion.port.revolutions': v => Math.round(v * 60),
   };
+
+  // ── Dynamic path discovery ──────────────────────────────────────────────────
+  // Called at 5 s and 60 s after start. Enumerates all paths that SignalK has
+  // received data for and subscribes to any solar MPPT or tank paths not already
+  // in the static PATH_MAP. Uses _discoveredPaths to avoid duplicate subscriptions.
+  function discoverDynamicPaths() {
+    let available;
+    try {
+      available = app.streambundle.getAvailablePaths();
+    } catch (e) {
+      app.debug(`Dynamic discovery: getAvailablePaths() unavailable — ${e.message}`);
+      return;
+    }
+
+    let newCount = 0;
+
+    for (const path of available) {
+      if (_discoveredPaths.has(path)) continue;
+
+      let m;
+
+      // ── Solar MPPTs ────────────────────────────────────────────────────────
+      // Matches: electrical.solar.N.panelPower / current / yieldToday / yieldYesterday
+      //      or: electrical.chargers.N.panelPower / current / yieldToday / yieldYesterday
+      if ((m = path.match(
+        /^electrical\.(solar|chargers)\.(\w+)\.(panelPower|current|yieldToday|yieldYesterday)$/
+      ))) {
+        const [, ns, inst, metric] = m;
+        const key = `${ns}.${inst}`;
+        try {
+          const unsub = app.streambundle.getSelfBus(path).onValue(({ value }) => {
+            if (typeof value !== 'number' || !isFinite(value)) return;
+            if (metric === 'panelPower')     _solarPowerByInst[key]      = value;
+            if (metric === 'current')        _solarCurrentByInst[key]    = value;
+            if (metric === 'yieldToday')     _solarYieldTodayByInst[key] = value;
+            if (metric === 'yieldYesterday') _solarYieldYestByInst[key]  = value;
+          });
+          unsubscribes.push(unsub);
+          _discoveredPaths.add(path);
+          newCount++;
+        } catch (e) {
+          app.debug(`Discovery: could not subscribe to ${path}: ${e.message}`);
+        }
+        continue;
+      }
+
+      // ── Tanks ──────────────────────────────────────────────────────────────
+      // Matches: tanks.{freshWater|fuel|diesel|blackWater}.N.currentLevel
+      if ((m = path.match(
+        /^tanks\.(freshWater|fuel|diesel|blackWater)\.(\w+)\.currentLevel$/
+      ))) {
+        const [, type, inst] = m;
+        try {
+          const unsub = app.streambundle.getSelfBus(path).onValue(({ value }) => {
+            if (typeof value !== 'number' || !isFinite(value)) return;
+            if (type === 'freshWater')                    _tankFWByInst[inst]  = value;
+            else if (type === 'fuel' || type === 'diesel') _tankDSLByInst[inst] = value;
+            else if (type === 'blackWater')                _tankBWByInst[inst]  = value;
+          });
+          unsubscribes.push(unsub);
+          _discoveredPaths.add(path);
+          newCount++;
+        } catch (e) {
+          app.debug(`Discovery: could not subscribe to ${path}: ${e.message}`);
+        }
+        continue;
+      }
+    }
+
+    if (newCount > 0) {
+      app.debug(`Dynamic discovery: subscribed to ${newCount} new paths`);
+    }
+  }
 
   const plugin = {
     id:          'suki-bridge',
@@ -152,7 +253,7 @@ module.exports = function (app) {
 
       app.debug(`Starting — endpoint: ${url}, interval: ${interval_ms}ms`);
 
-      // ── Subscribe to mapped paths ─────────────────────────────────────────
+      // ── Subscribe to static PATH_MAP paths ──────────────────────────────────
       const paths = Object.keys(PATH_MAP);
       unsubscribes = paths.map(path => {
         try {
@@ -173,7 +274,7 @@ module.exports = function (app) {
         }
       });
 
-      // ── Extra: Victron/Venus GPS compound position object ─────────────────
+      // ── Extra: Victron/Venus GPS compound position object ────────────────────
       // Standard NMEA devices emit navigation.position.latitude / .longitude as
       // separate numeric sub-paths, handled above. Victron/Venus OS GPS sources
       // emit the parent path navigation.position as a compound object
@@ -193,12 +294,55 @@ module.exports = function (app) {
         app.debug(`Could not subscribe to navigation.position compound: ${e.message}`);
       }
 
-      // ── Batch sender ─────────────────────────────────────────────────────
-      sendTimer = setInterval(async () => {
-        if (Object.keys(pending).length === 0) return;
+      // ── Dynamic path discovery ───────────────────────────────────────────────
+      // Wait 5 s for SignalK data to start flowing (devices take time to connect),
+      // then scan for solar MPPT and tank paths with non-standard instance IDs.
+      // Re-scan at 60 s to pick up any devices that come online later.
+      discoveryTimer   = setTimeout(discoverDynamicPaths,  5000);
+      rediscoveryTimer = setTimeout(discoverDynamicPaths, 60000);
 
+      // ── Batch sender ─────────────────────────────────────────────────────────
+      sendTimer = setInterval(async () => {
+        // Copy pending (from static subscriptions) and reset for next cycle
         const payload = { ...pending };
         pending = {};
+
+        // ── Merge dynamic solar values (sum across all discovered MPPT instances) ─
+        // Static PATH_MAP may already have set solar_total_w (chargers.0 fast path);
+        // dynamic values only fill in when the static path produced nothing.
+        if (Object.keys(_solarPowerByInst).length > 0) {
+          const dynW = Object.values(_solarPowerByInst).reduce((s, v) => s + v, 0);
+          if (payload.solar_total_w == null) payload.solar_total_w = dynW;
+        }
+        if (Object.keys(_solarCurrentByInst).length > 0) {
+          const dynA = Object.values(_solarCurrentByInst).reduce((s, v) => s + v, 0);
+          if (payload.solar_total_a == null) payload.solar_total_a = dynA;
+        }
+        if (Object.keys(_solarYieldTodayByInst).length > 0) {
+          const dynYT = Object.values(_solarYieldTodayByInst).reduce((s, v) => s + v, 0);
+          if (payload.solar_yield_today_j == null) payload.solar_yield_today_j = dynYT;
+        }
+        if (Object.keys(_solarYieldYestByInst).length > 0) {
+          const dynYY = Object.values(_solarYieldYestByInst).reduce((s, v) => s + v, 0);
+          if (payload.solar_yield_yesterday_j == null) payload.solar_yield_yesterday_j = dynYY;
+        }
+
+        // ── Merge dynamic tank values (sorted by instance ID, lowest = primary) ──
+        const sortEntries = obj =>
+          Object.entries(obj).sort(([a], [b]) => Number(a) - Number(b));
+
+        const fwSorted = sortEntries(_tankFWByInst);
+        if (fwSorted.length > 0 && payload.tank_fw  == null) payload.tank_fw  = fwSorted[0][1];
+
+        const dslSorted = sortEntries(_tankDSLByInst);
+        if (dslSorted.length > 0 && payload.tank_dsl == null) payload.tank_dsl = dslSorted[0][1];
+
+        const bwSorted = sortEntries(_tankBWByInst);
+        if (bwSorted.length > 0 && payload.tank_bwm == null) payload.tank_bwm = bwSorted[0][1];
+        if (bwSorted.length > 1 && payload.tank_bwg == null) payload.tank_bwg = bwSorted[1][1];
+
+        // ── Nothing to send ────────────────────────────────────────────────────
+        if (Object.keys(payload).length === 0) return;
 
         try {
           const res = await fetch(url, {
@@ -225,13 +369,24 @@ module.exports = function (app) {
     },
 
     stop () {
-      if (sendTimer) {
-        clearInterval(sendTimer);
-        sendTimer = null;
-      }
+      if (sendTimer)        { clearInterval(sendTimer);       sendTimer        = null; }
+      if (discoveryTimer)   { clearTimeout(discoveryTimer);   discoveryTimer   = null; }
+      if (rediscoveryTimer) { clearTimeout(rediscoveryTimer); rediscoveryTimer = null; }
+
       unsubscribes.forEach(u => { try { u(); } catch (_) {} });
       unsubscribes = [];
-      pending = {};
+      pending      = {};
+
+      // Clear dynamic accumulators so they don't bleed into the next start() call
+      _solarPowerByInst      = {};
+      _solarCurrentByInst    = {};
+      _solarYieldTodayByInst = {};
+      _solarYieldYestByInst  = {};
+      _tankFWByInst          = {};
+      _tankDSLByInst         = {};
+      _tankBWByInst          = {};
+      _discoveredPaths       = new Set();
+
       app.setPluginStatus('Stopped');
     },
   };
