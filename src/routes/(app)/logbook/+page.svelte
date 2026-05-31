@@ -44,6 +44,16 @@
 	let isAutoTrip       = $state(false);
 	let countdownMinutes = $state(15);
 
+	// ── Terminal log (live feed while auto-recording) ─────────────────────────
+	const MAX_LOG = 10;
+	let terminalLines = $state<string[]>([]);
+	function pushLog(msg: string) {
+		const ts = new Date().toLocaleTimeString('en', {
+			hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+		});
+		terminalLines = [`${ts}  ${msg}`, ...terminalLines].slice(0, MAX_LOG);
+	}
+
 	// Write back to localStorage whenever autoEnabled changes
 	$effect(() => {
 		if (typeof localStorage !== 'undefined') {
@@ -236,6 +246,7 @@
 			tripEntries.update(es => [data as LogEntry, ...es]);
 			if (lat != null && lon != null) lastEntryPos = { lat, lon };
 			if (at && distNm > 0) await updateTripTotals(at.id, distNm, engOn);
+			pushLog(`+ entry  ${lat?.toFixed(4) ?? '?'}° ${lon?.toFixed(4) ?? '?'}°  ${sog?.toFixed(1) ?? '—'} kn  ${engOn ? '⚙ engine' : '⛵ sail'}${distNm > 0 ? `  +${distNm.toFixed(2)} nm` : ''}`);
 		}
 	}
 
@@ -377,6 +388,8 @@
 		if (data) {
 			const trip = data as LogTrip;
 			isAutoTrip = true;
+			terminalLines = [];   // fresh log for new trip
+			pushLog(`▶▶ Auto-trip started · ${place ?? 'position recorded'}`);
 			activeTrip.set(trip);
 			allTrips.update(ts => [trip, ...ts]);
 			tripEntries.set([]);
@@ -394,6 +407,7 @@
 		if (!at) return;
 		const lat = liveLat(); const lon = liveLon();
 		const place = (lat != null && lon != null) ? await reverseGeocode(lat, lon) : null;
+		pushLog(`■ Auto-trip stopped · ${place ?? 'unknown'} · ${reason}`);
 		const wx    = buildWeatherSummary();
 
 		await insertEntry({
@@ -444,6 +458,7 @@
 
 		// Anchor alarm activated → stop auto trip immediately
 		if (anchorOn && isAutoTrip && trip) {
+			pushLog(`⚓ Anchor alarm active — stopping trip`);
 			await autoStopTrip('anchor alarm set');
 			return;
 		}
@@ -455,15 +470,25 @@
 			countdownMinutes = 15;
 
 			if (!trip) {
-				if (fastSince == null) fastSince = now;
+				if (fastSince == null) {
+					fastSince = now;
+					pushLog(`▶ ${sog.toFixed(1)} kn — confirming movement…`);
+				}
 				autoMode = 'watching';
 				if (now - fastSince >= CONFIRM_START_MS) {
 					autoMode = 'recording';
 					fastSince = null;
+					pushLog(`▶▶ Confirmed — launching auto-trip`);
 					await autoStartTrip();
 				}
 			} else if (isAutoTrip) {
 				autoMode = 'recording';
+				const lat = liveLat(); const lon = liveLon();
+				const wind = liveWind(); const windDir = liveWindDir();
+				pushLog(
+					`◉ ${sog.toFixed(1)} kn  ${lat?.toFixed(4) ?? '?'}° ${lon?.toFixed(4) ?? '?'}°` +
+					(wind != null ? `  💨 ${wind.toFixed(0)} kn ${windDir != null ? dirAbbr(windDir) : ''}` : '')
+				);
 			}
 
 		} else {
@@ -471,10 +496,14 @@
 			fastSince = null;
 
 			if (trip && isAutoTrip) {
-				if (slowSince == null) slowSince = now;
+				if (slowSince == null) {
+					slowSince = now;
+					pushLog(`⚠ Speed < ${SOG_TRIP_KN} kn — auto-stop in ${countdownMinutes} min`);
+				}
 				const elapsed = now - slowSince;
 				countdownMinutes = Math.max(0, Math.ceil((CONFIRM_STOP_MS - elapsed) / 60_000));
 				autoMode = 'countdown';
+				pushLog(`⏱ ${countdownMinutes} min to stop  ${sog?.toFixed(1) ?? '0.0'} kn`);
 				if (elapsed >= CONFIRM_STOP_MS) {
 					await autoStopTrip('< 1.5 kn for 15 min');
 				}
@@ -635,6 +664,23 @@
 		<button class="auto-toggle-btn" onclick={() => { autoEnabled = true; checkAutoTrip(); }}>On</button>
 	</div>
 	{/if}
+	{/if}
+
+	<!-- ── Auto-log terminal (visible while recording) ───────────────────── -->
+	{#if autoEnabled && isAutoTrip && terminalLines.length > 0}
+	<div class="terminal">
+		<div class="terminal-hdr">
+			<span class="terminal-title">
+				<span class="terminal-dot"></span>AUTO LOG
+			</span>
+			<span class="terminal-meta">{terminalLines.length} / {MAX_LOG} lines</span>
+		</div>
+		<div class="terminal-body">
+			{#each terminalLines as line, i}
+				<div class="terminal-line" class:terminal-line-fresh={i === 0}>{line}</div>
+			{/each}
+		</div>
+	</div>
 	{/if}
 
 	<!-- ── Log entries (active trip) ──────────────────────────────────────── -->
@@ -1048,4 +1094,45 @@
 		flex-shrink: 0;
 	}
 	.auto-toggle-btn:hover { background: var(--border); }
+
+	/* ── Auto-log terminal ───────────────────────────────────────────────────── */
+	.terminal {
+		background: #030a03;
+		border: 1px solid rgba(0, 220, 130, 0.22);
+		border-radius: 8px;
+		overflow: hidden;
+		font-family: 'SF Mono', 'Fira Code', 'Menlo', 'Monaco', monospace;
+	}
+	.terminal-hdr {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 5px 10px;
+		background: rgba(0, 220, 130, 0.07);
+		border-bottom: 1px solid rgba(0, 220, 130, 0.14);
+	}
+	.terminal-title {
+		display: flex; align-items: center; gap: 6px;
+		font-size: 10px; font-weight: 700; letter-spacing: 1px;
+		color: var(--green);
+	}
+	.terminal-dot {
+		width: 6px; height: 6px; border-radius: 50%;
+		background: var(--green);
+		animation: pulse-live 2s ease-in-out infinite;
+	}
+	.terminal-meta { font-size: 10px; color: rgba(0, 220, 130, 0.4); }
+	.terminal-body {
+		padding: 7px 10px;
+		display: flex; flex-direction: column; gap: 1px;
+	}
+	.terminal-line {
+		font-size: 11px;
+		color: rgba(100, 220, 150, 0.55);
+		white-space: pre;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		line-height: 1.65;
+	}
+	.terminal-line.terminal-line-fresh {
+		color: #7effa0;
+	}
 </style>
