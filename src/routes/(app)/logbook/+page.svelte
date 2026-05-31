@@ -1142,6 +1142,7 @@
 				<!-- Map -->
 				<div class="trip-map-wrap">
 					<div bind:this={expandedMapEl} class="trip-map-el"></div>
+					<div class="trip-map-dark" aria-hidden="true"></div>
 					{#if expandedLoading}
 					<div class="trip-map-overlay">Loading track…</div>
 					{:else if expandedMapPositions.length === 0}
@@ -1710,13 +1711,18 @@
 		border-radius: 7px; overflow: hidden; margin-bottom: 10px;
 	}
 	.trip-map-el { width: 100%; height: 100%; }
+	/* Tile darkening via a simple rgba div (avoids CSS filter stacking-context issues) */
+	.trip-map-dark {
+		position: absolute; inset: 0; z-index: 300;
+		background: rgba(0, 0, 0, 0.18); pointer-events: none;
+		border-radius: 7px;
+	}
 	.trip-map-overlay {
-		position: absolute; inset: 0;
+		position: absolute; inset: 0; z-index: 800;
 		display: flex; align-items: center; justify-content: center;
 		font-size: 12px; color: var(--muted);
 		background: rgba(8,16,28,.85);
 	}
-	:global(.trip-map-el .leaflet-tile-pane) { filter: brightness(0.82) saturate(0.9); }
 	.trip-map-controls {
 		position: absolute; top: 8px; right: 8px;
 		display: flex; flex-direction: column; gap: 4px; z-index: 1000;

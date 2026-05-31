@@ -201,8 +201,12 @@
 
 	// ── Reactivity ────────────────────────────────────────────────────────────
 	$effect(() => {
-		if (!hasData) { loaded = true; return; }
-		loaded = false;   // reset so "Connecting…" overlay shows while fetching
+		if (!hasData) return;
+		// Do NOT reset loaded here — any re-run of this effect (e.g. when
+		// anchorConfig gets a new object reference from the 3-second telemetry
+		// poll) must not flash the "Connecting…" overlay over an already-loaded map.
+		// loaded starts as false (state declaration) and becomes true after the
+		// first successful fetch; subsequent effect re-runs leave it true.
 		fetchInReach();
 		clearInterval(pollTimer);
 		pollTimer = setInterval(fetchInReach, 10 * 60_000);
@@ -254,6 +258,10 @@
 	<!-- Map -->
 	<div class="ir-map-wrap">
 		<div class="ir-map" bind:this={mapEl}></div>
+		<!-- Tile darkening overlay: sits between tile pane (z 200) and marker pane
+		     (z 600). Using a div avoids the CSS filter that creates a new stacking
+		     context on the tile pane and can cause compositing flash on iOS Safari. -->
+		<div class="ir-map-dark" aria-hidden="true"></div>
 		{#if !loaded || !pts}
 		<div class="ir-map-overlay">Connecting to InReach…</div>
 		{:else if pts.length === 0}
@@ -376,6 +384,10 @@
 	.ir-dot {
 		width: 6px; height: 6px; border-radius: 50%;
 		background: var(--green); animation: pulse-live 2s ease-in-out infinite;
+		/* Promote to its own compositor layer so the opacity pulse doesn't
+		   trigger a repaint of the Leaflet map tiles on iOS Safari. */
+		will-change: opacity;
+		transform: translateZ(0);
 	}
 	.ir-dot.stale { background: var(--amber); animation: none; }
 	@keyframes pulse-live { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
@@ -390,18 +402,26 @@
 	/* Map */
 	.ir-map-wrap {
 		position: relative; height: 220px; background: #0a1520;
+		/* clip Leaflet's absolutely-positioned panes so they can't bleed outside */
+		overflow: hidden;
 	}
 	.ir-map {
 		width: 100%; height: 100%;
 	}
+	/* Tile darkening — a simple rgba div between tile pane (z-index 200) and
+	   marker pane (z-index 600). Replaces the old CSS filter on the tile pane
+	   which created a new stacking context and caused compositing flash on Safari. */
+	.ir-map-dark {
+		position: absolute; inset: 0; z-index: 300;
+		background: rgba(0, 0, 0, 0.18);
+		pointer-events: none;
+	}
 	.ir-map-overlay {
-		position: absolute; inset: 0;
+		position: absolute; inset: 0; z-index: 800;
 		display: flex; align-items: center; justify-content: center;
 		font-size: 12px; color: var(--muted);
 		background: rgba(8,16,28,.85);
 	}
-	/* Slightly darken OSM tiles for dark UI */
-	:global(.ir-map .leaflet-tile-pane) { filter: brightness(0.82) saturate(0.9); }
 
 	/* Map controls */
 	.ir-map-controls {
