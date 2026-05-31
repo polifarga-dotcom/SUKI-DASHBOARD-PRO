@@ -68,6 +68,40 @@ async function fetchGPSFromVRM(
   }
 }
 
+// ── Resolve GPS: telemetry table first (5 s cadence), VRM as fallback ─────────
+// Telemetry is fed by the signalk-plugin-suki-bridge plugin, which is much faster
+// than a VRM API round-trip. Staleness threshold is 120 s (2× the plugin interval).
+async function resolveGPS(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  boatId: string,
+  vrmToken: string | null,
+  vrmInstallId: number | null
+): Promise<{ lat: number; lon: number; source: string } | null> {
+  // 1. Try telemetry table (fresh = updated within 120 s)
+  const { data: tel } = await supabase
+    .from('telemetry')
+    .select('nav_lat, nav_lon, updated_at')
+    .eq('boat_id', boatId)
+    .maybeSingle();
+
+  if (tel?.nav_lat != null && tel?.nav_lon != null && tel?.updated_at) {
+    const ageSec = (Date.now() - new Date(tel.updated_at).getTime()) / 1000;
+    if (ageSec < 120) {
+      return { lat: tel.nav_lat, lon: tel.nav_lon, source: 'telemetry' };
+    }
+    console.log(`[anchor-check] telemetry stale (${Math.round(ageSec)}s) — falling back to VRM`);
+  }
+
+  // 2. Fallback: VRM API (works without the plugin, but ~1–5 s slower)
+  if (vrmToken && vrmInstallId) {
+    const gps = await fetchGPSFromVRM(vrmToken, vrmInstallId);
+    if (gps) return { ...gps, source: 'vrm' };
+  }
+
+  return null;
+}
+
 // ── Telegram notification ─────────────────────────────────────────────────────
 async function sendTelegram(
   botToken: string | null,
@@ -141,14 +175,14 @@ Deno.serve(async (req: Request) => {
     serviceKey,
   );
 
-  // Load all active anchor watches
+  // Load all active anchor watches.
+  // No longer require VRM credentials — telemetry GPS (from SignalK plugin) is primary.
   const { data: watches, error: watchErr } = await supabase
     .from('anchor_config')
     .select('*, boats(name)')
     .eq('active', true)
     .not('lat', 'is', null)
-    .not('vrm_api_token', 'is', null)
-    .not('vrm_installation_id', 'is', null);
+    .not('boat_id', 'is', null);
 
   if (watchErr) {
     console.error('[anchor-check] load error', watchErr.message);
@@ -161,9 +195,9 @@ Deno.serve(async (req: Request) => {
   for (const watch of watches ?? []) {
     const boatName: string = (watch.boats as { name: string } | null)?.name ?? watch.boat_id ?? 'Unknown';
 
-    const gps = await fetchGPSFromVRM(watch.vrm_api_token, watch.vrm_installation_id);
+    const gps = await resolveGPS(supabase, watch.boat_id, watch.vrm_api_token ?? null, watch.vrm_installation_id ?? null);
     if (!gps) {
-      console.log(`[anchor-check] ${boatName}: GPS unavailable`);
+      console.log(`[anchor-check] ${boatName}: GPS unavailable (no telemetry or VRM)`);
       results.push({ boat: boatName, status: 'gps_unavailable' });
       continue;
     }
@@ -171,7 +205,7 @@ Deno.serve(async (req: Request) => {
     const dist = haversine(gps.lat, gps.lon, watch.lat!, watch.lon!);
     const violated = dist > watch.radius_m;
 
-    console.log(`[anchor-check] ${boatName}: dist=${Math.round(dist)}m radius=${watch.radius_m}m alarming=${watch.alarming}`);
+    console.log(`[anchor-check] ${boatName}: dist=${Math.round(dist)}m radius=${watch.radius_m}m alarming=${watch.alarming} src=${gps.source}`);
 
     if (violated && !watch.alarming) {
       // ── NEW ALARM ────────────────────────────────────────────────────────

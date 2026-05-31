@@ -88,6 +88,7 @@ export type AnchorConfig = {
 	vrm_installation_id: number | null;
 	inreach_mapshare_id: string | null;
 	inreach_mapshare_password: string | null;
+	plugin_api_key: string | null;    // SignalK bridge authentication key
 };
 
 export type Boat = {

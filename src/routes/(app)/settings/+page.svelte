@@ -6,6 +6,7 @@
 	import { authStore } from '$lib/stores/auth.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { currentBoat, isBoatAdmin, boatRole } from '$lib/stores/boat.js';
+	import { telemetry } from '$lib/stores/telemetry.js';
 
 	// ── Auth ──────────────────────────────────────────────────────────────────
 	const userEmail    = $derived($authStore.session?.user?.email ?? '—');
@@ -152,6 +153,68 @@
 	let inreachSaved    = $state(false);
 	let inreachTest     = $state<TestState>('idle');
 	let inreachTestMsg  = $state('');
+
+	// ── SignalK Bridge ────────────────────────────────────────────────────────
+	const SIGNALK_INGEST_URL = 'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/signalk-ingest';
+	let skKeyVisible   = $state(false);
+	let skUrlCopied    = $state(false);
+	let skKeyCopied    = $state(false);
+	let skKeyRegenBusy = $state(false);
+	let skKeyRegenDone = $state(false);
+
+	const skConnected = $derived.by(() => {
+		const tel = $telemetry;
+		if (!tel?.updated_at) return false;
+		return (Date.now() - new Date(tel.updated_at).getTime()) < 15_000;
+	});
+	const skLastSeen = $derived.by(() => {
+		const tel = $telemetry;
+		if (!tel?.updated_at) return null;
+		return Math.round((Date.now() - new Date(tel.updated_at).getTime()) / 1000);
+	});
+
+	async function copyToClipboard(text: string | null | undefined, which: 'url' | 'key') {
+		if (!text) return;
+		try {
+			await navigator.clipboard.writeText(text);
+		} catch {
+			// Fallback for older browsers
+			const el = document.createElement('textarea');
+			el.value = text;
+			el.style.position = 'fixed'; el.style.opacity = '0';
+			document.body.appendChild(el);
+			el.select();
+			document.execCommand('copy');
+			document.body.removeChild(el);
+		}
+		if (which === 'url') {
+			skUrlCopied = true; setTimeout(() => { skUrlCopied = false; }, 2000);
+		} else {
+			skKeyCopied = true; setTimeout(() => { skKeyCopied = false; }, 2000);
+		}
+	}
+
+	async function regenerateSignalKKey() {
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
+		skKeyRegenBusy = true;
+		// Generate a cryptographically random key
+		const arr = new Uint8Array(24);
+		crypto.getRandomValues(arr);
+		const newKey = 'sk-' + Array.from(arr, (b: number) => b.toString(16).padStart(2, '0')).join('');
+		const { data: row } = await supabase
+			.from('anchor_config')
+			.update({ plugin_api_key: newKey })
+			.eq('boat_id', boatId)
+			.select()
+			.single();
+		skKeyRegenBusy = false;
+		if (row) {
+			anchorConfig.set(row);
+			skKeyRegenDone = true;
+			setTimeout(() => { skKeyRegenDone = false; }, 3000);
+		}
+	}
 
 	$effect(() => {
 		if (cfg) {
@@ -732,6 +795,60 @@
 		</div>
 	</section>
 
+	<!-- ── SignalK Bridge ── -->
+	<section class="card">
+		<h2>SignalK Bridge</h2>
+		<div class="setup-hint">
+			Install <code>signalk-plugin-suki-bridge</code> from your SignalK server's Appstore,
+			then paste the values below into the plugin configuration.
+			The plugin streams live NMEA data (GPS, wind, depth, battery, engine) directly to this dashboard.
+		</div>
+		<div class="form-fields">
+			<div class="field">
+				<label for="sk-ingest-url">Ingest URL</label>
+				<div class="sk-copy-row">
+					<input id="sk-ingest-url" type="text" readonly class="settings-input sk-copy-input"
+						value={SIGNALK_INGEST_URL} />
+					<button class="btn btn-ghost sk-copy-btn"
+						onclick={() => copyToClipboard(SIGNALK_INGEST_URL, 'url')}>
+						{skUrlCopied ? '✓' : 'Copy'}
+					</button>
+				</div>
+			</div>
+			<div class="field">
+				<label for="sk-api-key">API Key</label>
+				<div class="sk-copy-row">
+					<input
+						id="sk-api-key"
+						type={skKeyVisible ? 'text' : 'password'}
+						readonly
+						class="settings-input sk-copy-input"
+						value={cfg?.plugin_api_key ?? '—'} />
+					<button class="btn btn-ghost sk-copy-btn"
+						onclick={() => { skKeyVisible = !skKeyVisible; }}>
+						{skKeyVisible ? 'Hide' : 'Show'}
+					</button>
+					<button class="btn btn-ghost sk-copy-btn"
+						onclick={() => copyToClipboard(cfg?.plugin_api_key, 'key')}>
+						{skKeyCopied ? '✓' : 'Copy'}
+					</button>
+				</div>
+				<span class="field-hint">Keep this secret — anyone with this key can write data to your boat</span>
+			</div>
+		</div>
+		<div class="shelly-actions">
+			<button class="btn btn-ghost" onclick={regenerateSignalKKey}
+				disabled={skKeyRegenBusy || !isAdmin}>
+				{skKeyRegenBusy ? 'Generating…' : skKeyRegenDone ? '✓ New key saved' : 'Regenerate key'}
+			</button>
+		</div>
+		{#if skConnected}
+			<div class="sk-status sk-ok">✓ Plugin connected — last data {skLastSeen}s ago</div>
+		{:else if cfg?.plugin_api_key}
+			<div class="sk-status sk-pending">No live data received yet — install and configure the plugin</div>
+		{/if}
+	</section>
+
 	<!-- ── Account ── -->
 	<section class="card">
 		<h2>Account</h2>
@@ -914,6 +1031,17 @@
 	.vrm-found { font-size: 12px; color: var(--green); margin-top: 2px; }
 	.field-hint { font-size: 10px; color: var(--muted); opacity: 0.7; }
 	.optional   { font-size: 10px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+	/* ── SignalK Bridge ── */
+	.sk-copy-row { display: flex; gap: 6px; align-items: center; }
+	.sk-copy-input { flex: 1; min-width: 0; font-size: 12px; }
+	.sk-copy-btn { flex-shrink: 0; padding: 0 12px; height: 44px; font-size: 12px; }
+	.sk-status {
+		font-size: 12px; margin-top: 10px; padding: 6px 10px;
+		border-radius: 6px; border: 1px solid transparent;
+	}
+	.sk-ok      { color: var(--green); background: rgba(34,197,94,.08); border-color: rgba(34,197,94,.2); }
+	.sk-pending { color: var(--muted); background: rgba(255,255,255,.02); border-color: var(--border); }
 
 	/* ── Setup hints ── */
 	.setup-hint {

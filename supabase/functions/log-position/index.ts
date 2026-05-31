@@ -46,6 +46,7 @@ type GPSData = {
   lon: number;
   speed_kn: number | null;
   course_deg: number | null;
+  source?: string;
 };
 
 async function fetchGPSFromVRM(
@@ -84,11 +85,51 @@ async function fetchGPSFromVRM(
       lon,
       speed_kn:   speedMs != null ? +(speedMs * 1.94384).toFixed(2) : null,
       course_deg: course  != null ? +course.toFixed(1)              : null,
+      source:     'vrm',
     };
   } catch (e) {
     console.error('[log-position] VRM error', e);
     return null;
   }
+}
+
+// ── Resolve GPS: telemetry table first (5 s cadence), VRM as fallback ─────────
+// Telemetry is fed by the signalk-plugin-suki-bridge plugin. Staleness threshold
+// is 120 s — if the plugin is offline, fall back to VRM API.
+async function resolveGPS(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  boatId: string,
+  vrmToken: string | null,
+  vrmInstallId: number | null
+): Promise<GPSData | null> {
+  // 1. Try fresh telemetry (plugin updates every ~5 s)
+  const { data: tel } = await supabase
+    .from('telemetry')
+    .select('nav_lat, nav_lon, nav_sog_ms, updated_at')
+    .eq('boat_id', boatId)
+    .maybeSingle();
+
+  if (tel?.nav_lat != null && tel?.nav_lon != null && tel?.updated_at) {
+    const ageSec = (Date.now() - new Date(tel.updated_at).getTime()) / 1000;
+    if (ageSec < 120) {
+      return {
+        lat:        tel.nav_lat,
+        lon:        tel.nav_lon,
+        speed_kn:   tel.nav_sog_ms != null ? +(tel.nav_sog_ms * 1.94384).toFixed(2) : null,
+        course_deg: null,   // telemetry doesn't expose COG separately yet
+        source:     'telemetry',
+      };
+    }
+    console.log(`[log-position] telemetry stale (${Math.round(ageSec)}s) — falling back to VRM`);
+  }
+
+  // 2. Fallback: VRM API
+  if (vrmToken && vrmInstallId) {
+    return await fetchGPSFromVRM(vrmToken, vrmInstallId);
+  }
+
+  return null;
 }
 
 // ── Nominatim reverse geocode ─────────────────────────────────────────────────
@@ -229,18 +270,12 @@ Deno.serve(async (req: Request) => {
   for (const trip of (trips ?? []) as Trip[]) {
     const boatId = trip.boat_id;
 
-    // ── Get VRM credentials for this specific boat ────────────────────────────
+    // ── Get VRM credentials for this specific boat (used as GPS fallback) ───────
     const { data: cfg } = await supabase
       .from('anchor_config')
       .select('vrm_api_token, vrm_installation_id')
       .eq('boat_id', boatId)
       .maybeSingle();
-
-    if (!cfg?.vrm_api_token || !cfg?.vrm_installation_id) {
-      console.log(`[log-position] trip ${trip.id}: no VRM credentials for boat ${boatId} — skip`);
-      results.push({ trip: trip.id, boat: boatId, status: 'no_vrm' });
-      continue;
-    }
 
     // ── Duplicate guard ───────────────────────────────────────────────────────
     // Skip if the browser was active and inserted an entry within the last 110 s
@@ -264,15 +299,19 @@ Deno.serve(async (req: Request) => {
       continue;
     }
 
-    // ── Fetch GPS from VRM ────────────────────────────────────────────────────
-    const gps = await fetchGPSFromVRM(cfg.vrm_api_token, cfg.vrm_installation_id);
+    // ── Resolve GPS (telemetry first, VRM fallback) ───────────────────────────
+    const gps = await resolveGPS(
+      supabase, boatId,
+      cfg?.vrm_api_token ?? null,
+      cfg?.vrm_installation_id ?? null
+    );
     if (!gps) {
-      console.log(`[log-position] trip ${trip.id}: VRM GPS unavailable`);
+      console.log(`[log-position] trip ${trip.id}: GPS unavailable (no telemetry or VRM)`);
       results.push({ trip: trip.id, boat: boatId, status: 'gps_unavailable' });
       continue;
     }
 
-    console.log(`[log-position] trip ${trip.id}: GPS ${gps.lat.toFixed(5)},${gps.lon.toFixed(5)} ${gps.speed_kn ?? '?'} kn`);
+    console.log(`[log-position] trip ${trip.id}: GPS ${gps.lat.toFixed(5)},${gps.lon.toFixed(5)} ${gps.speed_kn ?? '?'} kn [${gps.source ?? 'unknown'}]`);
 
     // ── Distance since last entry ─────────────────────────────────────────────
     const distNm = (lastEntry?.lat != null && lastEntry?.lon != null)
