@@ -36,12 +36,25 @@
 	// 1. Cerbo (live, ~3 s updates via SignalK/telemetry)
 	// 2. VRM   (60 s polling — same GPS receiver, cloud path)
 	// 3. Garmin InReach (10–15 min polling — last resort)
-	const pos = $derived(
-		(t?.nav_lat  != null && t?.nav_lon  != null) ? { lat: t.nav_lat,       lon: t.nav_lon       } :
-		(vrm?.gps_lat != null && vrm?.gps_lon != null) ? { lat: vrm.gps_lat,   lon: vrm.gps_lon     } :
-		(pts?.[0]     != null)                          ? { lat: pts[0].lat,    lon: pts[0].lon      } :
-		null
+	//
+	// Use PRIMITIVE derived values as intermediates so Svelte 5 can memoize by
+	// value equality. If we derived `pos` as an object directly from `t`, a new
+	// object reference would be produced on every telemetry tick (every 3 s) even
+	// when the coordinates haven't moved. That caused the $effect below to re-run,
+	// set loaded=false, and flash "Connecting…" every 3 s → layout height change →
+	// iOS Safari scroll reset → InReach map visible briefly at wrong position.
+	const posLat = $derived(
+		t?.nav_lat   != null ? t.nav_lat   :
+		vrm?.gps_lat != null ? vrm.gps_lat :
+		pts?.[0]?.lat ?? null
 	);
+	const posLon = $derived(
+		t?.nav_lon   != null ? t.nav_lon   :
+		vrm?.gps_lon != null ? vrm.gps_lon :
+		pts?.[0]?.lon ?? null
+	);
+	// pos is only recreated when the primitive values actually change
+	const pos = $derived(posLat != null && posLon != null ? { lat: posLat, lon: posLon } : null);
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
 	function windColor(kn: number): string {
@@ -303,10 +316,13 @@
 	}
 
 	// ── Reactive fetch ────────────────────────────────────────────────────────
+	// pos only changes when coordinates genuinely change (primitive memoization
+	// above). Do NOT set loaded=false here — initial loaded=false (from $state)
+	// handles "Connecting…" on first render; resetting it on refetch would
+	// collapse the card height and cause an iOS scroll flash.
 	$effect(() => {
 		const p = pos;
-		if (!p) { loaded = true; return; }
-		loaded = false;
+		if (!p) return;
 		fetchWeather(p);
 		clearInterval(pollTimer);
 		pollTimer = setInterval(() => fetchWeather(p), 30 * 60_000);
