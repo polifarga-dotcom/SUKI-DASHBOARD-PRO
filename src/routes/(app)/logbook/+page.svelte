@@ -532,6 +532,7 @@
 			boat_id: boat.id, name: tripName.trim() || null,
 			from_port: tripFromPort.trim() || null, to_port: tripToPort.trim() || null,
 			started_at: new Date().toISOString(),
+			engine_hours_start: liveEngH(),
 		}).select().single();
 		if (data) {
 			const trip = data as LogTrip;
@@ -554,13 +555,18 @@
 		saving = true;
 		await insertEntry({ source: 'auto', notes: `Arrival at ${at.to_port || 'destination'}` });
 		const stats = await recalcFromDB(at.id);
+		// Prefer start-snapshot delta (most accurate); fall back to entry-based calc
+		const engNow    = liveEngH();
+		const engDelta  = (engNow != null && at.engine_hours_start != null)
+			? +Math.max(0, engNow - at.engine_hours_start).toFixed(2)
+			: (stats?.engHours ?? null);
 		const patch: Partial<LogTrip> = {
 			ended_at: new Date().toISOString(),
 			total_nm: stats?.totalNm ?? at.total_nm,
 			sail_nm:  stats?.sailNm  ?? at.sail_nm,
 			motor_nm: stats?.motorNm ?? at.motor_nm,
-			avg_sog_kn:   stats?.avgSog  ?? null,
-			engine_hours: stats?.engHours ?? null,
+			avg_sog_kn:   stats?.avgSog ?? null,
+			engine_hours: engDelta,
 		};
 		await supabase.from('log_trips').update(patch).eq('id', at.id);
 		activeTrip.update(tr => tr ? { ...tr, ...patch } : tr);
@@ -623,6 +629,7 @@
 		const { data } = await supabase.from('log_trips').insert({
 			boat_id: boat.id, name: place ?? 'Auto trip', from_port: place,
 			started_at: new Date().toISOString(), notes: wx || null, is_auto: true,
+			engine_hours_start: liveEngH(),
 		}).select().single();
 		if (data) {
 			const trip = data as LogTrip;
@@ -652,12 +659,17 @@
 			notes: [[place ? `Arrival at ${place}` : 'Arrival', wx].filter(Boolean).join(' - '), `(${reason})`].join(' '),
 		});
 		const stats = await recalcFromDB(at.id);
+		// Prefer start-snapshot delta (most accurate); fall back to entry-based calc
+		const engNow2   = liveEngH();
+		const engDelta2 = (engNow2 != null && at.engine_hours_start != null)
+			? +Math.max(0, engNow2 - at.engine_hours_start).toFixed(2)
+			: (stats?.engHours ?? null);
 		const patch: Partial<LogTrip> = {
 			ended_at: new Date().toISOString(), to_port: place,
 			name: at.from_port && place ? `${at.from_port} → ${place}` : (at.name ?? 'Auto trip'),
 			total_nm: stats?.totalNm ?? at.total_nm, sail_nm:  stats?.sailNm  ?? at.sail_nm,
 			motor_nm: stats?.motorNm ?? at.motor_nm, avg_sog_kn: stats?.avgSog ?? null,
-			engine_hours: stats?.engHours ?? null,
+			engine_hours: engDelta2,
 		};
 		await supabase.from('log_trips').update(patch).eq('id', at.id);
 		const finished = { ...(at as LogTrip), ...patch };
@@ -858,9 +870,15 @@
 			{#if wave.wave_height_m != null}
 				<div class="snap-item"><span class="snap-val">{wave.wave_height_m}</span><span class="snap-lbl">m wave</span></div>
 			{/if}
-			{#if liveEngH() != null}
+			{@const motorH = (liveEngH() != null && at.engine_hours_start != null)
+				? +Math.max(0, liveEngH()! - at.engine_hours_start).toFixed(2) : null}
+			{#if motorH != null}
 				<div class="snap-item" class:eng-on={liveEngOn()}>
-					<span class="snap-val">{liveEngH()?.toFixed(1)}</span><span class="snap-lbl">eng hrs</span>
+					<span class="snap-val">{motorH.toFixed(1)}</span><span class="snap-lbl">motor h</span>
+				</div>
+			{:else if liveEngH() != null}
+				<div class="snap-item" class:eng-on={liveEngOn()}>
+					<span class="snap-val">{liveEngH()?.toFixed(0)}</span><span class="snap-lbl">eng h total</span>
 				</div>
 			{/if}
 			{#if at.max_sog_kn}
@@ -1100,10 +1118,12 @@
 				<span class="past-ratio-lbl">Sail {pct}% · {fmtNm(trip.total_nm)}</span>
 			</div>
 			<div class="past-stats">
+				<span class="past-chip past-chip-dur">{fmtDuration(trip.started_at, trip.ended_at)}</span>
 				{#if trip.avg_sog_kn != null}<span class="past-chip">avg {trip.avg_sog_kn.toFixed(1)} kn</span>{/if}
 				{#if trip.max_sog_kn != null}<span class="past-chip">max {trip.max_sog_kn.toFixed(1)} kn</span>{/if}
-				{#if trip.engine_hours != null}<span class="past-chip">eng {trip.engine_hours.toFixed(1)} h</span>{/if}
-				<span class="past-chip">{fmtDuration(trip.started_at, trip.ended_at)}</span>
+				{#if trip.engine_hours != null && trip.engine_hours > 0}
+					<span class="past-chip past-chip-eng">motor {trip.engine_hours.toFixed(1)} h</span>
+				{/if}
 			</div>
 			{#if trip.notes}<p class="past-trip-notes">{trip.notes}</p>{/if}
 
@@ -1474,6 +1494,14 @@
 	.past-chip {
 		font-size: 11px; background: var(--card2); border: 1px solid var(--border);
 		border-radius: 4px; padding: 2px 7px;
+	}
+	.past-chip-dur {
+		font-weight: 600; background: rgba(0,200,255,.08); border-color: rgba(0,200,255,.25);
+		color: var(--accent);
+	}
+	.past-chip-eng {
+		background: rgba(255,160,50,.08); border-color: rgba(255,160,50,.3);
+		color: #ffaa44;
 	}
 	.past-trip-notes { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
 

@@ -197,7 +197,8 @@ export type LogTrip = {
 	motor_nm:         number | null;
 	avg_sog_kn:       number | null;
 	max_sog_kn:       number | null;
-	engine_hours:     number | null;
+	engine_hours:       number | null;
+	engine_hours_start: number | null; // absolute counter at trip start — for reliable delta
 	notes:            string | null;
 	created_at:       string;
 	is_auto:          boolean;        // true = started by auto-trip engine
