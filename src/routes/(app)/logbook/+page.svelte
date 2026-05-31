@@ -457,6 +457,30 @@
 		return +(haversine(lastEntryPos.lat, lastEntryPos.lon, lat, lon) / 1852).toFixed(3);
 	}
 
+	// ── Engine-hours resolver (live → last DB entry fallback) ────────────────
+	// Returns the best available absolute engine-hours counter value.
+	// At trip START: tripId is undefined → looks at all boat entries.
+	// At trip END:   tripId is set → checks trip entries first, then boat-wide.
+	async function resolveEngH(tripId?: string): Promise<number | null> {
+		const live = liveEngH();
+		if (live != null) return live;
+		if (!boat) return null;
+		// Try entries of this trip first (trip end scenario)
+		if (tripId) {
+			const { data } = await supabase.from('log_entries')
+				.select('engine_hours').eq('trip_id', tripId)
+				.not('engine_hours', 'is', null)
+				.order('logged_at', { ascending: false }).limit(1).maybeSingle();
+			if (data?.engine_hours != null) return data.engine_hours as number;
+		}
+		// Fall back to most recent entry for this boat
+		const { data } = await supabase.from('log_entries')
+			.select('engine_hours').eq('boat_id', boat.id)
+			.not('engine_hours', 'is', null)
+			.order('logged_at', { ascending: false }).limit(1).maybeSingle();
+		return (data?.engine_hours as number | null) ?? null;
+	}
+
 	async function recalcFromDB(tripId: string) {
 		const { data } = await supabase.from('log_entries')
 			.select('distance_nm, engine_on, sog_kn, engine_hours, logged_at')
@@ -532,7 +556,7 @@
 			boat_id: boat.id, name: tripName.trim() || null,
 			from_port: tripFromPort.trim() || null, to_port: tripToPort.trim() || null,
 			started_at: new Date().toISOString(),
-			engine_hours_start: liveEngH(),
+			engine_hours_start: await resolveEngH(),
 		}).select().single();
 		if (data) {
 			const trip = data as LogTrip;
@@ -556,7 +580,7 @@
 		await insertEntry({ source: 'auto', notes: `Arrival at ${at.to_port || 'destination'}` });
 		const stats = await recalcFromDB(at.id);
 		// Prefer start-snapshot delta (most accurate); fall back to entry-based calc
-		const engNow    = liveEngH();
+		const engNow    = await resolveEngH(at.id);
 		const engDelta  = (engNow != null && at.engine_hours_start != null)
 			? +Math.max(0, engNow - at.engine_hours_start).toFixed(2)
 			: (stats?.engHours ?? null);
@@ -629,7 +653,7 @@
 		const { data } = await supabase.from('log_trips').insert({
 			boat_id: boat.id, name: place ?? 'Auto trip', from_port: place,
 			started_at: new Date().toISOString(), notes: wx || null, is_auto: true,
-			engine_hours_start: liveEngH(),
+			engine_hours_start: await resolveEngH(),
 		}).select().single();
 		if (data) {
 			const trip = data as LogTrip;
@@ -660,7 +684,7 @@
 		});
 		const stats = await recalcFromDB(at.id);
 		// Prefer start-snapshot delta (most accurate); fall back to entry-based calc
-		const engNow2   = liveEngH();
+		const engNow2   = await resolveEngH(at.id);
 		const engDelta2 = (engNow2 != null && at.engine_hours_start != null)
 			? +Math.max(0, engNow2 - at.engine_hours_start).toFixed(2)
 			: (stats?.engHours ?? null);
@@ -1081,22 +1105,6 @@
 				</div>
 				<div class="past-trip-header-right">
 					<span class="past-trip-dates">{fmtDate(trip.started_at)}</span>
-					{#if isAdmin && !selectionMode}
-					<button class="trip-icon-btn" onclick={(e) => openEditTrip(trip, e)} title="Edit trip">
-						<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M11.5 2.5 a1.5 1.5 0 0 1 2.1 2.1 L5 13 l-3 1 1-3 8.5-8.5z"/>
-						</svg>
-					</button>
-					<button class="trip-icon-btn trip-icon-btn-del" onclick={(e) => deleteTripSingle(trip, e)} title="Delete trip">
-						<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-							<polyline points="2,4 14,4"/>
-							<path d="M5 4 V2.5 a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5V4"/>
-							<rect x="3" y="4" width="10" height="9" rx="1.5"/>
-							<line x1="6.5" y1="7" x2="6.5" y2="11"/>
-							<line x1="9.5" y1="7" x2="9.5" y2="11"/>
-						</svg>
-					</button>
-					{/if}
 					<span class="expand-icon">
 						<svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
 							{#if isExpanded}
@@ -1219,6 +1227,28 @@
 					{/each}
 				</div>
 				{/if}
+				{/if}
+
+				<!-- Edit + delete (inside expanded — safe from accidental tap) -->
+				{#if isAdmin && !selectionMode}
+				<div class="trip-expanded-actions">
+					<button class="trip-action-btn trip-action-edit" onclick={(e) => openEditTrip(trip, e)}>
+						<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M11.5 2.5 a1.5 1.5 0 0 1 2.1 2.1 L5 13 l-3 1 1-3 8.5-8.5z"/>
+						</svg>
+						Edit trip
+					</button>
+					<button class="trip-action-btn trip-action-del" onclick={(e) => deleteTripSingle(trip, e)}>
+						<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="2,4 14,4"/>
+							<path d="M5 4 V2.5 a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5V4"/>
+							<rect x="3" y="4" width="10" height="9" rx="1.5"/>
+							<line x1="6.5" y1="7" x2="6.5" y2="11"/>
+							<line x1="9.5" y1="7" x2="9.5" y2="11"/>
+						</svg>
+						Delete trip
+					</button>
+				</div>
 				{/if}
 
 			</div>
@@ -1526,6 +1556,20 @@
 	}
 	.trip-icon-btn:hover { background: var(--card2); border-color: var(--border); color: var(--accent); }
 	.trip-icon-btn-del:hover { color: var(--red); border-color: rgba(239,68,68,.3); }
+
+	/* Expanded-section action buttons (edit / delete) */
+	.trip-expanded-actions {
+		display: flex; gap: 8px; padding: 12px 12px 4px; border-top: 1px solid var(--border);
+		margin-top: 8px;
+	}
+	.trip-action-btn {
+		display: flex; align-items: center; gap: 6px;
+		padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+		border: 1px solid var(--border); background: var(--card2); color: var(--muted);
+		transition: all 0.15s;
+	}
+	.trip-action-btn:hover { color: var(--text); border-color: var(--text); }
+	.trip-action-del:hover { color: var(--red); border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.06); }
 
 	/* Selection checkbox */
 	.trip-checkbox {
