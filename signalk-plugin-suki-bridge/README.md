@@ -33,11 +33,13 @@ npm install signalk-plugin-suki-bridge
 | `environment.outside.pressure` | `env_pressure_pa` | Pa |
 | `electrical.batteries.0.*` | `batt_main_*` | V / A / W / ratio |
 | `electrical.batteries.1.*` | `batt_eng_*` | V / A |
-| `propulsion.main.*` | `eng_*` | rpm / s / K / V |
+| `propulsion.main.*` / `propulsion.port.*` | `eng_*` | rpm / s / K / V |
 | `tanks.freshWater.0.currentLevel` | `tank_fw` | ratio (0–1) |
 | `tanks.diesel.0.currentLevel` | `tank_dsl` | ratio (0–1) |
 | `electrical.chargers.0.panelPower` | `solar_total_w` | W |
 | `steering.rudderAngle` | `rudder_rad` | radians |
+| `rigging.port.tension` | `rig_port` | N |
+| `rigging.starboard.tension` | `rig_sb` | N |
 
 Data is batched and sent every 5 seconds (configurable).
 

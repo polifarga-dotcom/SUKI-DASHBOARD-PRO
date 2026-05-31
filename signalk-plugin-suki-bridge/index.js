@@ -34,6 +34,7 @@ module.exports = function (app) {
     'navigation.position.longitude':                         'nav_lon',
     'navigation.headingTrue':                                'nav_hdg_rad',
     'navigation.headingMagnetic':                            'nav_hdg_rad',   // fallback if True unavailable
+
     'navigation.speedOverGround':                            'nav_sog_ms',
     'navigation.speedThroughWater':                          'nav_stw_ms',
 
@@ -57,11 +58,21 @@ module.exports = function (app) {
     'electrical.batteries.1.voltage':                        'batt_eng_v',
     'electrical.batteries.1.current':                        'batt_eng_a',
 
-    // Propulsion / Engine (standard + Victron)
+    // Propulsion / Engine
+    // SignalK value for `revolutions` is in Hz (rev/sec); the TRANSFORMS map below
+    // converts it to RPM (×60) before storing in the `eng_rpm` column.
+    // The Victron/Cerbo SignalK plugin may expose the engine as propulsion.main.*
+    // or propulsion.port.* depending on installation. Both are mapped; port paths
+    // are lower-priority fallbacks (won't overwrite a main.* value received in the
+    // same batch cycle).
     'propulsion.main.revolutions':                           'eng_rpm',
+    'propulsion.port.revolutions':                           'eng_rpm',       // fallback
     'propulsion.main.runTime':                               'eng_run_sec',
+    'propulsion.port.runTime':                               'eng_run_sec',   // fallback
     'propulsion.main.temperature':                           'eng_temp_k',
+    'propulsion.port.temperature':                           'eng_temp_k',    // fallback
     'propulsion.main.alternatorVoltage':                     'eng_alt_v',
+    'propulsion.port.alternatorVoltage':                     'eng_alt_v',     // fallback
 
     // Tanks (standard SignalK fill ratio 0.0–1.0)
     'tanks.freshWater.0.currentLevel':                       'tank_fw',
@@ -75,6 +86,30 @@ module.exports = function (app) {
 
     // Rudder
     'steering.rudderAngle':                                  'rudder_rad',
+
+    // Rigging load cells (vendor-specific; only populated if rig tension sensors
+    // are connected and the Cerbo's SignalK plugin provides these paths).
+    'rigging.port.tension':                                  'rig_port',
+    'rigging.starboard.tension':                             'rig_sb',
+  };
+
+  // ── Fallback paths — don't overwrite a primary value in the same batch ──────
+  // If a primary path (e.g. propulsion.main.*) already populated the column in
+  // this cycle, the fallback path is silently skipped.
+  const FALLBACKS = new Set([
+    'navigation.headingMagnetic',
+    'environment.depth.belowTransducer',
+    'propulsion.port.revolutions',
+    'propulsion.port.runTime',
+    'propulsion.port.temperature',
+    'propulsion.port.alternatorVoltage',
+  ]);
+
+  // ── Value transforms — applied before storing in the pending buffer ──────────
+  // SignalK `propulsion.*.revolutions` is in Hz (rev/sec); eng_rpm expects RPM.
+  const TRANSFORMS = {
+    'propulsion.main.revolutions': v => Math.round(v * 60),
+    'propulsion.port.revolutions': v => Math.round(v * 60),
   };
 
   const plugin = {
@@ -123,14 +158,14 @@ module.exports = function (app) {
         try {
           return app.streambundle.getSelfBus(path).onValue(({ value }) => {
             const col = PATH_MAP[path];
-            if (col && value != null && typeof value === 'number' && isFinite(value)) {
-              // Special case: heading.Magnetic is a lower-priority fallback.
-              // Only write it if the True heading hasn't been seen.
-              if (path === 'navigation.headingMagnetic' && pending['nav_hdg_rad'] != null) return;
-              // Same for depth fallback
-              if (path === 'environment.depth.belowTransducer' && pending['env_depth_m'] != null) return;
-              pending[col] = value;
-            }
+            if (!col || value == null || typeof value !== 'number' || !isFinite(value)) return;
+
+            // Fallback paths: skip if a primary source already populated the column
+            if (FALLBACKS.has(path) && pending[col] != null) return;
+
+            // Apply unit transform if defined (e.g. Hz → RPM for engine revolutions)
+            const transformed = TRANSFORMS[path] ? TRANSFORMS[path](value) : value;
+            pending[col] = transformed;
           });
         } catch (e) {
           app.debug(`Could not subscribe to ${path}: ${e.message}`);
