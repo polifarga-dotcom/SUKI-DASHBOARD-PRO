@@ -2,6 +2,7 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { supabase } from '$lib/supabase.js';
 	import { telemetry } from '$lib/stores/telemetry.js';
+	import { vrmData } from '$lib/stores/vrm.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { currentBoat, boatRole } from '$lib/stores/boat.js';
 	import { inreachPoints } from '$lib/stores/inreach.js';
@@ -12,6 +13,7 @@
 
 	// ── Reactive store snapshots ──────────────────────────────────────────────
 	const t    = $derived($telemetry);
+	const vrm  = $derived($vrmData);
 	const cfg  = $derived($anchorConfig);
 	const boat = $derived($currentBoat);
 	const role = $derived($boatRole);
@@ -28,7 +30,7 @@
 
 	// ── Auto-trip engine state ────────────────────────────────────────────────
 	const SOG_TRIP_KN      = 1.5;
-	const CONFIRM_START_MS = 2  * 60_000;   // must move 2 min → auto-start
+	const CONFIRM_START_MS = 1  * 60_000;   // must move 1 min → auto-start
 	const CONFIRM_STOP_MS  = 15 * 60_000;   // must be slow 15 min → auto-stop
 
 	type AutoMode = 'idle' | 'watching' | 'recording' | 'countdown';
@@ -43,6 +45,14 @@
 	let slowSince        = $state<number | null>(null);
 	let isAutoTrip       = $state(false);
 	let countdownMinutes = $state(15);
+
+	// ── Cerbo-offline VRM fallback (plain vars — not rendered) ────────────────
+	// When Cerbo SOG drops to null, we wait 90 s then check if the VRM GPS
+	// position has moved > 100 m. If so, the boat is still underway.
+	let cerboLossTime: number | null = null;
+	let vrmPosAtLoss: { lat: number; lon: number } | null = null;
+	const VRM_FALLBACK_WAIT_MS = 90_000;
+	const VRM_MOVE_THRESHOLD_M = 100;
 
 	// ── Terminal log (live feed while auto-recording) ─────────────────────────
 	const MAX_LOG = 10;
@@ -156,11 +166,14 @@
 		activeTrip.set(active);
 
 		if (active) {
+			// Limit to 200 most-recent entries — trips with 60 s tracking can
+			// accumulate 1 440 rows/day; full history is queried at trip end.
 			const { data: entries } = await supabase
 				.from('log_entries')
 				.select('*')
 				.eq('trip_id', active.id)
-				.order('logged_at', { ascending: false });
+				.order('logged_at', { ascending: false })
+				.limit(200);
 			tripEntries.set((entries ?? []) as LogEntry[]);
 		} else {
 			tripEntries.set([]);
@@ -176,6 +189,32 @@
 		if (!lastEntryPos) return 0;
 		const m  = haversine(lastEntryPos.lat, lastEntryPos.lon, lat, lon);
 		return +(m / 1852).toFixed(3);
+	}
+
+	// Final accurate distance + stats from all DB entries (used at trip end)
+	async function recalcFromDB(tripId: string) {
+		const { data } = await supabase
+			.from('log_entries')
+			.select('distance_nm, engine_on, sog_kn, engine_hours, logged_at')
+			.eq('trip_id', tripId)
+			.order('logged_at', { ascending: true });
+		if (!data?.length) return null;
+
+		const totalNm = +data.reduce((s, e) => s + (e.distance_nm ?? 0), 0).toFixed(3);
+		const sailNm  = +data.filter(e => !e.engine_on).reduce((s, e) => s + (e.distance_nm ?? 0), 0).toFixed(3);
+		const motorNm = +data.filter(e => e.engine_on).reduce( (s, e) => s + (e.distance_nm ?? 0), 0).toFixed(3);
+
+		const sogsVal = data.filter(e => e.sog_kn != null).map(e => e.sog_kn as number);
+		const avgSog  = sogsVal.length
+			? +(sogsVal.reduce((a, b) => a + b, 0) / sogsVal.length).toFixed(2)
+			: null;
+
+		const withEng  = data.filter(e => e.engine_hours != null);
+		const engHours = withEng.length >= 2
+			? +Math.max(0, (withEng.at(-1)!.engine_hours as number) - (withEng[0].engine_hours as number)).toFixed(2)
+			: null;
+
+		return { totalNm, sailNm, motorNm, avgSog, engHours };
 	}
 
 	// Update running trip totals (sail_nm / motor_nm) based on new entry
@@ -285,28 +324,19 @@
 		const at = $activeTrip;
 		if (!at || saving) return;
 		saving = true;
-		// Final entry
 		await insertEntry({ source: 'auto', notes: `Arrival at ${at.to_port || 'destination'}` });
 
-		const entries = $tripEntries;
-		// Compute average SOG from all entries with a valid sog_kn
-		const sogsWithVal = entries.filter(e => e.sog_kn != null).map(e => e.sog_kn as number);
-		const avgSog = sogsWithVal.length
-			? +(sogsWithVal.reduce((a, b) => a + b, 0) / sogsWithVal.length).toFixed(2)
-			: null;
-		// Engine hours delta
-		const engHours = (() => {
-			const sorted = [...entries].sort((a,b) => a.logged_at < b.logged_at ? -1 : 1);
-			const first  = sorted.find(e => e.engine_hours != null)?.engine_hours;
-			const last   = [...sorted].reverse().find(e => e.engine_hours != null)?.engine_hours;
-			if (first == null || last == null) return null;
-			return +Math.max(0, last - first).toFixed(2);
-		})();
+		// Recalculate all distances accurately from DB (avoids floating-point
+		// drift from incremental updates during 60-second tracking)
+		const stats = await recalcFromDB(at.id);
 
 		const patch: Partial<LogTrip> = {
 			ended_at:     new Date().toISOString(),
-			avg_sog_kn:   avgSog,
-			engine_hours: engHours,
+			total_nm:     stats?.totalNm ?? at.total_nm,
+			sail_nm:      stats?.sailNm  ?? at.sail_nm,
+			motor_nm:     stats?.motorNm ?? at.motor_nm,
+			avg_sog_kn:   stats?.avgSog  ?? null,
+			engine_hours: stats?.engHours ?? null,
 		};
 		await supabase.from('log_trips').update(patch).eq('id', at.id);
 		activeTrip.update(tr => tr ? { ...tr, ...patch } : tr);
@@ -338,8 +368,11 @@
 	async function reverseGeocode(lat: number, lon: number): Promise<string> {
 		try {
 			const r = await fetch(
-				`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10`,
-				{ headers: { 'User-Agent': 'SUKI-Dashboard-Pro/1.0 sailing@suki.boat' } }
+				`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10&accept-language=en`,
+				{ headers: {
+					'User-Agent': 'SUKI-Dashboard-Pro/1.0 sailing@suki.boat',
+					'Accept-Language': 'en',
+				} }
 			);
 			if (!r.ok) throw new Error('');
 			const j = await r.json();
@@ -415,37 +448,31 @@
 			notes: [[place ? `Arrival at ${place}` : 'Arrival', wx].filter(Boolean).join(' · '), `(${reason})`].join(' '),
 		});
 
-		// Final stats
-		const currentEntries = $tripEntries;
-		const sogsWithVal = currentEntries.filter(e => e.sog_kn != null).map(e => e.sog_kn as number);
-		const avgSog = sogsWithVal.length
-			? +(sogsWithVal.reduce((a, b) => a + b, 0) / sogsWithVal.length).toFixed(2)
-			: null;
-		const engHours = (() => {
-			const sorted = [...currentEntries].sort((a,b) => a.logged_at < b.logged_at ? -1 : 1);
-			const first  = sorted.find(e => e.engine_hours != null)?.engine_hours;
-			const last   = [...sorted].reverse().find(e => e.engine_hours != null)?.engine_hours;
-			if (first == null || last == null) return null;
-			return +Math.max(0, last - first).toFixed(2);
-		})();
+		// Final accurate stats recalculated from all DB entries
+		const stats = await recalcFromDB(at.id);
 
 		const patch: Partial<LogTrip> = {
 			ended_at:     new Date().toISOString(),
 			to_port:      place,
 			name:         at.from_port && place ? `${at.from_port} → ${place}` : (at.name ?? 'Auto trip'),
-			avg_sog_kn:   avgSog,
-			engine_hours: engHours,
+			total_nm:     stats?.totalNm ?? at.total_nm,
+			sail_nm:      stats?.sailNm  ?? at.sail_nm,
+			motor_nm:     stats?.motorNm ?? at.motor_nm,
+			avg_sog_kn:   stats?.avgSog  ?? null,
+			engine_hours: stats?.engHours ?? null,
 		};
 		await supabase.from('log_trips').update(patch).eq('id', at.id);
 		const finished = { ...(at as LogTrip), ...patch };
 		allTrips.update(ts => ts.map(t => t.id === at.id ? finished : t));
 		activeTrip.set(null);
 		tripEntries.set([]);
-		isAutoTrip    = false;
-		autoMode      = 'idle';
-		slowSince     = null;
-		fastSince     = null;
+		isAutoTrip       = false;
+		autoMode         = 'idle';
+		slowSince        = null;
+		fastSince        = null;
 		countdownMinutes = 15;
+		cerboLossTime    = null;
+		vrmPosAtLoss     = null;
 	}
 
 	// ── Auto-trip: check (runs every 30 s) ────────────────────────────────────
@@ -455,6 +482,7 @@
 		const sog      = liveSog();
 		const anchorOn = $anchorConfig?.active ?? false;
 		const trip     = $activeTrip;
+		const v        = vrm;   // VRM snapshot for offline fallback
 
 		// Anchor alarm activated → stop auto trip immediately
 		if (anchorOn && isAutoTrip && trip) {
@@ -463,8 +491,49 @@
 			return;
 		}
 
-		const moving = sog != null && sog >= SOG_TRIP_KN;
+		// ── Determine movement ────────────────────────────────────────────────
+		let moving = sog != null && sog >= SOG_TRIP_KN;
 
+		// Cerbo offline fallback: if Cerbo has no SOG data (sog === null) and
+		// a trip is active, check VRM GPS displacement as a proxy.
+		// • First 90 s: give Cerbo benefit of the doubt (temporary outage)
+		// • After 90 s: compare VRM GPS positions; > 100 m → still underway
+		if (sog === null && isAutoTrip && trip) {
+			if (v?.gps_lat != null && v?.gps_lon != null) {
+				if (cerboLossTime === null) {
+					// Mark when Cerbo went offline and snapshot VRM position
+					cerboLossTime = now;
+					vrmPosAtLoss  = { lat: v.gps_lat, lon: v.gps_lon };
+					pushLog(`📡 Cerbo offline — monitoring VRM GPS`);
+					moving = true;   // benefit of the doubt for first window
+				} else if (now - cerboLossTime < VRM_FALLBACK_WAIT_MS) {
+					moving = true;   // still within grace period
+				} else {
+					// 90 s elapsed — measure VRM displacement
+					const dist = haversine(vrmPosAtLoss!.lat, vrmPosAtLoss!.lon, v.gps_lat, v.gps_lon);
+					// Refresh baseline for the next check cycle
+					vrmPosAtLoss  = { lat: v.gps_lat, lon: v.gps_lon };
+					cerboLossTime = now;
+					if (dist > VRM_MOVE_THRESHOLD_M) {
+						moving = true;
+						pushLog(`📡 VRM GPS +${Math.round(dist)} m — still underway`);
+					} else {
+						pushLog(`📡 VRM GPS +${Math.round(dist)} m — possibly stopped`);
+					}
+				}
+			} else {
+				// No VRM GPS available — treat same as "no data" (start countdown)
+				if (cerboLossTime === null) pushLog(`📡 Cerbo offline — no VRM GPS fallback`);
+				cerboLossTime ??= now;
+			}
+		} else if (sog !== null && cerboLossTime !== null) {
+			// Cerbo came back online — clear fallback state
+			cerboLossTime = null;
+			vrmPosAtLoss  = null;
+			pushLog(`✅ Cerbo back online`);
+		}
+
+		// ── State machine ─────────────────────────────────────────────────────
 		if (moving) {
 			slowSince        = null;
 			countdownMinutes = 15;
@@ -472,27 +541,28 @@
 			if (!trip) {
 				if (fastSince == null) {
 					fastSince = now;
-					pushLog(`▶ ${sog.toFixed(1)} kn — confirming movement…`);
+					const sogStr = sog != null ? `${sog.toFixed(1)} kn` : 'VRM GPS';
+					pushLog(`▶ ${sogStr} — confirming movement…`);
 				}
 				autoMode = 'watching';
 				if (now - fastSince >= CONFIRM_START_MS) {
-					autoMode = 'recording';
+					autoMode  = 'recording';
 					fastSince = null;
 					pushLog(`▶▶ Confirmed — launching auto-trip`);
 					await autoStartTrip();
 				}
 			} else if (isAutoTrip) {
 				autoMode = 'recording';
-				const lat = liveLat(); const lon = liveLon();
-				const wind = liveWind(); const windDir = liveWindDir();
+				const lat     = liveLat(); const lon = liveLon();
+				const wind    = liveWind(); const windDir = liveWindDir();
+				const sogDisp = sog != null ? `${sog.toFixed(1)} kn` : `VRM GPS`;
 				pushLog(
-					`◉ ${sog.toFixed(1)} kn  ${lat?.toFixed(4) ?? '?'}° ${lon?.toFixed(4) ?? '?'}°` +
+					`◉ ${sogDisp}  ${lat?.toFixed(4) ?? '?'}° ${lon?.toFixed(4) ?? '?'}°` +
 					(wind != null ? `  💨 ${wind.toFixed(0)} kn ${windDir != null ? dirAbbr(windDir) : ''}` : '')
 				);
 			}
 
 		} else {
-			// Not moving (or no data)
 			fastSince = null;
 
 			if (trip && isAutoTrip) {
@@ -508,18 +578,18 @@
 					await autoStopTrip('< 1.5 kn for 15 min');
 				}
 			} else if (!trip) {
-				autoMode = 'idle';
+				autoMode  = 'idle';
 				fastSince = null;
 			}
 		}
 	}
 
-	// ── Auto-log every 60 minutes ─────────────────────────────────────────────
+	// ── Auto-log every 60 seconds ─────────────────────────────────────────────
 	function startAutoLog() {
-		// Hourly position/weather snapshot while any trip is running
+		// 60-second position/weather snapshot while any trip is running
 		autoLogTimer = setInterval(() => {
 			if ($activeTrip) insertEntry({ source: 'auto' });
-		}, 60 * 60_000);
+		}, 60_000);
 
 		// Auto-trip detection every 30 s
 		autoCheckTimer = setInterval(checkAutoTrip, 30_000);
