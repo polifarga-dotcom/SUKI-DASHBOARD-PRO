@@ -529,6 +529,10 @@
 	<!-- ── Alarm ── -->
 	<section class="card">
 		<h2>Alarm</h2>
+		<div class="setup-hint">
+			Time between detecting anchor drift and sending the first alert.
+			<strong>10 s</strong> is a good default — raise to 30–60 s if swell causes false alarms.
+		</div>
 		<div class="field-group">
 			<div class="field-row">
 				<span class="field-label">Alarm delay</span>
@@ -545,14 +549,22 @@
 	<!-- ── Telegram ── -->
 	<section class="card">
 		<h2>Telegram Notifications</h2>
+		<div class="setup-hint">
+			<strong>1. Create a bot:</strong> Open Telegram → search <code>@BotFather</code> → send <code>/newbot</code> → follow the steps → copy the token.<br>
+			<strong>2. Find your Chat ID:</strong> Start a chat with your bot, then open<br>
+			<code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser. Your Chat ID appears as <code>"id": 123456789</code>.<br>
+			For a <strong>group</strong>: add the bot to the group first, send a message, then check getUpdates — group IDs start with <code>-100…</code>.
+		</div>
 		<div class="form-fields">
 			<div class="field">
 				<label for="tg-token">Bot Token</label>
 				<input id="tg-token" type="text" bind:value={tgToken} placeholder="123456789:AABBCCdd…" autocomplete="off" />
+				<span class="field-hint">From @BotFather — format: numbers:letters</span>
 			</div>
 			<div class="field">
 				<label for="tg-chats">Chat IDs (comma-separated)</label>
 				<input id="tg-chats" type="text" bind:value={tgChats} placeholder="-1001234567890,987654321" autocomplete="off" />
+				<span class="field-hint">Personal chats: positive number · Groups: negative number starting with -100</span>
 			</div>
 		</div>
 		<button class="btn btn-ghost test-btn" onclick={() => sendTestNotification('telegram')}
@@ -564,14 +576,22 @@
 	<!-- ── Pushover ── -->
 	<section class="card">
 		<h2>Pushover Notifications</h2>
+		<div class="setup-hint">
+			Create a free account at <strong>pushover.net</strong>, install the app on your phone, then:<br>
+			<strong>App Token:</strong> <code>pushover.net/apps/build</code> → Create Application → copy the <em>API Token</em>.<br>
+			<strong>User Key:</strong> Shown on your Pushover dashboard at <code>pushover.net</code> (top of the page, 30-character code).<br>
+			Multiple recipients: comma-separate their User Keys.
+		</div>
 		<div class="form-fields">
 			<div class="field">
 				<label for="po-token">App Token</label>
 				<input id="po-token" type="text" bind:value={poToken} placeholder="azGDORePK8gMaC0QOYAMyEEuzJnyUi" autocomplete="off" />
+				<span class="field-hint">30-character code from pushover.net/apps/build</span>
 			</div>
 			<div class="field">
 				<label for="po-keys">User Keys (comma-separated)</label>
 				<input id="po-keys" type="text" bind:value={poKeys} placeholder="uQiRzpo4DXghDmr9QzzfQu,…" autocomplete="off" />
+				<span class="field-hint">Each recipient's User Key from their Pushover dashboard</span>
 			</div>
 		</div>
 		<button class="btn btn-ghost test-btn" onclick={() => sendTestNotification('pushover')}
@@ -587,16 +607,24 @@
 	<!-- ── Shelly Cloud ── -->
 	<section class="card">
 		<h2>Shelly Cloud</h2>
+		<div class="setup-hint">
+			Log in at <strong>home.shelly.cloud</strong> (same account as the Shelly app).<br>
+			Click your <strong>name / avatar</strong> in the top-right corner → <em>Settings</em>:<br>
+			<strong>Server URL:</strong> listed under <em>Cloud server</em> — copy only the hostname (e.g. <code>shelly-12-eu.shelly.cloud</code>).<br>
+			<strong>Auth Key:</strong> same Settings page → <em>Authorization cloud key</em> → click <em>Generate key</em> if empty, then copy it.
+		</div>
 		<div class="form-fields">
 			<div class="field">
 				<label for="sh-server">Server URL</label>
 				<input id="sh-server" type="text" bind:value={shellyServer}
 					placeholder="shelly-12-eu.shelly.cloud" autocomplete="off" spellcheck="false" />
+				<span class="field-hint">Hostname only — no https:// prefix</span>
 			</div>
 			<div class="field">
 				<label for="sh-key">Auth Key</label>
 				<input id="sh-key" type="password" bind:value={shellyKey}
 					placeholder="Authorization cloud key" autocomplete="off" />
+				<span class="field-hint">Long alphanumeric key from home.shelly.cloud → Settings</span>
 			</div>
 		</div>
 		<div class="shelly-actions">
@@ -616,11 +644,17 @@
 	<!-- ── Victron VRM ── -->
 	<section class="card">
 		<h2>Victron VRM</h2>
+		<div class="setup-hint">
+			Log in at <strong>vrm.victronenergy.com</strong> — your Cerbo GX must be connected and visible there.<br>
+			<strong>API Token:</strong> top-right avatar menu → <em>Preferences</em> → <em>API Tokens</em> → <em>Add token</em> → copy immediately (shown only once).<br>
+			<strong>Installation ID:</strong> visible in the page URL after <code>/installation/</code> — e.g. <code>vrm.victronenergy.com/installation/<em>123456</em>/dashboard</code>. Or click <strong>Discover</strong> to find it automatically after entering the token.
+		</div>
 		<div class="form-fields">
 			<div class="field">
 				<label for="vrm-token">API Token</label>
 				<input id="vrm-token" type="password" bind:value={vrmToken}
-					placeholder="VRM Portal → Preferences → Access Tokens" autocomplete="off" />
+					placeholder="VRM Portal → Preferences → API Tokens" autocomplete="off" />
+				<span class="field-hint">Paste immediately after generating — it cannot be retrieved again</span>
 			</div>
 			<div class="field">
 				<label for="vrm-site">Installation ID</label>
@@ -663,18 +697,25 @@
 	<!-- ── Garmin InReach ── -->
 	<section class="card">
 		<h2>Garmin InReach</h2>
+		<div class="setup-hint">
+			Log in at <strong>explore.garmin.com</strong> → <em>InReach</em> → <em>Social</em> → <em>MapShare</em> → enable MapShare.<br>
+			Your <strong>MapShare ID</strong> is the name at the end of your share URL:<br>
+			<code>share.garmin.com/Feed/Share/<em>YourName</em></code> — enter only <em>YourName</em>.<br>
+			Set a <strong>password</strong> on the same page under <em>MapShare Password</em> if you want a private feed.
+		</div>
 		<div class="form-fields">
 			<div class="field">
 				<label for="inreach-id">MapShare ID</label>
 				<input id="inreach-id" type="text" bind:value={inreachId}
-					placeholder="Your MapShare feed name"
+					placeholder="YourName"
 					autocomplete="off" spellcheck="false" />
-				<span class="field-hint">Settings → Share → MapShare on Garmin Explore</span>
+				<span class="field-hint">The name after share.garmin.com/Feed/Share/ in your MapShare link</span>
 			</div>
 			<div class="field">
 				<label for="inreach-pw">MapShare Password <span class="optional">(optional)</span></label>
 				<input id="inreach-pw" type="password" bind:value={inreachPassword}
 					placeholder="Leave empty if feed is public" autocomplete="off" />
+				<span class="field-hint">Only needed if you set a password under MapShare Settings on explore.garmin.com</span>
 			</div>
 		</div>
 		<div class="shelly-actions">
@@ -873,4 +914,20 @@
 	.vrm-found { font-size: 12px; color: var(--green); margin-top: 2px; }
 	.field-hint { font-size: 10px; color: var(--muted); opacity: 0.7; }
 	.optional   { font-size: 10px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+	/* ── Setup hints ── */
+	.setup-hint {
+		font-size: 12px; color: var(--muted); line-height: 1.55;
+		border-left: 2px solid var(--border);
+		padding: 7px 10px; border-radius: 0 6px 6px 0;
+		background: rgba(255,255,255,.02);
+		margin-bottom: 14px;
+	}
+	.setup-hint strong { color: var(--text); font-weight: 600; }
+	.setup-hint code {
+		font-family: 'SF Mono','Menlo','Monaco',monospace;
+		font-size: 11px; color: var(--accent);
+		background: rgba(0,200,255,.08); border-radius: 3px; padding: 0 4px;
+	}
+	.setup-hint em { font-style: normal; color: var(--accent); }
 </style>
