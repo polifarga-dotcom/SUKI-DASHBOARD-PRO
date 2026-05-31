@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { supabase } from '$lib/supabase.js';
 	import { telemetry } from '$lib/stores/telemetry.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
@@ -32,12 +32,24 @@
 	const CONFIRM_STOP_MS  = 15 * 60_000;   // must be slow 15 min → auto-stop
 
 	type AutoMode = 'idle' | 'watching' | 'recording' | 'countdown';
-	let autoEnabled      = $state(true);
+	// Persist across page navigations / app restarts
+	let autoEnabled = $state(
+		typeof localStorage !== 'undefined'
+			? localStorage.getItem('autoTripEnabled') !== 'false'
+			: true
+	);
 	let autoMode         = $state<AutoMode>('idle');
 	let fastSince        = $state<number | null>(null);
 	let slowSince        = $state<number | null>(null);
 	let isAutoTrip       = $state(false);
 	let countdownMinutes = $state(15);
+
+	// Write back to localStorage whenever autoEnabled changes
+	$effect(() => {
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem('autoTripEnabled', String(autoEnabled));
+		}
+	});
 
 	// ── Trip modal form ───────────────────────────────────────────────────────
 	let tripName      = $state('');
@@ -499,9 +511,16 @@
 	});
 
 	// ── Init ──────────────────────────────────────────────────────────────────
+	// NOTE: startAutoLog() → checkAutoTrip() reads liveSog / $anchorConfig /
+	// $activeTrip synchronously. Wrapping with untrack() prevents those stores
+	// from becoming dependencies of this effect (which would cause the entire
+	// logbook to re-mount on every 3-second telemetry update).
 	$effect(() => {
 		const b = boat;
-		if (b) { loadLogbook(); startAutoLog(); }
+		if (b) {
+			loadLogbook();
+			untrack(() => startAutoLog());
+		}
 		return () => { clearInterval(autoLogTimer); clearInterval(autoCheckTimer); };
 	});
 
