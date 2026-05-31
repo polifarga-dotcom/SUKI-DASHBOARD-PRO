@@ -89,6 +89,8 @@ export type AnchorConfig = {
 	inreach_mapshare_id: string | null;
 	inreach_mapshare_password: string | null;
 	plugin_api_key: string | null;    // SignalK bridge authentication key
+	auto_trip_enabled: boolean;       // server-side auto-trip detection on/off
+	auto_fast_since:   string | null; // set by log-position when SOG first ≥ 1.5 kn (confirm window)
 };
 
 export type Boat = {

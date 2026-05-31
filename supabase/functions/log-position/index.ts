@@ -253,6 +253,108 @@ Deno.serve(async (req: Request) => {
     serviceKey,
   );
 
+  // ── Server-side auto-trip: start trips when boat moves ───────────────────────
+  // Mirrors the browser's checkAutoTrip() / autoStartTrip() but works when the
+  // app is closed. Runs BEFORE the active-trip loop so a freshly created trip
+  // isn't immediately processed in the same tick.
+  //
+  // State machine (per boat, stored in anchor_config):
+  //   SOG ≥ 1.5 kn → set auto_fast_since (if not already set)
+  //   SOG ≥ 1.5 kn + auto_fast_since ≥ 60 s ago → create trip, clear auto_fast_since
+  //   SOG < 1.5 kn, anchor alarming, or no GPS → clear auto_fast_since
+  {
+    const SOG_START_KN = 1.5;
+    const CONFIRM_MS   = 60_000; // 1 min at speed → auto-start
+
+    const { data: autoCfgs } = await supabase
+      .from('anchor_config')
+      .select('boat_id, auto_trip_enabled, auto_fast_since, alarming, vrm_api_token, vrm_installation_id')
+      .eq('auto_trip_enabled', true)
+      .not('boat_id', 'is', null);
+
+    for (const ac of autoCfgs ?? []) {
+      const boatId = ac.boat_id as string;
+
+      // Don't auto-start while the anchor alarm is active
+      if (ac.alarming) {
+        if (ac.auto_fast_since) {
+          await supabase.from('anchor_config').update({ auto_fast_since: null }).eq('boat_id', boatId);
+        }
+        continue;
+      }
+
+      // Skip if this boat already has an active trip (the active-trip loop below will handle it)
+      const { data: existingTrip } = await supabase
+        .from('log_trips').select('id').eq('boat_id', boatId).is('ended_at', null).maybeSingle();
+      if (existingTrip) continue;
+
+      // Resolve GPS + SOG
+      const gps = await resolveGPS(supabase, boatId, ac.vrm_api_token ?? null, ac.vrm_installation_id ?? null);
+      if (!gps) {
+        if (ac.auto_fast_since) {
+          await supabase.from('anchor_config').update({ auto_fast_since: null }).eq('boat_id', boatId);
+        }
+        continue;
+      }
+
+      const underway = (gps.speed_kn ?? 0) >= SOG_START_KN;
+
+      if (underway) {
+        if (!ac.auto_fast_since) {
+          // First tick above threshold — record timestamp, wait for confirmation
+          await supabase.from('anchor_config')
+            .update({ auto_fast_since: new Date().toISOString() })
+            .eq('boat_id', boatId);
+          console.log(`[log-position] auto-trip: boat ${boatId} ${gps.speed_kn} kn — confirming...`);
+        } else {
+          const fastMs = Date.now() - new Date(ac.auto_fast_since).getTime();
+          console.log(`[log-position] auto-trip: boat ${boatId} ${gps.speed_kn} kn fast for ${Math.round(fastMs / 1000)} s`);
+
+          if (fastMs >= CONFIRM_MS) {
+            // Confirmed underway — create the trip
+            const place = await reverseGeocode(gps.lat, gps.lon);
+            const { data: newTrip } = await supabase
+              .from('log_trips')
+              .insert({
+                boat_id:    boatId,
+                name:       place ?? 'Auto trip',
+                from_port:  place,
+                started_at: new Date().toISOString(),
+                is_auto:    true,
+              })
+              .select('id')
+              .single();
+
+            if (newTrip) {
+              await supabase.from('log_entries').insert({
+                trip_id:   newTrip.id,
+                boat_id:   boatId,
+                logged_at: new Date().toISOString(),
+                lat:       gps.lat,
+                lon:       gps.lon,
+                sog_kn:    gps.speed_kn,
+                cog_deg:   gps.course_deg,
+                engine_on: false,
+                source:    'auto',
+                notes:     `Departure from ${place ?? 'unknown'} (server auto-start)`,
+              });
+              console.log(`[log-position] auto-trip: started trip ${newTrip.id} for boat ${boatId} from "${place}"`);
+            }
+
+            // Clear confirm timer regardless of insert success
+            await supabase.from('anchor_config').update({ auto_fast_since: null }).eq('boat_id', boatId);
+          }
+        }
+      } else {
+        // Slow or stopped — clear confirm timer
+        if (ac.auto_fast_since) {
+          await supabase.from('anchor_config').update({ auto_fast_since: null }).eq('boat_id', boatId);
+          console.log(`[log-position] auto-trip: boat ${boatId} stopped — reset confirm timer`);
+        }
+      }
+    }
+  }
+
   // Load all active trips (across all boats)
   const { data: trips, error: tripsErr } = await supabase
     .from('log_trips')

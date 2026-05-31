@@ -64,6 +64,7 @@
 	const CONFIRM_STOP_MS  = 15 * 60_000;
 
 	type AutoMode = 'idle' | 'watching' | 'recording' | 'countdown';
+	// localStorage provides a fast initial value; DB (cfg.auto_trip_enabled) overrides it below
 	let autoEnabled = $state(
 		typeof localStorage !== 'undefined'
 			? localStorage.getItem('autoTripEnabled') !== 'false'
@@ -91,11 +92,37 @@
 		terminalLines = [`${ts}  ${msg}`, ...terminalLines].slice(0, MAX_LOG);
 	}
 
+	// Sync autoEnabled from DB (authoritative) — fires once when cfg first loads,
+	// then whenever the config store is refreshed (e.g. another session toggled it).
+	$effect(() => {
+		if (cfg?.auto_trip_enabled != null) {
+			autoEnabled = cfg.auto_trip_enabled;
+		}
+	});
+
+	// Mirror autoEnabled to localStorage (fast initial value on next page load)
 	$effect(() => {
 		if (typeof localStorage !== 'undefined') {
 			localStorage.setItem('autoTripEnabled', String(autoEnabled));
 		}
 	});
+
+	// Persist the toggle to Supabase + update local anchorConfig store
+	async function setAutoEnabled(val: boolean) {
+		autoEnabled = val;
+		if (!val) autoMode = 'idle';
+		// Update store immediately so the DB sync $effect doesn't flip us back
+		anchorConfig.update(c => c ? { ...c, auto_trip_enabled: val } : c);
+		// Write to DB (server reads this for server-side auto-trip)
+		const boatId = cfg?.boat_id ?? boat?.id;
+		if (boatId) {
+			await supabase
+				.from('anchor_config')
+				.update({ auto_trip_enabled: val })
+				.eq('boat_id', boatId);
+		}
+		if (val) checkAutoTrip();
+	}
 
 	// ── Past trips filter + sort ──────────────────────────────────────────────
 	type FilterRange = 'week' | 'month' | 'year' | 'all';
@@ -951,12 +978,12 @@
 				<span class="auto-status">Speed below {SOG_TRIP_KN} kn · auto-stop in {countdownMinutes} min</span>
 			{/if}
 		</div>
-		<button class="auto-toggle-btn" onclick={() => { autoEnabled = false; autoMode = 'idle'; }}>Off</button>
+		<button class="auto-toggle-btn" onclick={() => setAutoEnabled(false)}>Off</button>
 	</div>
 	{:else}
 	<div class="auto-bar auto-disabled">
 		<span class="auto-status">Auto-trip detection: off</span>
-		<button class="auto-toggle-btn" onclick={() => { autoEnabled = true; checkAutoTrip(); }}>On</button>
+		<button class="auto-toggle-btn" onclick={() => setAutoEnabled(true)}>On</button>
 	</div>
 	{/if}
 	{/if}
