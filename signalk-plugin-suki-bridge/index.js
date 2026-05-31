@@ -173,6 +173,26 @@ module.exports = function (app) {
         }
       });
 
+      // ── Extra: Victron/Venus GPS compound position object ─────────────────
+      // Standard NMEA devices emit navigation.position.latitude / .longitude as
+      // separate numeric sub-paths, handled above. Victron/Venus OS GPS sources
+      // emit the parent path navigation.position as a compound object
+      // { latitude: number, longitude: number }. This extra subscription catches
+      // that object and extracts the coordinates. Sub-path values take priority;
+      // the compound handler only fills nav_lat / nav_lon if they're still null.
+      try {
+        const posUnsub = app.streambundle.getSelfBus('navigation.position').onValue(({ value }) => {
+          if (value && typeof value === 'object' &&
+              value.latitude != null && value.longitude != null) {
+            if (pending['nav_lat'] == null) pending['nav_lat'] = value.latitude;
+            if (pending['nav_lon'] == null) pending['nav_lon'] = value.longitude;
+          }
+        });
+        unsubscribes.push(posUnsub);
+      } catch (e) {
+        app.debug(`Could not subscribe to navigation.position compound: ${e.message}`);
+      }
+
       // ── Batch sender ─────────────────────────────────────────────────────
       sendTimer = setInterval(async () => {
         if (Object.keys(pending).length === 0) return;
