@@ -10,6 +10,10 @@
  *
  * No user JWT required — the plugin runs server-side and authenticates via
  * the plugin_api_key stored in anchor_config.
+ *
+ * GPS fallback: if the plugin payload is missing nav_lat/nav_lon (e.g. Victron
+ * Venus OS GPS not yet handled by plugin version) and the boat has VRM
+ * credentials configured, GPS is fetched directly from the VRM diagnostics API.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -46,6 +50,50 @@ const ALLOWED_COLUMNS = new Set([
   'rudder_rad',
 ]);
 
+// ── VRM GPS fallback ──────────────────────────────────────────────────────────
+// Same endpoint as log-position uses. Called only when nav_lat/nav_lon are
+// absent from the plugin payload and VRM credentials are configured.
+async function fetchVRMGPS(
+  token: string,
+  installationId: number
+): Promise<{ nav_lat: number; nav_lon: number; nav_sog_ms?: number } | null> {
+  try {
+    const url = `https://vrmapi.victronenergy.com/v2/installations/${installationId}/diagnostics?count=1000`;
+    const res = await fetch(url, {
+      headers: { 'X-Authorization': `Token ${token}` },
+    });
+    if (!res.ok) {
+      console.warn(`[signalk-ingest] VRM diagnostics ${res.status} for install ${installationId}`);
+      return null;
+    }
+    const data = await res.json();
+    const records: { dbusPath: string; rawValue: number }[] = data?.records ?? [];
+
+    let lat: number | null = null;
+    let lon: number | null = null;
+    let speedMs: number | null = null;
+
+    for (const r of records) {
+      if (r.dbusPath === '/Position/Latitude'  && lat     == null) lat     = r.rawValue;
+      if (r.dbusPath === '/Position/Longitude' && lon     == null) lon     = r.rawValue;
+      if (r.dbusPath === '/Position/Speed'     && speedMs == null) speedMs = r.rawValue;
+      if (lat != null && lon != null && speedMs != null) break;
+    }
+
+    if (lat == null || lon == null) return null;
+
+    const result: { nav_lat: number; nav_lon: number; nav_sog_ms?: number } = {
+      nav_lat: lat,
+      nav_lon: lon,
+    };
+    if (speedMs != null && isFinite(speedMs)) result.nav_sog_ms = speedMs;
+    return result;
+  } catch (e) {
+    console.error('[signalk-ingest] VRM GPS error:', e);
+    return null;
+  }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -72,12 +120,13 @@ Deno.serve(async (req: Request) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey);
 
-  // ── Resolve boat_id from api_key ──────────────────────────────────────────
+  // ── Resolve boat_id + VRM credentials from api_key ───────────────────────────
   // The plugin never sends boat_id directly — we derive it server-side from the
-  // key to prevent cross-boat data injection.
+  // key to prevent cross-boat data injection. VRM creds fetched here so we can
+  // use them as GPS fallback without a second DB round-trip.
   const { data: cfg } = await supabase
     .from('anchor_config')
-    .select('boat_id')
+    .select('boat_id, vrm_api_token, vrm_installation_id')
     .eq('plugin_api_key', api_key)
     .maybeSingle();
 
@@ -91,6 +140,22 @@ Deno.serve(async (req: Request) => {
   for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
     if (ALLOWED_COLUMNS.has(k) && typeof v === 'number' && isFinite(v)) {
       safe[k] = v;
+    }
+  }
+
+  // ── VRM GPS fallback ──────────────────────────────────────────────────────
+  // If the plugin didn't supply a position (e.g. Venus OS GPS emits a compound
+  // object that older plugin versions can't parse) and VRM creds are available,
+  // fetch coordinates directly from the VRM diagnostics API.
+  // Plugin-supplied values always take priority; VRM only fills missing fields.
+  if ((safe['nav_lat'] == null || safe['nav_lon'] == null) &&
+      cfg.vrm_api_token && cfg.vrm_installation_id) {
+    const vrm = await fetchVRMGPS(cfg.vrm_api_token, cfg.vrm_installation_id);
+    if (vrm) {
+      if (safe['nav_lat']    == null) safe['nav_lat']    = vrm.nav_lat;
+      if (safe['nav_lon']    == null) safe['nav_lon']    = vrm.nav_lon;
+      if (safe['nav_sog_ms'] == null && vrm.nav_sog_ms != null) safe['nav_sog_ms'] = vrm.nav_sog_ms;
+      console.log(`[signalk-ingest] VRM GPS fallback: ${vrm.nav_lat.toFixed(5)},${vrm.nav_lon.toFixed(5)}`);
     }
   }
 
