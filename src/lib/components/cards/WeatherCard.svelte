@@ -79,19 +79,109 @@
 		return t.toLocaleDateString('en', { weekday: 'long' });
 	}
 
-	// ── Moon phase ─────────────────────────────────────────────────────────────
+	// ── Moon phase + rise/set (Meeus Ch. 47, truncated — ±5 min accuracy) ──────
+	const D2R = Math.PI / 180;
 	const REF_NEW_MOON = new Date('2000-01-06T18:14:00Z').getTime();
 	const SYNODIC_MS   = 29.530588853 * 86400000;
 
-	type MoonInfo = { illumination: number; emoji: string; name: string; bright: boolean };
+	type MoonInfo = {
+		illumination: number; emoji: string; name: string; bright: boolean;
+		rise: Date | null; set: Date | null;
+	};
 
-	function moonPhase(date: Date): MoonInfo {
-		const elapsed = date.getTime() - REF_NEW_MOON;
-		const frac    = ((elapsed % SYNODIC_MS) + SYNODIC_MS) % SYNODIC_MS / SYNODIC_MS;
-		const illum   = Math.round((1 - Math.cos(2 * Math.PI * frac)) / 2 * 100);
+	function toJD(date: Date): number {
+		return date.getTime() / 86_400_000 + 2_440_587.5;
+	}
 
-		let name: string;
-		let emoji: string;
+	// Moon geocentric RA/Dec from Julian Date (largest Meeus terms, ~0.3° accuracy)
+	function moonRADec(jd: number): { ra: number; dec: number } {
+		const T  = (jd - 2_451_545.0) / 36_525.0;
+		const Lm = ((218.3164477 + 481_267.88123421 * T) % 360 + 360) % 360;
+		const Dp = ((297.8501921 + 445_267.1114034  * T) % 360 + 360) % 360;
+		const M  = ((357.5291092 +  35_999.0502909  * T) % 360 + 360) % 360;
+		const Mm = ((134.9633964 + 477_198.8675055  * T) % 360 + 360) % 360;
+		const F  = (( 93.2720950 + 483_202.0175233  * T) % 360 + 360) % 360;
+
+		const dL = 6.2888 * Math.sin(Mm * D2R)
+		         + 1.2740 * Math.sin((2*Dp - Mm) * D2R)
+		         + 0.6583 * Math.sin(2*Dp * D2R)
+		         + 0.2136 * Math.sin(2*Mm * D2R)
+		         - 0.1851 * Math.sin(M  * D2R)
+		         - 0.1143 * Math.sin(2*F * D2R)
+		         + 0.0588 * Math.sin((2*Dp - 2*Mm) * D2R)
+		         + 0.0572 * Math.sin((2*Dp - M - Mm) * D2R)
+		         + 0.0533 * Math.sin((2*Dp + Mm) * D2R)
+		         + 0.0459 * Math.sin((2*Dp - M) * D2R)
+		         + 0.0410 * Math.sin((Mm - M) * D2R);
+
+		const dB = 5.1282 * Math.sin(F  * D2R)
+		         + 0.2806 * Math.sin((Mm + F) * D2R)
+		         + 0.2777 * Math.sin((Mm - F) * D2R)
+		         + 0.1732 * Math.sin((2*Dp - F) * D2R)
+		         + 0.0554 * Math.sin((2*Dp - Mm + F) * D2R)
+		         + 0.0463 * Math.sin((2*Dp - Mm - F) * D2R)
+		         + 0.0326 * Math.sin((2*Dp + F) * D2R);
+
+		const lon = (Lm + dL) * D2R;
+		const lat = dB * D2R;
+		const eps = (23.439291111 - 0.013004167 * T) * D2R;  // obliquity
+
+		return {
+			ra:  Math.atan2(Math.sin(lon) * Math.cos(eps) - Math.tan(lat) * Math.sin(eps), Math.cos(lon)),
+			dec: Math.asin(Math.sin(lat) * Math.cos(eps) + Math.cos(lat) * Math.sin(eps) * Math.sin(lon)),
+		};
+	}
+
+	function gmstRad(jd: number): number {
+		const T   = (jd - 2_451_545.0) / 36_525.0;
+		const deg = ((280.46061837 + 360.98564736629 * (jd - 2_451_545.0) + 0.000387933 * T * T) % 360 + 360) % 360;
+		return deg * D2R;
+	}
+
+	function moonAltRad(jd: number, latRad: number, lonRad: number): number {
+		const { ra, dec } = moonRADec(jd);
+		const ha = gmstRad(jd) + lonRad - ra;
+		return Math.asin(Math.sin(latRad) * Math.sin(dec) + Math.cos(latRad) * Math.cos(dec) * Math.cos(ha));
+	}
+
+	// Search 36 h window for moonrise (findRise=true) or moonset.
+	// Starts at startDate (UTC), steps every 10 min.
+	function findMoonEvent(startDate: Date, lat: number, lon: number, findRise: boolean): Date | null {
+		const latRad = lat * D2R;
+		const lonRad = lon * D2R;
+		const H0     = -0.8 * D2R;   // horizon altitude (refraction + mean parallax)
+		const STEP   = 10;            // minutes
+		const WINDOW = 36 * 60;       // minutes
+
+		let prevAlt: number | null = null;
+
+		for (let m = 0; m <= WINDOW; m += STEP) {
+			const jd  = toJD(new Date(startDate.getTime() + m * 60_000));
+			const alt = moonAltRad(jd, latRad, lonRad) - H0;
+
+			if (prevAlt !== null) {
+				if (findRise && prevAlt < 0 && alt >= 0) {
+					const frac = -prevAlt / (alt - prevAlt);
+					return new Date(startDate.getTime() + (m - STEP + frac * STEP) * 60_000);
+				}
+				if (!findRise && prevAlt >= 0 && alt < 0) {
+					const frac = prevAlt / (prevAlt - alt);
+					return new Date(startDate.getTime() + (m - STEP + frac * STEP) * 60_000);
+				}
+			}
+			prevAlt = alt;
+		}
+		return null;
+	}
+
+	function fmtLocalTime(date: Date): string {
+		return date.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false });
+	}
+
+	function moonPhase(date: Date): { illumination: number; emoji: string; name: string; bright: boolean } {
+		const frac  = ((date.getTime() - REF_NEW_MOON) % SYNODIC_MS + SYNODIC_MS) % SYNODIC_MS / SYNODIC_MS;
+		const illum = Math.round((1 - Math.cos(2 * Math.PI * frac)) / 2 * 100);
+		let name: string, emoji: string;
 		if      (frac < 0.03 || frac > 0.97) { name = 'New Moon';        emoji = '🌑'; }
 		else if (frac < 0.22)                 { name = 'Waxing Crescent'; emoji = '🌒'; }
 		else if (frac < 0.28)                 { name = 'First Quarter';   emoji = '🌓'; }
@@ -100,22 +190,33 @@
 		else if (frac < 0.72)                 { name = 'Waning Gibbous';  emoji = '🌖'; }
 		else if (frac < 0.78)                 { name = 'Last Quarter';    emoji = '🌗'; }
 		else                                  { name = 'Waning Crescent'; emoji = '🌘'; }
-
 		return { illumination: illum, emoji, name, bright: illum > 30 };
 	}
 
-	// Next 3 nights (22:00 local) — computed reactively
+	// Next 3 nights — moon phase + rise/set times (position-dependent)
 	const moonNights = $derived(() => {
-		const today = new Date(); today.setHours(0,0,0,0);
+		const p     = pos;   // reactive: recalculates when position changes
+		const today = new Date(); today.setHours(0, 0, 0, 0);
 		return Array.from({ length: 3 }, (_, i) => {
-			const d = new Date(today);
-			d.setDate(today.getDate() + i);
-			d.setHours(22, 0, 0, 0);
+			const midnight = new Date(today); midnight.setDate(today.getDate() + i);
+			const evening  = new Date(midnight); evening.setHours(22, 0, 0, 0);
 			const label = i === 0 ? 'Tonight'
 				: i === 1 ? 'Tomorrow night'
-				: new Date(today.getTime() + i * 86400000)
-					.toLocaleDateString('en', { weekday: 'long' }) + ' night';
-			return { label, phase: moonPhase(d) };
+				: midnight.toLocaleDateString('en', { weekday: 'long' }) + ' night';
+
+			// Search from noon on day i so we capture events in the late afternoon
+			// through the following morning (36 h window covers full night)
+			const searchStart = new Date(midnight); searchStart.setHours(12, 0, 0, 0);
+			// Convert to UTC midnight-equivalent for the algorithm
+			const searchUTC = new Date(Date.UTC(
+				searchStart.getFullYear(), searchStart.getMonth(), searchStart.getDate(),
+				searchStart.getHours(), 0, 0, 0
+			));
+
+			const rise = p ? findMoonEvent(searchUTC, p.lat, p.lon, true)  : null;
+			const set  = p ? findMoonEvent(searchUTC, p.lat, p.lon, false) : null;
+
+			return { label, phase: moonPhase(evening), rise, set };
 		});
 	});
 
@@ -315,6 +416,11 @@
 					<div class="wx-moon-info">
 						<span class="wx-moon-label">{n.label}</span>
 						<span class="wx-moon-name">{n.phase.name}</span>
+						<span class="wx-moon-times">
+							🌅 {n.rise ? fmtLocalTime(n.rise) : '—'}
+							<span class="wx-times-sep">·</span>
+							🌇 {n.set ? fmtLocalTime(n.set) : '—'}
+						</span>
 					</div>
 					<div class="wx-moon-right">
 						<div class="wx-illum-bar">
@@ -427,6 +533,11 @@
 	.wx-moon-info  { flex: 1; min-width: 0; }
 	.wx-moon-label { display: block; font-size: 12px; font-weight: 600; white-space: nowrap; }
 	.wx-moon-name  { display: block; font-size: 10px; color: var(--muted); }
+	.wx-moon-times {
+		display: block; font-size: 10px; color: var(--muted);
+		font-variant-numeric: tabular-nums; margin-top: 1px;
+	}
+	.wx-times-sep  { margin: 0 3px; opacity: 0.4; }
 	.wx-moon-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 	.wx-illum-bar  {
 		width: 44px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;
