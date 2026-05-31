@@ -30,9 +30,22 @@
 		if (fetching) return;
 		fetching = true;
 		try {
-			const { data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy', {
-				body: { boat_id: $currentBoat?.id },
+			const boatId = $currentBoat?.id;
+			let { data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy', {
+				body: { boat_id: boatId },
 			});
+			// On any edge-function error, refresh the session once and retry.
+			// Handles iOS PWA token expiry: autoRefreshToken timers are paused
+			// while the app is backgrounded, so the first call after resume may
+			// carry an expired JWT. The retry will succeed with a fresh token.
+			if (fnErr) {
+				const { error: refreshErr } = await supabase.auth.refreshSession();
+				if (!refreshErr) {
+					({ data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy', {
+						body: { boat_id: boatId },
+					}));
+				}
+			}
 			if (fnErr) { error = fnErr.message; schedule(30_000); return; }
 
 			const parsed = parseVRMDiagnostics(json?.records ?? []);

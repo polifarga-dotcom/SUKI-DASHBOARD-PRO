@@ -43,10 +43,21 @@
 		if (!boatId) return;
 		usersLoading = true;
 		usersError = '';
-		const { data: result, error } = await supabase.functions.invoke('manage-users', {
+		let { data: result, error } = await supabase.functions.invoke('manage-users', {
 			method: 'GET',
 			headers: { 'x-boat-id': boatId },
 		});
+		// Refresh session and retry once on auth errors (iOS PWA: autoRefreshToken
+		// timer paused in background → expired token on first call after resume)
+		if (error) {
+			const { error: refreshErr } = await supabase.auth.refreshSession();
+			if (!refreshErr) {
+				({ data: result, error } = await supabase.functions.invoke('manage-users', {
+					method: 'GET',
+					headers: { 'x-boat-id': boatId },
+				}));
+			}
+		}
 		usersLoading = false;
 		if (error || result?.error) {
 			usersError = result?.error ?? error?.message ?? 'Failed to load';

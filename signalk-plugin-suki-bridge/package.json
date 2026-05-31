@@ -1,6 +1,6 @@
 {
   "name": "signalk-plugin-suki-bridge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Streams live SignalK / NMEA data to SUKI Dashboard Pro via Supabase. Configure with your API key from the SUKI Dashboard Settings tab.",
   "keywords": [
     "signalk-node-server-plugin"

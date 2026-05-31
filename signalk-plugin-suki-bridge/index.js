@@ -111,7 +111,7 @@ module.exports = function (app) {
       const url = endpoint || 'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/signalk-ingest';
 
       if (!api_key) {
-        app.setProviderError('API key not configured — go to SUKI Dashboard → Settings → SignalK Bridge');
+        app.setPluginError('API key not configured — go to SUKI Dashboard → Settings → SignalK Bridge');
         return;
       }
 
@@ -156,7 +156,7 @@ module.exports = function (app) {
             const text = await res.text().catch(() => '');
             app.debug(`Ingest error ${res.status}: ${text}`);
             if (res.status === 401) {
-              app.setProviderError('Invalid API key — check SUKI Dashboard → Settings → SignalK Bridge');
+              app.setPluginError('Invalid API key — check SUKI Dashboard → Settings → SignalK Bridge');
             }
           } else {
             app.debug(`Sent ${Object.keys(payload).length} fields`);
@@ -166,7 +166,7 @@ module.exports = function (app) {
         }
       }, interval_ms);
 
-      app.setProviderStatus(`Connected — sending every ${interval_ms / 1000}s`);
+      app.setPluginStatus(`Connected — sending every ${interval_ms / 1000}s`);
     },
 
     stop () {
@@ -177,7 +177,7 @@ module.exports = function (app) {
       unsubscribes.forEach(u => { try { u(); } catch (_) {} });
       unsubscribes = [];
       pending = {};
-      app.setProviderStatus('Stopped');
+      app.setPluginStatus('Stopped');
     },
   };
 

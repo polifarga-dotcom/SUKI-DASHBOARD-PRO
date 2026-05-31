@@ -125,6 +125,14 @@
 	onMount(() => {
 		updateClock();
 
+		// iOS PWA: JS timers are suspended in background, so autoRefreshToken may
+		// miss its scheduled refresh. When the app comes back to the foreground,
+		// proactively refresh the session so subsequent edge-function calls carry
+		// a valid JWT instead of the expired one.
+		document.addEventListener('visibilitychange', () => {
+			if (!document.hidden) supabase.auth.refreshSession();
+		});
+
 		// Populate stores from load() data (already authenticated + boats loaded)
 		const memberships = data.memberships as unknown as { role: string; boats: Boat | null }[];
 		const boats = memberships.map(m => m.boats).filter(Boolean) as Boat[];
