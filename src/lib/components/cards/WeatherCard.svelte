@@ -373,8 +373,9 @@
 						<path d="M1 7 Q3 3 5 7 Q7 11 9 7 Q11 3 13 7 Q14 9 15 7"/>
 					</svg>
 					<span class="wx-sea-lbl">Wave</span>
-					<span class="wx-sea-val" style="color:{waveColor(now.waveH)}">{now.waveH} m</span>
-					{#if now.waveP != null}<span class="wx-sea-dim">{now.waveP} s</span>{/if}
+					<span class="wx-sea-val" style="color:{waveColor(now.waveH)}">
+						{now.waveH} m{now.waveP != null ? ` @ ${now.waveP}s` : ''}
+					</span>
 					{#if now.waveD != null}<span class="wx-sea-dir">{dirAbbr(now.waveD)}</span>{/if}
 				</div>
 				{#if now.swellH != null && now.swellH >= 0.1}
@@ -413,7 +414,7 @@
 					<!-- Sea state: right-aligned block -->
 					<div class="wx-sea-block">
 						{#if h.waveH != null}
-							<span class="wx-sea-wave" style="color:{waveColor(h.waveH)}">{h.waveH}m {h.waveD != null ? dirAbbr(h.waveD) : ''}</span>
+							<span class="wx-sea-wave" style="color:{waveColor(h.waveH)}">{h.waveH}m{h.waveP != null ? ` @ ${h.waveP}s` : ''}{h.waveD != null ? ' ' + dirAbbr(h.waveD) : ''}</span>
 						{/if}
 						{#if h.swellH != null && h.swellH >= 0.1}
 							<span class="wx-sea-swell">{h.swellH}m{h.swellD != null ? ' '+dirAbbr(h.swellD) : ''}</span>
