@@ -56,6 +56,38 @@
 	// pos is only recreated when the primitive values actually change
 	const pos = $derived(posLat != null && posLon != null ? { lat: posLat, lon: posLon } : null);
 
+	// ── Reverse geocoding — location name in card header ─────────────────────
+	// Rounded to 2 decimal places (~1 km) so Nominatim is not queried on every
+	// GPS micro-jitter tick. The boat needs to move ~500 m to trigger a new fetch.
+	const posLatRnd = $derived(posLat != null ? Math.round(posLat * 100) / 100 : null);
+	const posLonRnd = $derived(posLon != null ? Math.round(posLon * 100) / 100 : null);
+
+	let locationName = $state<string | null>(null);
+
+	async function fetchLocationName(lat: number, lon: number) {
+		try {
+			const res = await fetch(
+				`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=en`,
+				{ headers: { 'User-Agent': 'SUKI-Dashboard-Pro/1.0' } }
+			);
+			if (!res.ok) return;
+			const data = await res.json();
+			const addr  = data.address ?? {};
+			// Settlement: city > town > village > municipality > county > state > sea name
+			const place   = addr.city || addr.town || addr.village || addr.municipality
+			              || addr.county || addr.state || data.name || null;
+			const country = addr.country_code ? addr.country_code.toUpperCase() : null;
+			locationName  = place && country ? `${place}, ${country}` : (place ?? country ?? null);
+		} catch { /* non-essential — ignore silently */ }
+	}
+
+	$effect(() => {
+		const lat = posLatRnd;
+		const lon = posLonRnd;
+		if (lat == null || lon == null) return;
+		fetchLocationName(lat, lon);
+	});
+
 	// ── Helpers ───────────────────────────────────────────────────────────────
 	function windColor(kn: number): string {
 		if (kn < 11) return 'var(--green)';
@@ -335,20 +367,25 @@
 
 	<!-- Header -->
 	<div class="wx-header">
-		<span class="wx-title">
-			<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-				<circle cx="10" cy="10" r="4"/>
-				<line x1="10" y1="1" x2="10" y2="3"/>
-				<line x1="10" y1="17" x2="10" y2="19"/>
-				<line x1="1" y1="10" x2="3" y2="10"/>
-				<line x1="17" y1="10" x2="19" y2="10"/>
-				<line x1="3.5" y1="3.5" x2="5" y2="5"/>
-				<line x1="15" y1="15" x2="16.5" y2="16.5"/>
-				<line x1="3.5" y1="16.5" x2="5" y2="15"/>
-				<line x1="15" y1="5" x2="16.5" y2="3.5"/>
-			</svg>
-			Weather · 72 h
-		</span>
+		<div class="wx-header-left">
+			<span class="wx-title">
+				<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+					<circle cx="10" cy="10" r="4"/>
+					<line x1="10" y1="1" x2="10" y2="3"/>
+					<line x1="10" y1="17" x2="10" y2="19"/>
+					<line x1="1" y1="10" x2="3" y2="10"/>
+					<line x1="17" y1="10" x2="19" y2="10"/>
+					<line x1="3.5" y1="3.5" x2="5" y2="5"/>
+					<line x1="15" y1="15" x2="16.5" y2="16.5"/>
+					<line x1="3.5" y1="16.5" x2="5" y2="15"/>
+					<line x1="15" y1="5" x2="16.5" y2="3.5"/>
+				</svg>
+				Weather · 72 h
+			</span>
+			{#if locationName}
+				<span class="wx-location">{locationName}</span>
+			{/if}
+		</div>
 		<span class="wx-meta">
 			{#if updatedAt}
 				{updatedAt.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })}
@@ -484,13 +521,20 @@
 
 	/* Header */
 	.wx-header {
-		display: flex; justify-content: space-between; align-items: center;
+		display: flex; justify-content: space-between; align-items: flex-start;
 		margin-bottom: 10px;
+	}
+	.wx-header-left {
+		display: flex; flex-direction: column; gap: 2px;
 	}
 	.wx-title {
 		display: flex; align-items: center; gap: 5px;
 		font-size: 13px; font-weight: 600; color: var(--muted);
 		text-transform: uppercase; letter-spacing: 0.5px;
+	}
+	.wx-location {
+		font-size: 11px; color: var(--muted); opacity: 0.75;
+		padding-left: 2px;
 	}
 	.wx-meta {
 		display: flex; align-items: center; gap: 5px;
