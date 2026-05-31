@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { telemetry } from '$lib/stores/telemetry.js';
+	import { vrmData } from '$lib/stores/vrm.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { currentBoat } from '$lib/stores/boat.js';
 	import { supabase } from '$lib/supabase.js';
@@ -41,10 +42,15 @@
 
 	// ── Derived boat/anchor values ────────────────────────────────────────────
 	const t   = $derived($telemetry);
+	const vrm = $derived($vrmData);
 	const cfg = $derived($anchorConfig);
 
-	const boatLat  = $derived(t?.nav_lat  ?? null);
-	const boatLon  = $derived(t?.nav_lon  ?? null);
+	// GPS priority for anchor alarm:
+	// 1. Cerbo (live, ~3 s — authoritative source)
+	// 2. VRM   (60 s polling — same receiver, cloud path)
+	// No InReach: 10-15 min intervals are too coarse for anchor alarm accuracy.
+	const boatLat  = $derived(t?.nav_lat ?? vrm?.gps_lat ?? null);
+	const boatLon  = $derived(t?.nav_lon ?? vrm?.gps_lon ?? null);
 	const hdgDeg   = $derived(rad2deg(t?.nav_hdg_rad ?? null) ?? 0);
 	const awaDeg   = $derived(rad2deg(t?.env_awa_rad ?? null));
 	const awsKn    = $derived(t?.env_aws_ms != null ? parseFloat(ms2kn(t.env_aws_ms)) : null);

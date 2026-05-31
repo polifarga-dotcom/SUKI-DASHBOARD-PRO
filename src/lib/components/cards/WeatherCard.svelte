@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { telemetry } from '$lib/stores/telemetry.js';
+	import { vrmData } from '$lib/stores/vrm.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { inreachPoints } from '$lib/stores/inreach.js';
 	import { latestWave } from '$lib/stores/weather.js';
@@ -25,14 +27,20 @@
 	let updatedAt = $state<Date | null>(null);
 	let pollTimer: ReturnType<typeof setInterval>;
 
+	const t   = $derived($telemetry);
+	const vrm = $derived($vrmData);
 	const cfg = $derived($anchorConfig);
 	const pts = $derived($inreachPoints);
 
-	// Position: prefer InReach latest fix, fallback to anchor coords
+	// GPS priority for weather position:
+	// 1. Cerbo (live, ~3 s updates via SignalK/telemetry)
+	// 2. VRM   (60 s polling — same GPS receiver, cloud path)
+	// 3. Garmin InReach (10–15 min polling — last resort)
 	const pos = $derived(
-		pts?.[0]
-			? { lat: pts[0].lat, lon: pts[0].lon }
-			: (cfg?.lat && cfg?.lon ? { lat: cfg.lat, lon: cfg.lon } : null)
+		(t?.nav_lat  != null && t?.nav_lon  != null) ? { lat: t.nav_lat,       lon: t.nav_lon       } :
+		(vrm?.gps_lat != null && vrm?.gps_lon != null) ? { lat: vrm.gps_lat,   lon: vrm.gps_lon     } :
+		(pts?.[0]     != null)                          ? { lat: pts[0].lat,    lon: pts[0].lon      } :
+		null
 	);
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
