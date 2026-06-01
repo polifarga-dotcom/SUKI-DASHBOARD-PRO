@@ -44,6 +44,7 @@
 	let localRadius   = $state(50);
 	let localBearing  = $state(0);
 	let bearingManual = $state(false);
+	let isDragging    = $state(false); // true while a slider thumb is being dragged
 
 	// Seconds ticker for the "boat position updated X ago" overlay
 	let nowMs = $state(Date.now());
@@ -61,19 +62,34 @@
 	const depth    = $derived(fmtDepth(t?.env_depth_m ?? null));
 	const alarming = $derived(cfg?.alarming ?? false);
 
-	// ── Live anchor position (from sliders + boat pos, not from DB) ───────────
-	// This is the "preview" position — moves in real-time as sliders change,
-	// even before the anchor is set. After setting, slider changes still move
-	// this point; on release the new lat/lon gets saved to DB.
-	const liveAncLat = $derived(
+	// ── Projected anchor position (slider preview, also used when saving to DB) ──
+	// Always computed from current bearing/chain + boat position.
+	// Used when: (a) anchor not yet set (preview), (b) user is actively dragging a slider.
+	const projAncLat = $derived(
 		boatLat != null && boatLon != null
 			? destinationPoint(boatLat, boatLon, localBearing, localChain)[0]
 			: cfg?.lat ?? null
 	);
-	const liveAncLon = $derived(
+	const projAncLon = $derived(
 		boatLat != null && boatLon != null
 			? destinationPoint(boatLat, boatLon, localBearing, localChain)[1]
 			: cfg?.lon ?? null
+	);
+
+	// ── Live anchor position shown on the map ────────────────────────────────
+	// When anchor is active and sliders are NOT being dragged, show the stored
+	// DB position (cfg.lat/cfg.lon) — this prevents the chain line from acting
+	// as an involuntary heading indicator. While dragging, show the projected
+	// preview so the user sees real-time feedback.
+	const liveAncLat = $derived(
+		cfg?.active && !isDragging && cfg.lat != null
+			? cfg.lat
+			: (projAncLat ?? null)
+	);
+	const liveAncLon = $derived(
+		cfg?.active && !isDragging && cfg.lon != null
+			? cfg.lon
+			: (projAncLon ?? null)
 	);
 
 	// Distance / bearing use the stored DB position (cfg.lat/lon) so the DIST
@@ -95,11 +111,9 @@
 			: null
 	);
 
-	// Label: "Anchor" when active & DB pos is close to live pos; "Preview" otherwise
+	// Label: "Anchor" when active & settled (not dragging); "Preview" otherwise
 	const ancGPSLabel = $derived(
-		cfg?.active && cfg.lat != null && liveAncLat != null
-			&& Math.abs(cfg.lat - liveAncLat) < 0.0001
-			? 'Anchor' : 'Preview'
+		cfg?.active && !isDragging ? 'Anchor' : 'Preview'
 	);
 
 	// ── Overlay pixel positions ────────────────────────────────────────────────
@@ -163,7 +177,7 @@
 		// explicit reads so Svelte tracks deps:
 		const _deps = [boatLat, boatLon, hdgDeg, cfg, alarming, breadcrumb,
 		               localChain, localRadius, localBearing, liveAncLat, liveAncLon,
-		               anchorHistory];
+		               anchorHistory, isDragging];
 		updateMarkers();
 	});
 
@@ -566,14 +580,26 @@
 		{#if !cfg?.active}
 			<button class="ctrl-btn primary" onclick={setAnchor} disabled={!boatLat}>⚓ Set Anchor</button>
 			{#if cfg?.lat != null}
-				<button class="ctrl-btn restore" onclick={restoreAnchor} title="Restore last anchor alarm">↩ Restore</button>
+				<button class="ctrl-btn restore" onclick={restoreAnchor} title="Restore last anchor alarm">
+					<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M3 7v6h6"/>
+						<path d="M21 17A9 9 0 0 0 6 5.3L3 8"/>
+					</svg>
+					Restore
+				</button>
 			{/if}
 		{:else}
 			<button class="ctrl-btn danger" onclick={clearAnchor}>Clear Anchor</button>
 		{/if}
 		<button class="ctrl-btn gps-btn" class:active={showGPSInput}
 			onclick={() => { showGPSInput = !showGPSInput; }}
-			title="Set anchor by GPS coordinates">📍 GPS</button>
+			title="Set anchor by GPS coordinates">
+			<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/>
+				<circle cx="12" cy="10" r="3"/>
+			</svg>
+			GPS
+		</button>
 		{#if alarming}
 			<button class="ctrl-btn warning" onclick={muteAlarm}>Mute</button>
 		{/if}
@@ -608,20 +634,21 @@
 				<button class="sbtn" onclick={() => {
 					localChain = Math.max(0, localChain - 5);
 					const patch: Record<string, unknown> = { chain_length_m: localChain };
-					if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+					if (cfg?.active && projAncLat != null) Object.assign(patch, { lat: projAncLat, lon: projAncLon });
 					saveConfig(patch);
 				}}>−</button>
 				<input type="range" min="0" max="120" step="5" value={localChain}
-					oninput={(e) => { localChain = +(e.target as HTMLInputElement).value; }}
+					oninput={(e) => { localChain = +(e.target as HTMLInputElement).value; isDragging = true; }}
 					onchange={() => {
+						isDragging = false;
 						const patch: Record<string, unknown> = { chain_length_m: localChain };
-						if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+						if (cfg?.active && projAncLat != null) Object.assign(patch, { lat: projAncLat, lon: projAncLon });
 						saveConfig(patch);
 					}} />
 				<button class="sbtn" onclick={() => {
 					localChain = Math.min(120, localChain + 5);
 					const patch: Record<string, unknown> = { chain_length_m: localChain };
-					if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+					if (cfg?.active && projAncLat != null) Object.assign(patch, { lat: projAncLat, lon: projAncLon });
 					saveConfig(patch);
 				}}>+</button>
 			</div>
@@ -652,21 +679,22 @@
 					localBearing = ((localBearing - 10 + 360) % 360);
 					bearingManual = true;
 					const patch: Record<string, unknown> = { bearing_deg: localBearing };
-					if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+					if (cfg?.active && projAncLat != null) Object.assign(patch, { lat: projAncLat, lon: projAncLon });
 					saveConfig(patch);
 				}}>−</button>
 				<input type="range" min="0" max="359" step="1" value={localBearing}
-					oninput={(e) => { localBearing = +(e.target as HTMLInputElement).value; bearingManual = true; }}
+					oninput={(e) => { localBearing = +(e.target as HTMLInputElement).value; bearingManual = true; isDragging = true; }}
 					onchange={() => {
+						isDragging = false;
 						const patch: Record<string, unknown> = { bearing_deg: localBearing };
-						if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+						if (cfg?.active && projAncLat != null) Object.assign(patch, { lat: projAncLat, lon: projAncLon });
 						saveConfig(patch);
 					}} />
 				<button class="sbtn" onclick={() => {
 					localBearing = ((localBearing + 10) % 360);
 					bearingManual = true;
 					const patch: Record<string, unknown> = { bearing_deg: localBearing };
-					if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+					if (cfg?.active && projAncLat != null) Object.assign(patch, { lat: projAncLat, lon: projAncLon });
 					saveConfig(patch);
 				}}>+</button>
 			</div>
@@ -822,8 +850,8 @@
 	.ctrl-btn.primary { background:var(--accent); color:#000; }
 	.ctrl-btn.danger  { background:#7f1d1d; color:var(--red); border:1px solid var(--red); }
 	.ctrl-btn.warning { background:#78350f; color:var(--amber); border:1px solid var(--amber); }
-	.ctrl-btn.restore { background: var(--card2); color: var(--text); border: 1px solid var(--border); flex: 0 0 auto; padding: 10px 14px; }
-	.ctrl-btn.gps-btn { background: var(--card2); color: var(--muted); border: 1px solid var(--border); flex: 0 0 auto; padding: 10px 14px; }
+	.ctrl-btn.restore { background: var(--card2); color: var(--text); border: 1px solid var(--border); flex: 0 0 auto; padding: 10px 14px; display: flex; align-items: center; gap: 5px; }
+	.ctrl-btn.gps-btn { background: var(--card2); color: var(--muted); border: 1px solid var(--border); flex: 0 0 auto; padding: 10px 14px; display: flex; align-items: center; gap: 5px; }
 	.ctrl-btn.gps-btn.active { color: var(--amber); border-color: var(--amber); }
 
 	/* ── GPS input block ── */
