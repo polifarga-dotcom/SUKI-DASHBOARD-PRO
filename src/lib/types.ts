@@ -235,6 +235,17 @@ export type LogEntry = {
 	created_at:     string;
 };
 
+export type AnchorHistoryEntry = {
+	id: number;
+	boat_id: string;
+	lat: number;
+	lon: number;
+	radius_m: number;
+	chain_length_m: number;
+	bearing_deg: number;
+	cleared_at: string;
+};
+
 export type InReachPoint = {
   lat: number;
   lon: number;

@@ -7,28 +7,33 @@
 	import { supabase } from '$lib/supabase.js';
 	import { haversine, destinationPoint, bearingTo } from '$lib/utils/geo.js';
 	import { rad2deg, fmtDepth, ms2kn, bearingCardinal } from '$lib/utils/units.js';
+	import type { AnchorHistoryEntry } from '$lib/types.js';
 
 	// ── DOM refs ──────────────────────────────────────────────────────────────
-	let mapBoxEl:   HTMLDivElement;   // outer box (overflow:hidden)
-	let mapWrapEl:  HTMLDivElement;   // rotating heading-up wrapper
-	let mapInnerEl: HTMLDivElement;   // Leaflet target
+	let mapBoxEl:   HTMLDivElement;
+	let mapWrapEl:  HTMLDivElement;
+	let mapInnerEl: HTMLDivElement;
 
 	// ── Leaflet (plain vars, not reactive) ────────────────────────────────────
-	let L:          any = null;
-	let map:        any = null;
-	let boatMarker: any = null;
-	let ancMarker:  any = null;
+	let L:            any = null;
+	let map:          any = null;
+	let boatMarker:   any = null;
+	let ancMarker:    any = null;
 	let radiusCircle: any = null;
-	let chainCircle:  any = null;
 	let chainLine:    any = null;
 	let crumbLine:    any = null;
+	let histLayers:   any[] = [];
 
 	// ── Reactive UI state ─────────────────────────────────────────────────────
-	let mapReady     = $state(false);
-	let followMode   = $state(true);
-	let muteActive   = $state(false);
-	let cfgLoaded    = $state(false);
-	let breadcrumb   = $state<[number, number][]>([]);
+	let mapReady      = $state(false);
+	let followMode    = $state(true);
+	let muteActive    = $state(false);
+	let cfgLoaded     = $state(false);
+	let breadcrumb    = $state<[number, number][]>([]);
+	let anchorHistory = $state<AnchorHistoryEntry[]>([]);
+	let showGPSInput  = $state(false);
+	let manLatStr     = $state('');
+	let manLonStr     = $state('');
 
 	// Map box pixel dimensions for overlay positioning
 	let mapBoxW = $state(360);
@@ -40,23 +45,39 @@
 	let localBearing  = $state(0);
 	let bearingManual = $state(false);
 
+	// Seconds ticker for the "boat position updated X ago" overlay
+	let nowMs = $state(Date.now());
+
 	// ── Derived boat/anchor values ────────────────────────────────────────────
 	const t   = $derived($telemetry);
 	const vrm = $derived($vrmData);
 	const cfg = $derived($anchorConfig);
 
-	// GPS priority for anchor alarm:
-	// 1. Cerbo (live, ~3 s — authoritative source)
-	// 2. VRM   (60 s polling — same receiver, cloud path)
-	// No InReach: 10-15 min intervals are too coarse for anchor alarm accuracy.
-	const boatLat  = $derived(t?.nav_lat ?? vrm?.gps_lat ?? null);
-	const boatLon  = $derived(t?.nav_lon ?? vrm?.gps_lon ?? null);
+	const boatLat  = $derived(t?.nav_lat  ?? vrm?.gps_lat ?? null);
+	const boatLon  = $derived(t?.nav_lon  ?? vrm?.gps_lon ?? null);
 	const hdgDeg   = $derived(rad2deg(t?.nav_hdg_rad ?? null) ?? 0);
 	const awaDeg   = $derived(rad2deg(t?.env_awa_rad ?? null));
 	const awsKn    = $derived(t?.env_aws_ms != null ? parseFloat(ms2kn(t.env_aws_ms)) : null);
 	const depth    = $derived(fmtDepth(t?.env_depth_m ?? null));
 	const alarming = $derived(cfg?.alarming ?? false);
 
+	// ── Live anchor position (from sliders + boat pos, not from DB) ───────────
+	// This is the "preview" position — moves in real-time as sliders change,
+	// even before the anchor is set. After setting, slider changes still move
+	// this point; on release the new lat/lon gets saved to DB.
+	const liveAncLat = $derived(
+		boatLat != null && boatLon != null
+			? destinationPoint(boatLat, boatLon, localBearing, localChain)[0]
+			: cfg?.lat ?? null
+	);
+	const liveAncLon = $derived(
+		boatLat != null && boatLon != null
+			? destinationPoint(boatLat, boatLon, localBearing, localChain)[1]
+			: cfg?.lon ?? null
+	);
+
+	// Distance / bearing use the stored DB position (cfg.lat/lon) so the DIST
+	// cell shows real scope after setting, not the slider preview.
 	const ancDistM = $derived(
 		cfg?.lat != null && cfg?.lon != null && boatLat != null && boatLon != null
 			? haversine(boatLat, boatLon, cfg.lat, cfg.lon) : null
@@ -66,10 +87,22 @@
 			? bearingTo(boatLat, boatLon, cfg.lat, cfg.lon) : null
 	);
 
-	// ── Overlay pixel positions (orbit ring like old app) ─────────────────────
-	// Formula from old app: left = cx + sin(a)*r,  top = cy - cos(a)*r
-	// N pill: a = hdgDeg (heading direction marks north on heading-up map)
-	// AWA marker: a = awaDeg (from bow = from top in heading-up map)
+	// GPS string for the live anchor preview
+	const ancGPSStr = $derived(
+		liveAncLat != null && liveAncLon != null
+			? `${Math.abs(liveAncLat).toFixed(5)}° ${liveAncLat >= 0 ? 'N' : 'S'},  `
+			+ `${Math.abs(liveAncLon).toFixed(5)}° ${liveAncLon >= 0 ? 'E' : 'W'}`
+			: null
+	);
+
+	// Label: "Anchor" when active & DB pos is close to live pos; "Preview" otherwise
+	const ancGPSLabel = $derived(
+		cfg?.active && cfg.lat != null && liveAncLat != null
+			&& Math.abs(cfg.lat - liveAncLat) < 0.0001
+			? 'Anchor' : 'Preview'
+	);
+
+	// ── Overlay pixel positions ────────────────────────────────────────────────
 	const overlayR = $derived(Math.min(mapBoxW / 2, mapBoxH / 2) * 0.72 - 14);
 	const nPillPx  = $derived({
 		x: mapBoxW / 2 + overlayR * Math.sin(hdgDeg  * Math.PI / 180),
@@ -80,6 +113,20 @@
 		y: mapBoxH / 2 - overlayR * Math.cos(awaDeg * Math.PI / 180),
 	} : null);
 
+	// ── "Boat position updated X ago" timestamp ───────────────────────────────
+	const posAgeSec = $derived(
+		t?.updated_at != null
+			? Math.round((nowMs - new Date(t.updated_at).getTime()) / 1000)
+			: null
+	);
+	const posAgeStr = $derived(
+		posAgeSec == null  ? null
+		: posAgeSec < 5    ? 'just now'
+		: posAgeSec < 60   ? `${posAgeSec} seconds ago`
+		: posAgeSec < 3600 ? `${Math.floor(posAgeSec / 60)} min ago`
+		: `${Math.floor(posAgeSec / 3600)} h ago`
+	);
+
 	// ── Init local sliders once when cfg first arrives ────────────────────────
 	$effect(() => {
 		if (cfg && !cfgLoaded) {
@@ -88,6 +135,12 @@
 			localBearing = cfg.bearing_deg;
 			cfgLoaded = true;
 		}
+	});
+
+	// ── Seconds ticker ────────────────────────────────────────────────────────
+	$effect(() => {
+		const id = setInterval(() => { nowMs = Date.now(); }, 1000);
+		return () => clearInterval(id);
 	});
 
 	// ── Breadcrumb (skip duplicate points) ───────────────────────────────────
@@ -108,12 +161,14 @@
 	$effect(() => {
 		if (!mapReady) return;
 		// explicit reads so Svelte tracks deps:
-		const _deps = [boatLat, boatLon, hdgDeg, cfg, alarming, breadcrumb, localChain, localRadius];
+		const _deps = [boatLat, boatLon, hdgDeg, cfg, alarming, breadcrumb,
+		               localChain, localRadius, localBearing, liveAncLat, liveAncLon,
+		               anchorHistory];
 		updateMarkers();
 	});
 
+	// ── Icon helpers ─────────────────────────────────────────────────────────
 	function boatIconHtml(rot: number) {
-		// Vesper-Cortex-style vessel: pointed bow, cyan fill — from old app
 		return `<div style="width:30px;height:34px;transform:rotate(${rot}deg);transform-origin:50% 50%;transition:transform .25s linear;">
 			<svg viewBox="0 0 32 36" width="30" height="34" style="overflow:visible;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7));">
 				<path d="M16 2 L26 16 L26 32 L6 32 L6 16 Z" fill="#00c8ff" stroke="#0a1929" stroke-width="1.5" stroke-linejoin="round"/>
@@ -124,7 +179,6 @@
 	}
 
 	function anchorIconHtml(rot: number) {
-		// Amber teardrop pin with anchor symbol — from old app
 		return `<div style="width:24px;height:30px;transform:rotate(${rot}deg);transform-origin:50% 100%;transition:transform .25s linear;">
 			<svg viewBox="0 0 32 40" width="24" height="30" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))">
 				<path d="M16 0 C7 0 0 7 0 16 c0 11 16 24 16 24 s16-13 16-24 C32 7 25 0 16 0 z" fill="#f59e0b" stroke="#0a1929" stroke-width="1.5"/>
@@ -138,9 +192,19 @@
 		</div>`;
 	}
 
+	function histAnchorIconHtml(rot: number, num: number) {
+		return `<div style="width:22px;height:28px;transform:rotate(${rot}deg);transform-origin:50% 100%;opacity:0.5;">
+			<svg viewBox="0 0 32 40" width="22" height="28" style="filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))">
+				<path d="M16 0 C7 0 0 7 0 16 c0 11 16 24 16 24 s16-13 16-24 C32 7 25 0 16 0 z" fill="#6b7280" stroke="#222" stroke-width="1.5"/>
+				<text x="16" y="19" text-anchor="middle" dominant-baseline="middle"
+				      font-size="13" font-weight="700" fill="#fff" font-family="sans-serif">${num}</text>
+			</svg>
+		</div>`;
+	}
+
 	function updateMarkers() {
 		if (!map || !L) return;
-		const rot = hdgDeg; // counter-rotation for markers to stay upright
+		const rot = hdgDeg;
 
 		// ── Boat marker ──
 		if (boatLat != null && boatLon != null) {
@@ -154,59 +218,52 @@
 			if (followMode) map.panTo([boatLat, boatLon], { animate: true, duration: 0.3 });
 		}
 
-		// ── Anchor marker, chain circle, chain line, alarm radius ──
-		if (cfg?.active && cfg.lat != null && cfg.lon != null) {
+		// ── Anchor marker — always visible when we have a position ──
+		if (liveAncLat != null && liveAncLon != null) {
 			const aIcon = L.divIcon({ className: '', iconSize: [24, 30], iconAnchor: [12, 30], html: anchorIconHtml(rot) });
 			if (!ancMarker) {
-				ancMarker = L.marker([cfg.lat, cfg.lon], { icon: aIcon }).addTo(map);
+				ancMarker = L.marker([liveAncLat, liveAncLon], { icon: aIcon }).addTo(map);
 			} else {
-				ancMarker.setLatLng([cfg.lat, cfg.lon]);
+				ancMarker.setLatLng([liveAncLat, liveAncLon]);
 				ancMarker.setIcon(aIcon);
 			}
 
-			// Chain length circle (how far the anchor can swing)
-			const chainR = cfg.chain_length_m;
-			if (!chainCircle) {
-				chainCircle = L.circle([cfg.lat, cfg.lon], {
-					radius: chainR, color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.05,
-					weight: 1.5, dashArray: '3,4', interactive: false
-				}).addTo(map);
-			} else {
-				chainCircle.setLatLng([cfg.lat, cfg.lon]);
-				chainCircle.setRadius(chainR);
-			}
-
-			// Chain line: boat → anchor (visual rope)
-			if (boatLat != null && boatLon != null) {
-				const pts: [number, number][] = [[boatLat, boatLon], [cfg.lat, cfg.lon]];
-				if (!chainLine) {
-					chainLine = L.polyline(pts, {
-						color: '#00c8ff', weight: 2, dashArray: '4,4', opacity: 0.85, interactive: false
+			// Alarm radius circle — only when anchor is active
+			if (cfg?.active) {
+				const col = alarming ? '#ef4444' : '#00c8ff';
+				if (!radiusCircle) {
+					radiusCircle = L.circle([liveAncLat, liveAncLon], {
+						radius: localRadius, color: col, fillColor: col, fillOpacity: 0.04,
+						weight: 2, dashArray: '6 4', interactive: false
 					}).addTo(map);
 				} else {
-					chainLine.setLatLngs(pts);
+					radiusCircle.setLatLng([liveAncLat, liveAncLon]);
+					radiusCircle.setRadius(localRadius);
+					(radiusCircle.options as any).color = col;
+					(radiusCircle.options as any).fillColor = col;
+					radiusCircle.redraw();
 				}
-			}
 
-			// Alarm radius circle
-			const col = alarming ? '#ef4444' : '#00c8ff';
-			if (!radiusCircle) {
-				radiusCircle = L.circle([cfg.lat, cfg.lon], {
-					radius: cfg.radius_m, color: col, fillColor: col, fillOpacity: 0.04,
-					weight: 2, dashArray: '6 4', interactive: false
-				}).addTo(map);
+				// Chain line: boat → anchor
+				if (boatLat != null && boatLon != null) {
+					const pts: [number, number][] = [[boatLat, boatLon], [liveAncLat, liveAncLon]];
+					if (!chainLine) {
+						chainLine = L.polyline(pts, {
+							color: '#00c8ff', weight: 2, dashArray: '4,4', opacity: 0.85, interactive: false
+						}).addTo(map);
+					} else {
+						chainLine.setLatLngs(pts);
+					}
+				}
 			} else {
-				radiusCircle.setLatLng([cfg.lat, cfg.lon]);
-				radiusCircle.setRadius(cfg.radius_m);
-				(radiusCircle.options as any).color = col;
-				(radiusCircle.options as any).fillColor = col;
-				radiusCircle.redraw();
+				// Anchor not active — remove radius + chain line
+				radiusCircle?.remove(); radiusCircle = null;
+				chainLine?.remove();    chainLine    = null;
 			}
 		} else {
 			ancMarker?.remove();    ancMarker    = null;
-			chainCircle?.remove();  chainCircle  = null;
-			chainLine?.remove();    chainLine    = null;
 			radiusCircle?.remove(); radiusCircle = null;
+			chainLine?.remove();    chainLine    = null;
 		}
 
 		// ── Breadcrumb polyline ──
@@ -217,14 +274,43 @@
 				crumbLine.setLatLngs(breadcrumb);
 			}
 		}
+
+		// ── History anchors (grey, numbered, non-interactive) ──
+		histLayers.forEach(l => l.remove());
+		histLayers = [];
+		anchorHistory.forEach((h, i) => {
+			const hIcon = L.divIcon({ className: '', iconSize: [22, 28], iconAnchor: [11, 28], html: histAnchorIconHtml(rot, i + 1) });
+			histLayers.push(
+				L.marker([h.lat, h.lon], { icon: hIcon, interactive: false }).addTo(map),
+				L.circle([h.lat, h.lon], {
+					radius: h.radius_m, color: '#6b7280', fillColor: '#6b7280',
+					fillOpacity: 0.04, weight: 1, dashArray: '4,4', opacity: 0.35,
+					interactive: false
+				}).addTo(map)
+			);
+		});
 	}
 
 	// ── Supabase helpers ──────────────────────────────────────────────────────
+	function boatId() { return $currentBoat?.id ?? null; }
+
 	async function saveConfig(patch: Record<string, unknown>) {
-		const boatId = $currentBoat?.id;
-		if (!boatId) return;
-		const { data } = await supabase.from('anchor_config').update(patch).eq('boat_id', boatId).select().single();
+		const id = boatId();
+		if (!id) return;
+		const { data } = await supabase.from('anchor_config').update(patch).eq('boat_id', id).select().single();
 		if (data) anchorConfig.set(data);
+	}
+
+	async function loadAnchorHistory() {
+		const id = boatId();
+		if (!id) return;
+		const { data } = await supabase
+			.from('anchor_history')
+			.select('*')
+			.eq('boat_id', id)
+			.order('cleared_at', { ascending: false })
+			.limit(3);
+		if (data) anchorHistory = data as AnchorHistoryEntry[];
 	}
 
 	async function setAnchor() {
@@ -238,7 +324,54 @@
 	}
 
 	async function clearAnchor() {
+		const id = boatId();
+		if (!id) { await saveConfig({ active: false, alarming: false }); return; }
+
+		if (cfg?.lat != null && cfg?.lon != null) {
+			// Write to history
+			await supabase.from('anchor_history').insert({
+				boat_id: id,
+				lat: cfg.lat, lon: cfg.lon,
+				radius_m: cfg.radius_m,
+				chain_length_m: cfg.chain_length_m,
+				bearing_deg: cfg.bearing_deg
+			});
+			// Prune: keep only latest 3
+			const { data: old } = await supabase
+				.from('anchor_history')
+				.select('id')
+				.eq('boat_id', id)
+				.order('cleared_at', { ascending: false })
+				.range(3, 100);
+			if (old && old.length > 0) {
+				await supabase.from('anchor_history').delete().in('id', old.map((r: any) => r.id));
+			}
+		}
+
+		// active=false — lat/lon stays in DB so Restore works
 		await saveConfig({ active: false, alarming: false });
+		await loadAnchorHistory();
+	}
+
+	async function restoreAnchor() {
+		await saveConfig({ active: true, alarming: false });
+		if (map && cfg?.lat != null && cfg?.lon != null)
+			map.setView([cfg.lat, cfg.lon], Math.max(map.getZoom(), 16));
+	}
+
+	async function setAnchorByGPS() {
+		const lat = parseFloat(manLatStr);
+		const lon = parseFloat(manLonStr);
+		if (!isFinite(lat) || !isFinite(lon)) return;
+		await saveConfig({ lat, lon, active: true, alarming: false });
+		if (boatLat != null && boatLon != null) {
+			localBearing = Math.round(bearingTo(boatLat, boatLon, lat, lon)) % 360;
+			localChain   = Math.min(Math.round(haversine(boatLat, boatLon, lat, lon)), 120);
+			bearingManual = true;
+			await saveConfig({ bearing_deg: localBearing, chain_length_m: localChain });
+		}
+		showGPSInput = false;
+		if (map) map.setView([lat, lon], Math.max(map.getZoom(), 16));
 	}
 
 	async function muteAlarm() {
@@ -261,25 +394,32 @@
 
 	// ── Leaflet init ──────────────────────────────────────────────────────────
 	onMount(async () => {
+		const id = boatId();
+
 		// Load recent track from history (last 2h, max 200 points)
-		supabase
-			.from('telemetry_history')
-			.select('nav_lat,nav_lon,recorded_at')
-			.not('nav_lat', 'is', null)
-			.not('nav_lon', 'is', null)
-			.gte('recorded_at', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())
-			.order('recorded_at', { ascending: true })
-			.limit(200)
-			.then(({ data }) => {
-				if (data && data.length > 1) {
-					breadcrumb = data.map(r => [r.nav_lat, r.nav_lon] as [number, number]);
-				}
-			});
+		if (id) {
+			supabase
+				.from('telemetry_history')
+				.select('nav_lat,nav_lon,recorded_at')
+				.eq('boat_id', id)
+				.not('nav_lat', 'is', null)
+				.not('nav_lon', 'is', null)
+				.gte('recorded_at', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())
+				.order('recorded_at', { ascending: true })
+				.limit(200)
+				.then(({ data }) => {
+					if (data && data.length > 1) {
+						breadcrumb = data.map(r => [r.nav_lat, r.nav_lon] as [number, number]);
+					}
+				});
+		}
+
+		// Load anchor history
+		await loadAnchorHistory();
 
 		await new Promise(r => requestAnimationFrame(r));
 		await new Promise(r => requestAnimationFrame(r));
 
-		// Capture actual box dimensions for overlay positioning
 		const rect = mapBoxEl.getBoundingClientRect();
 		if (rect.width > 0) { mapBoxW = rect.width; mapBoxH = rect.height; }
 
@@ -289,7 +429,6 @@
 		map = L.map(mapInnerEl, { zoomControl: false, attributionControl: false });
 
 		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxNativeZoom: 19, maxZoom: 22 }).addTo(map);
-		// OpenSeaMap: buoys, depth contours, lights
 		L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
 			maxNativeZoom: 18, maxZoom: 22, opacity: 0.9
 		}).addTo(map);
@@ -340,10 +479,10 @@
 		<!-- DOM overlays (not inside rotating wrapper) -->
 		<div class="map-overlay">
 
-			<!-- N pill: orbits to show North on the heading-up map -->
+			<!-- N pill -->
 			<div class="north-pill" style="left:{nPillPx.x}px;top:{nPillPx.y}px">N</div>
 
-			<!-- AWA / wind flag: orbits to show apparent wind direction + speed -->
+			<!-- AWA / wind flag -->
 			{#if awaPx && awsKn != null}
 			<div class="awa-marker" style="left:{awaPx.x}px;top:{awaPx.y}px">
 				<svg
@@ -380,6 +519,13 @@
 			</button>
 		</div>
 
+		<!-- "Boat position updated X ago" timestamp overlay (bottom-right) -->
+		{#if posAgeStr != null}
+			<div class="pos-age" class:stale={posAgeSec != null && posAgeSec > 120}>
+				boat position updated {posAgeStr}
+			</div>
+		{/if}
+
 		{#if !mapReady}
 		<div class="map-loading">Loading map…</div>
 		{/if}
@@ -392,7 +538,7 @@
 			<div class="cell-val">{depth}</div>
 		</div>
 		<div class="cell">
-			<div class="cell-label">CHAIN</div>
+			<div class="cell-label">DIST</div>
 			<div class="cell-val">{localChain} m</div>
 		</div>
 		<div class="cell">
@@ -407,40 +553,88 @@
 		</div>
 	</div>
 
+	<!-- ── Anchor GPS preview line ── -->
+	{#if ancGPSStr != null}
+		<div class="anc-gps-row">
+			<span class="anc-gps-label">{ancGPSLabel}</span>
+			<span class="anc-gps-val">{ancGPSStr}</span>
+		</div>
+	{/if}
+
 	<!-- ── Control buttons ── -->
 	<div class="ctrl-row">
 		{#if !cfg?.active}
 			<button class="ctrl-btn primary" onclick={setAnchor} disabled={!boatLat}>⚓ Set Anchor</button>
+			{#if cfg?.lat != null}
+				<button class="ctrl-btn restore" onclick={restoreAnchor} title="Restore last anchor alarm">↩ Restore</button>
+			{/if}
 		{:else}
 			<button class="ctrl-btn danger" onclick={clearAnchor}>Clear Anchor</button>
 		{/if}
+		<button class="ctrl-btn gps-btn" class:active={showGPSInput}
+			onclick={() => { showGPSInput = !showGPSInput; }}
+			title="Set anchor by GPS coordinates">📍 GPS</button>
 		{#if alarming}
 			<button class="ctrl-btn warning" onclick={muteAlarm}>Mute</button>
 		{/if}
 	</div>
 
+	<!-- ── Manual GPS input (collapsible) ── -->
+	{#if showGPSInput}
+		<div class="gps-input-block">
+			<div class="gps-input-row">
+				<label class="gps-lbl">Lat</label>
+				<input class="gps-field" type="text" inputmode="decimal" placeholder="54.12345"
+					bind:value={manLatStr} />
+			</div>
+			<div class="gps-input-row">
+				<label class="gps-lbl">Lon</label>
+				<input class="gps-field" type="text" inputmode="decimal" placeholder="10.12345"
+					bind:value={manLonStr} />
+			</div>
+			<button class="ctrl-btn primary" onclick={setAnchorByGPS}
+				disabled={!isFinite(parseFloat(manLatStr)) || !isFinite(parseFloat(manLonStr))}>
+				Set Anchor Here
+			</button>
+		</div>
+	{/if}
+
 	<!-- ── Sliders ── -->
 	<div class="sliders">
 
 		<div class="srow">
-			<div class="slabel">Chain length <span class="sval">{localChain} m</span></div>
+			<div class="slabel">Distance from Anchor <span class="sval">{localChain} m</span></div>
 			<div class="sctrl">
-				<button class="sbtn" onclick={() => { localChain = Math.max(0, localChain-5); saveConfig({ chain_length_m: localChain }); }}>−</button>
+				<button class="sbtn" onclick={() => {
+					localChain = Math.max(0, localChain - 5);
+					const patch: Record<string, unknown> = { chain_length_m: localChain };
+					if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+					saveConfig(patch);
+				}}>−</button>
 				<input type="range" min="0" max="120" step="5" value={localChain}
 					oninput={(e) => { localChain = +(e.target as HTMLInputElement).value; }}
-					onchange={() => saveConfig({ chain_length_m: localChain })} />
-				<button class="sbtn" onclick={() => { localChain = Math.min(120, localChain+5); saveConfig({ chain_length_m: localChain }); }}>+</button>
+					onchange={() => {
+						const patch: Record<string, unknown> = { chain_length_m: localChain };
+						if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+						saveConfig(patch);
+					}} />
+				<button class="sbtn" onclick={() => {
+					localChain = Math.min(120, localChain + 5);
+					const patch: Record<string, unknown> = { chain_length_m: localChain };
+					if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+					saveConfig(patch);
+				}}>+</button>
 			</div>
 		</div>
 
 		<div class="srow">
 			<div class="slabel">Alarm radius <span class="sval">{localRadius} m</span></div>
 			<div class="sctrl">
-				<button class="sbtn" onclick={() => { localRadius = Math.max(10, localRadius-10); saveConfig({ radius_m: localRadius }); }}>−</button>
+				<button class="sbtn" onclick={() => { localRadius = Math.max(10, localRadius - 10); saveConfig({ radius_m: localRadius }); }}>−</button>
 				<input type="range" min="10" max="500" step="10" value={localRadius}
 					oninput={(e) => { localRadius = +(e.target as HTMLInputElement).value; }}
 					onchange={() => saveConfig({ radius_m: localRadius })} />
-				<button class="sbtn" onclick={() => { localRadius = Math.min(500, localRadius+10); saveConfig({ radius_m: localRadius }); }}>+</button>
+				<button class="sbtn" onclick={() => { localRadius = Math.min(500, localRadius + 10); saveConfig({ radius_m: localRadius }); }}>+</button>
 			</div>
 		</div>
 
@@ -454,11 +648,27 @@
 				{/if}
 			</div>
 			<div class="sctrl">
-				<button class="sbtn" onclick={() => { localBearing = ((localBearing-10+360)%360); bearingManual=true; saveConfig({ bearing_deg: localBearing }); }}>−</button>
+				<button class="sbtn" onclick={() => {
+					localBearing = ((localBearing - 10 + 360) % 360);
+					bearingManual = true;
+					const patch: Record<string, unknown> = { bearing_deg: localBearing };
+					if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+					saveConfig(patch);
+				}}>−</button>
 				<input type="range" min="0" max="359" step="1" value={localBearing}
 					oninput={(e) => { localBearing = +(e.target as HTMLInputElement).value; bearingManual = true; }}
-					onchange={() => saveConfig({ bearing_deg: localBearing })} />
-				<button class="sbtn" onclick={() => { localBearing = ((localBearing+10)%360); bearingManual=true; saveConfig({ bearing_deg: localBearing }); }}>+</button>
+					onchange={() => {
+						const patch: Record<string, unknown> = { bearing_deg: localBearing };
+						if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+						saveConfig(patch);
+					}} />
+				<button class="sbtn" onclick={() => {
+					localBearing = ((localBearing + 10) % 360);
+					bearingManual = true;
+					const patch: Record<string, unknown> = { bearing_deg: localBearing };
+					if (cfg?.active && liveAncLat != null) Object.assign(patch, { lat: liveAncLat, lon: liveAncLon });
+					saveConfig(patch);
+				}}>+</button>
 			</div>
 		</div>
 
@@ -499,7 +709,6 @@
 	}
 	.map-box.alarming { border-color: var(--red); }
 
-	/* Extends -25% on each side so rotation never exposes corners */
 	.map-wrap {
 		position: absolute;
 		inset: -25%;
@@ -507,7 +716,7 @@
 	}
 	.map-inner { width:100%; height:100%; }
 
-	/* ── DOM overlay (sits on top of map, no rotation) ── */
+	/* ── DOM overlay ── */
 	.map-overlay { position:absolute; inset:0; pointer-events:none; z-index:500; }
 
 	/* N pill */
@@ -541,6 +750,22 @@
 		white-space: nowrap;
 	}
 
+	/* ── Boat position timestamp overlay ── */
+	.pos-age {
+		position: absolute;
+		bottom: 6px;
+		right: 8px;
+		z-index: 600;
+		font-size: 10px;
+		color: rgba(255, 255, 255, 0.75);
+		background: rgba(0, 0, 0, 0.4);
+		padding: 2px 6px;
+		border-radius: 3px;
+		pointer-events: none;
+		white-space: nowrap;
+	}
+	.pos-age.stale { color: rgba(255, 160, 0, 0.9); }
+
 	/* ── Map control buttons ── */
 	.map-btns {
 		position: absolute; right: 10px; top: 10px; z-index: 600;
@@ -573,6 +798,20 @@
 	.cell-label { font-size:8px; color:var(--muted); letter-spacing:0.5px; }
 	.cell-val   { font-size:12px; font-weight:600; text-align:center; font-variant-numeric:tabular-nums; }
 
+	/* ── Anchor GPS preview ── */
+	.anc-gps-row {
+		display: flex; align-items: center; gap: 8px;
+		padding: 5px 8px;
+		background: var(--card); border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 11px;
+	}
+	.anc-gps-label {
+		color: var(--muted); font-size: 9px; text-transform: uppercase;
+		letter-spacing: 0.5px; flex-shrink: 0; min-width: 40px;
+	}
+	.anc-gps-val { color: var(--text); font-variant-numeric: tabular-nums; }
+
 	/* ── Control buttons ── */
 	.ctrl-row { display:flex; gap:8px; }
 	.ctrl-btn {
@@ -583,6 +822,26 @@
 	.ctrl-btn.primary { background:var(--accent); color:#000; }
 	.ctrl-btn.danger  { background:#7f1d1d; color:var(--red); border:1px solid var(--red); }
 	.ctrl-btn.warning { background:#78350f; color:var(--amber); border:1px solid var(--amber); }
+	.ctrl-btn.restore { background: var(--card2); color: var(--text); border: 1px solid var(--border); flex: 0 0 auto; padding: 10px 14px; }
+	.ctrl-btn.gps-btn { background: var(--card2); color: var(--muted); border: 1px solid var(--border); flex: 0 0 auto; padding: 10px 14px; }
+	.ctrl-btn.gps-btn.active { color: var(--amber); border-color: var(--amber); }
+
+	/* ── GPS input block ── */
+	.gps-input-block {
+		display: flex; flex-direction: column; gap: 8px;
+		padding: 12px;
+		background: var(--card); border: 1px solid var(--border);
+		border-radius: var(--r);
+	}
+	.gps-input-row { display: flex; align-items: center; gap: 10px; }
+	.gps-lbl { font-size: 11px; color: var(--muted); width: 28px; flex-shrink: 0; }
+	.gps-field {
+		flex: 1; padding: 8px 10px;
+		background: var(--card2); border: 1px solid var(--border);
+		border-radius: 6px; color: var(--text); font-size: 13px;
+		outline: none;
+	}
+	.gps-field:focus { border-color: var(--accent); }
 
 	/* ── Sliders ── */
 	.sliders {
