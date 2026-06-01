@@ -17,7 +17,7 @@
  * Standard SignalK paths are mapped to SUKI's telemetry columns.
  * Victron-specific paths (solar total) use the Victron SignalK plugin conventions.
  *
- * v1.0.4 — Universal solar + tank path discovery
+ * v1.0.6 — Persistent Venus-source lock for battery SOC
  *   Solar MPPTs and tanks use non-zero instance IDs that vary per installation.
  *   This version adds a dynamic discovery pass (at 5 s and 60 s after start) that
  *   enumerates all available electrical.solar / electrical.chargers and tanks.*
@@ -53,22 +53,27 @@ module.exports = function (app) {
   // Tracks paths already subscribed by discovery to avoid duplicates on re-scan
   let _discoveredPaths = new Set();
 
-  // ── Battery SOC source-priority tracking ─────────────────────────────────────
-  // On Victron/Cerbo systems the same SignalK path (e.g.
-  // electrical.batteries.0.capacity.stateOfCharge) can be published by multiple
-  // sources in the same 5-second window:
+  // ── Battery SOC source-priority tracking (persistent across cycles) ──────────
+  // On Victron/Cerbo systems the same telemetry column (e.g. batt_main_soc) can
+  // be updated by multiple SignalK paths / sources within a 5-second window:
   //   • venus.com.victronenergy.battery.ttyS*  — BMV / SmartShunt (authoritative)
   //   • n2k-on-ve.can-socket.*                 — charger, BMS, or other N2K device
   //
   // The charger often reports SOC = 1.0 ("fully charged") while the actual
-  // coulomb counter shows the real value. When the charger fires last, the
-  // plugin would send 1.0 and the UI shows a spurious 100%.
+  // coulomb counter shows the real value.
   //
-  // Fix: within each 5-second batch, a Venus/Victron source wins over any N2K
-  // source for SOC columns. Once a Venus value is recorded, subsequent N2K
-  // updates for the same column are discarded for that cycle.
-  // For boats without Victron (all N2K), normal last-value behaviour applies.
-  let _battSocSource = {};  // col → source string for the current cycle
+  // Two-part fix:
+  // 1. Once a Victron/Venus source is seen for a column, ALL subsequent N2K values
+  //    for that column are permanently discarded (not just within the current batch).
+  //    This handles the common case where the BMV and charger fire on different cycles.
+  // 2. If the BMV didn't fire in the current 5-second window (BMV typically updates
+  //    every ~10 s), the last known Venus value is reused instead of sending the
+  //    charger's spurious 1.0. Prevents the "100% flicker every other batch" pattern.
+  //
+  // For boats without Victron (pure N2K), _battSocVenusSeen stays false and the
+  // normal first-value-wins behaviour applies.
+  let _battSocVenusSeen = {};  // col → boolean: Venus/Victron source seen at least once (persists)
+  let _battSocVenusLast = {};  // col → number:  last value from a Venus source (persists)
 
   // ── SignalK path → telemetry column mapping ─────────────────────────────────
   // Standard paths work across any NMEA-connected SignalK server.
@@ -215,15 +220,21 @@ module.exports = function (app) {
         try {
           const unsub = app.streambundle.getSelfBus(path).onValue(({ value, source }) => {
             if (typeof value !== 'number' || !isFinite(value)) return;
-            const col    = 'batt_main_soc';
-            const src    = String(source ?? '');
-            const curSrc = _battSocSource[col] ?? '';
-            const newIsVictron = src.startsWith('venus.com.victronenergy.battery');
-            const curIsVictron = curSrc.startsWith('venus.com.victronenergy.battery');
-            if (curIsVictron) return;
-            if (!newIsVictron && pending[col] != null) return;
-            _battSocSource[col] = src;
-            pending[col] = value;
+            const col = 'batt_main_soc';
+            const src = typeof source === 'string' ? source
+              : (source?.label ?? source?.name ?? source?.$source ?? String(source ?? ''));
+            const isVictron = src.includes('victronenergy');
+
+            if (isVictron) {
+              _battSocVenusSeen[col] = true;
+              _battSocVenusLast[col] = value;
+              pending[col] = value;
+            } else if (_battSocVenusSeen[col]) {
+              return; // Venus seen before → ignore N2K
+            } else {
+              if (pending[col] != null) return;
+              pending[col] = value;
+            }
           });
           unsubscribes.push(unsub);
           _discoveredPaths.add(path);
@@ -314,19 +325,27 @@ module.exports = function (app) {
             if (FALLBACKS.has(path) && pending[col] != null) return;
 
             // ── Battery SOC source-priority filter ──────────────────────────
-            // Prefer venus.com.victronenergy.battery.* (real BMV/SmartShunt)
-            // over n2k-on-ve.can-socket.* (chargers / BMS) within the same cycle.
-            // Once a Venus source has written the value, nothing else may overwrite
-            // it — this prevents both N2K chargers and other Venus devices (e.g.
-            // the engine/starter battery) from clobbering the main BMV reading.
             if (col === 'batt_main_soc' || col === 'batt_eng_soc') {
-              const src    = String(source ?? '');
-              const curSrc = _battSocSource[col] ?? '';
-              const newIsVictron = src.startsWith('venus.com.victronenergy.battery');
-              const curIsVictron = curSrc.startsWith('venus.com.victronenergy.battery');
-              if (curIsVictron) return; // Venus reading is locked for this cycle
-              if (!newIsVictron && pending[col] != null) return; // prefer first N2K value over later ones
-              _battSocSource[col] = src;
+              // Robustly extract source label whether it's a string or an object
+              // (SignalK server version and transport can affect the format).
+              const src = typeof source === 'string' ? source
+                : (source?.label ?? source?.name ?? source?.$source ?? String(source ?? ''));
+              const isVictron = src.includes('victronenergy');
+
+              if (isVictron) {
+                // Venus/BMV source → always accept, remember for future cycles
+                _battSocVenusSeen[col] = true;
+                _battSocVenusLast[col] = value;
+                pending[col] = value;
+              } else if (_battSocVenusSeen[col]) {
+                // Venus source has been seen before → permanently ignore all N2K values
+                return;
+              } else {
+                // Non-Victron boat (pure N2K): first value in cycle wins
+                if (pending[col] != null) return;
+                pending[col] = value;
+              }
+              return; // skip the generic pending[col] = transformed assignment below
             }
 
             // Apply unit transform if defined (e.g. Hz → RPM for engine revolutions)
@@ -371,7 +390,17 @@ module.exports = function (app) {
         // Copy pending (from static subscriptions) and reset for next cycle
         const payload = { ...pending };
         pending = {};
-        _battSocSource = {};  // reset source priority tracking for next cycle
+        // _battSocVenusSeen / _battSocVenusLast are NOT reset here — they persist
+        // across cycles so that once a Venus source is seen, N2K is always suppressed.
+
+        // If the BMV didn't fire in this cycle (it typically updates every ~10 s,
+        // but we send every 5 s), fill the SOC columns from the last known good
+        // Venus value rather than letting the charger's 1.0 slip through.
+        for (const col of ['batt_main_soc', 'batt_eng_soc']) {
+          if (payload[col] == null && _battSocVenusLast[col] != null) {
+            payload[col] = _battSocVenusLast[col];
+          }
+        }
 
         // ── Merge dynamic solar values (sum across all discovered MPPT instances) ─
         // Static PATH_MAP may already have set solar_total_w (chargers.0 fast path);
@@ -452,7 +481,8 @@ module.exports = function (app) {
       _tankDSLByInst         = {};
       _tankBWByInst          = {};
       _discoveredPaths       = new Set();
-      _battSocSource         = {};
+      _battSocVenusSeen      = {};
+      _battSocVenusLast      = {};
 
       app.setPluginStatus('Stopped');
     },
