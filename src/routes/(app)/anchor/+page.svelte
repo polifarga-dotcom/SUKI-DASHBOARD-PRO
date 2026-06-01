@@ -30,8 +30,9 @@
 	let muteActive    = $state(false);
 	let cfgLoaded     = $state(false);
 	let breadcrumb    = $state<[number, number][]>([]);
-	let anchorHistory = $state<AnchorHistoryEntry[]>([]);
-	let showGPSInput  = $state(false);
+	let anchorHistory    = $state<AnchorHistoryEntry[]>([]);
+	let selectedHistory  = $state<number | null>(null); // index into anchorHistory currently previewed on map
+	let showGPSInput     = $state(false);
 	let manLatStr     = $state('');
 	let manLonStr     = $state('');
 
@@ -177,7 +178,7 @@
 		// explicit reads so Svelte tracks deps:
 		const _deps = [boatLat, boatLon, hdgDeg, cfg, alarming, breadcrumb,
 		               localChain, localRadius, localBearing, liveAncLat, liveAncLon,
-		               anchorHistory, isDragging];
+		               anchorHistory, isDragging, selectedHistory];
 		updateMarkers();
 	});
 
@@ -289,20 +290,21 @@
 			}
 		}
 
-		// ── History anchors (grey, numbered, non-interactive) ──
+		// ── History anchor preview (only the button-selected entry) ──
 		histLayers.forEach(l => l.remove());
 		histLayers = [];
-		anchorHistory.forEach((h, i) => {
-			const hIcon = L.divIcon({ className: '', iconSize: [22, 28], iconAnchor: [11, 28], html: histAnchorIconHtml(rot, i + 1) });
+		if (selectedHistory != null && anchorHistory[selectedHistory]) {
+			const h = anchorHistory[selectedHistory];
+			const hIcon = L.divIcon({ className: '', iconSize: [22, 28], iconAnchor: [11, 28], html: histAnchorIconHtml(rot, selectedHistory + 1) });
 			histLayers.push(
 				L.marker([h.lat, h.lon], { icon: hIcon, interactive: false }).addTo(map),
 				L.circle([h.lat, h.lon], {
 					radius: h.radius_m, color: '#6b7280', fillColor: '#6b7280',
-					fillOpacity: 0.04, weight: 1, dashArray: '4,4', opacity: 0.35,
+					fillOpacity: 0.04, weight: 1.5, dashArray: '5,4', opacity: 0.5,
 					interactive: false
 				}).addTo(map)
 			);
-		});
+		}
 	}
 
 	// ── Supabase helpers ──────────────────────────────────────────────────────
@@ -398,6 +400,33 @@
 		localBearing = hdgDeg;
 		bearingManual = false;
 		saveConfig({ bearing_deg: hdgDeg });
+	}
+
+	// ── Anchor history helpers ───────────────────────────────────────────────
+	function relativeTime(isoStr: string): string {
+		const diffMs = Date.now() - new Date(isoStr).getTime();
+		const h = Math.floor(diffMs / 3_600_000);
+		if (h < 1)  return '<1h';
+		if (h < 24) return `${h}h`;
+		const d = Math.floor(h / 24);
+		if (d < 30) return `${d}d`;
+		return `${Math.floor(d / 30)}mo`;
+	}
+
+	async function adoptHistory(h: AnchorHistoryEntry) {
+		localChain    = h.chain_length_m;
+		localRadius   = h.radius_m;
+		localBearing  = h.bearing_deg;
+		bearingManual = true;
+		await saveConfig({
+			lat: h.lat, lon: h.lon,
+			radius_m:       h.radius_m,
+			chain_length_m: h.chain_length_m,
+			bearing_deg:    h.bearing_deg,
+			active: true, alarming: false
+		});
+		selectedHistory = null;
+		if (map) map.setView([h.lat, h.lon], Math.max(map.getZoom(), 16));
 	}
 
 	function jumpToBoat() {
@@ -623,6 +652,36 @@
 				Set Anchor Here
 			</button>
 		</div>
+	{/if}
+
+	<!-- ── Past anchors (history buttons) ── -->
+	{#if anchorHistory.length > 0}
+	<div class="past-anchors">
+		<span class="past-label">Past</span>
+		{#each anchorHistory as h, i}
+			<button class="hist-btn" class:sel={selectedHistory === i}
+				onclick={() => {
+					if (selectedHistory === i) {
+						selectedHistory = null;
+					} else {
+						selectedHistory = i;
+						followMode = false;
+						if (map) map.setView([h.lat, h.lon], Math.max(map.getZoom(), 15));
+					}
+				}}>
+				#{i + 1} · {relativeTime(h.cleared_at)}
+			</button>
+		{/each}
+		{#if selectedHistory != null}
+			<button class="hist-use-btn" onclick={() => adoptHistory(anchorHistory[selectedHistory!])}>
+				<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/>
+					<circle cx="12" cy="10" r="3"/>
+				</svg>
+				Set as Anchor
+			</button>
+		{/if}
+	</div>
 	{/if}
 
 	<!-- ── Sliders ── -->
@@ -888,6 +947,39 @@
 	.sbtn:active { border-color:var(--accent); color:var(--accent); }
 	.auto-badge { font-size:9px; color:var(--green); border:1px solid var(--green); border-radius:3px; padding:1px 5px; }
 	.reset-btn  { font-size:10px; color:var(--accent); background:none; border:1px solid var(--accent); border-radius:4px; padding:1px 6px; cursor:pointer; }
+
+	/* ── Past anchors row ── */
+	.past-anchors {
+		display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+	}
+	.past-label {
+		font-size: 10px; color: var(--muted);
+		text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0;
+	}
+	.hist-btn {
+		padding: 5px 10px;
+		background: var(--card2); border: 1px solid var(--border);
+		border-radius: 6px; color: var(--muted);
+		font-size: 11px; cursor: pointer;
+		transition: border-color 0.15s, color 0.15s;
+		white-space: nowrap;
+	}
+	.hist-btn.sel {
+		border-color: #6b7280; color: var(--text);
+		background: rgba(107, 114, 128, 0.15);
+	}
+	.hist-use-btn {
+		display: flex; align-items: center; gap: 4px;
+		padding: 5px 11px; margin-left: auto;
+		background: rgba(107, 114, 128, 0.12); border: 1px solid #6b7280;
+		border-radius: 6px; color: var(--text);
+		font-size: 11px; font-weight: 600; cursor: pointer;
+		transition: border-color 0.15s, color 0.15s;
+		white-space: nowrap;
+	}
+	.hist-use-btn:hover, .hist-use-btn:active {
+		border-color: var(--accent); color: var(--accent);
+	}
 
 	input[type="range"] {
 		flex:1; -webkit-appearance:none; appearance:none;
