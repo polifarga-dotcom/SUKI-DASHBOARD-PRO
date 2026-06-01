@@ -69,6 +69,12 @@
 	let clockStr       = $state('--:--');
 	let boatPickerOpen = $state(false);
 
+	// Generation counter — incremented on every boat switch.
+	// Each in-flight fetchTelemetry captures its generation at call time and
+	// silently discards the result if a newer generation has started.
+	// This prevents a slow response for boat A from overwriting boat B's data.
+	let fetchGen = 0;
+
 	function updateClock() {
 		const now = new Date();
 		const h = now.getUTCHours().toString().padStart(2, '0');
@@ -78,12 +84,14 @@
 
 	async function fetchTelemetry() {
 		const boat = $currentBoat;
+		const gen  = fetchGen;                          // snapshot at call time
 		if (!boat) { dataStale.set(true); return; }
 		const { data: row, error } = await supabase
 			.from('telemetry')
 			.select('*')
 			.eq('boat_id', boat.id)
 			.single();
+		if (gen !== fetchGen) return;                   // stale — boat switched mid-flight
 		if (row && !error) {
 			telemetry.set(row);
 			dataStale.set(dataAge(row.updated_at));
@@ -102,6 +110,7 @@
 	}
 
 	async function switchBoat(boat: Boat) {
+		fetchGen++;                                     // invalidate any in-flight fetches
 		currentBoat.set(boat);
 		localStorage.setItem('currentBoatId', boat.id);
 		boatPickerOpen = false;
