@@ -391,8 +391,12 @@
 	}
 
 	async function muteAlarm() {
+		// Set alarm_telegram_muted=true in DB — anchor-check will stop Telegram
+		// escalation but keep firing Pushover and keep alarming=true visible in the UI.
+		// The local muteActive flag hides the full-screen overlay for 30 s so the
+		// user can interact with the map, but the alarm ring stays red.
 		muteActive = true;
-		await saveConfig({ alarming: false });
+		await saveConfig({ alarm_telegram_muted: true });
 		setTimeout(() => { muteActive = false; }, 30000);
 	}
 
@@ -502,7 +506,10 @@
 	<div class="alarm-icon">⚓</div>
 	<div class="alarm-title">ANCHOR ALARM</div>
 	<div class="alarm-dist">{ancDistM != null ? ancDistM.toFixed(0) + ' m from anchor' : 'Position unknown'}</div>
-	<button class="alarm-mute-btn" onclick={muteAlarm}>Mute (30s)</button>
+	{#if cfg?.alarm_telegram_muted}
+		<div class="alarm-muted-badge">Telegram muted · Pushover active</div>
+	{/if}
+	<button class="alarm-mute-btn" onclick={muteAlarm}>Mute Telegram (30s)</button>
 </div>
 {/if}
 
@@ -780,6 +787,11 @@
 		margin-top: 12px; padding: 12px 32px;
 		background: rgba(255,255,255,0.15); border: 2px solid #fff;
 		border-radius: 8px; color:#fff; font-size:16px; font-weight:600; cursor:pointer;
+	}
+	.alarm-muted-badge {
+		font-size: 12px; color: rgba(255,220,100,0.9);
+		background: rgba(0,0,0,0.3); padding: 4px 12px; border-radius: 4px;
+		letter-spacing: 0.5px;
 	}
 
 	/* ── Page ── */

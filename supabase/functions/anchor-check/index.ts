@@ -2,9 +2,19 @@
  * anchor-check — Supabase Edge Function
  *
  * Called every minute via pg_cron + pg_net.
- * Reads all active anchor watches, fetches GPS from VRM,
- * calculates distance to anchor point, and triggers
- * Telegram/Pushover alerts when the boat drags.
+ * Reads all active anchor watches, fetches GPS from telemetry (SignalK plugin)
+ * or VRM as fallback, runs the full escalation state machine, and sends
+ * Telegram/Pushover alerts with escalating repeat intervals.
+ *
+ * State machine (matches server.py monitor_loop behaviour):
+ *   1. In range  → clear alarm if set; reset all state
+ *   2. Dragging, grace period (< alarm_delay_s) → record alarm_started_at, wait
+ *   3. Dragging, past grace → first alert + repeat every 15 min (≤5×), then 60 min
+ *   Mute: alarm_telegram_muted=true → Pushover still fires, Telegram silent
+ *
+ * Multi-boat: every watch uses its own credentials from anchor_config.
+ * Pushover tag is boat-specific (anchor_<first-8-chars-boat_id>) so
+ * cancelling one boat's alarm never affects another.
  *
  * No bearer auth — called only by pg_cron (Supabase-internal infrastructure).
  */
@@ -69,8 +79,7 @@ async function fetchGPSFromVRM(
 }
 
 // ── Resolve GPS: telemetry table first (5 s cadence), VRM as fallback ─────────
-// Telemetry is fed by the signalk-plugin-suki-bridge plugin, which is much faster
-// than a VRM API round-trip. Staleness threshold is 120 s (2× the plugin interval).
+// deno-lint-ignore no-explicit-any
 async function resolveGPS(
   // deno-lint-ignore no-explicit-any
   supabase: any,
@@ -78,7 +87,6 @@ async function resolveGPS(
   vrmToken: string | null,
   vrmInstallId: number | null
 ): Promise<{ lat: number; lon: number; source: string } | null> {
-  // 1. Try telemetry table (fresh = updated within 120 s)
   const { data: tel } = await supabase
     .from('telemetry')
     .select('nav_lat, nav_lon, updated_at')
@@ -93,7 +101,6 @@ async function resolveGPS(
     console.log(`[anchor-check] telemetry stale (${Math.round(ageSec)}s) — falling back to VRM`);
   }
 
-  // 2. Fallback: VRM API (works without the plugin, but ~1–5 s slower)
   if (vrmToken && vrmInstallId) {
     const gps = await fetchGPSFromVRM(vrmToken, vrmInstallId);
     if (gps) return { ...gps, source: 'vrm' };
@@ -129,7 +136,8 @@ async function sendPushover(
   userKeys: string | null,
   title: string,
   message: string,
-  priority = 1
+  priority = 1,
+  tag?: string
 ): Promise<void> {
   if (!appToken || !userKeys) return;
   const keys = userKeys.split(',').map(s => s.trim()).filter(Boolean);
@@ -146,6 +154,7 @@ async function sendPushover(
         body.set('retry',  '60');
         body.set('expire', '3600');
       }
+      if (tag) body.set('tags', tag);
       await fetch('https://api.pushover.net/1/messages.json', {
         method: 'POST',
         body,
@@ -156,24 +165,31 @@ async function sendPushover(
   }
 }
 
+// ── Pushover cancel-by-tag (clears all emergency notifications for that tag) ──
+async function cancelPushoverByTag(appToken: string | null, tag: string): Promise<void> {
+  if (!appToken) return;
+  try {
+    await fetch('https://api.pushover.net/1/cancel/bysearch.json', {
+      method: 'POST',
+      body: new URLSearchParams({ token: appToken, tag }),
+    });
+  } catch (e) {
+    console.error('[anchor-check] Pushover cancel error for tag', tag, e);
+  }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS });
   }
 
-  // No auth guard — this function is called only by pg_cron (Supabase-internal
-  // infrastructure). The SUPABASE_SERVICE_ROLE_KEY env var injected by the Deno
-  // runtime does not match the public Dashboard service-role JWT, so any
-  // bearer-based check would always fail. The function URL is POST-only and
-  // obscure; an unauthorised caller could at most trigger a no-op anchor check.
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
   // Load all active anchor watches.
-  // No longer require VRM credentials — telemetry GPS (from SignalK plugin) is primary.
   const { data: watches, error: watchErr } = await supabase
     .from('anchor_config')
     .select('*, boats(name)')
@@ -200,59 +216,127 @@ Deno.serve(async (req: Request) => {
     }
 
     const dist = haversine(gps.lat, gps.lon, watch.lat!, watch.lon!);
-    const violated = dist > watch.radius_m;
+    const dragging = dist > watch.radius_m;
 
-    console.log(`[anchor-check] ${boatName}: dist=${Math.round(dist)}m radius=${watch.radius_m}m alarming=${watch.alarming} src=${gps.source}`);
+    // Boat-specific Pushover tag — ensures cancel only affects this boat's alarms.
+    const pushoverTag = `anchor_${String(watch.boat_id).substring(0, 8)}`;
 
-    if (violated && !watch.alarming) {
-      // ── NEW ALARM ────────────────────────────────────────────────────────
-      const msg = `⚓ <b>ANCHOR ALARM — ${boatName}</b>\n` +
+    const nowMs = Date.now();
+    const alarmDelaySec = watch.alarm_delay_s ?? 60;
+
+    console.log(
+      `[anchor-check] ${boatName}: dist=${Math.round(dist)}m radius=${watch.radius_m}m ` +
+      `dragging=${dragging} alarming=${watch.alarming} muted=${watch.alarm_telegram_muted} ` +
+      `count=${watch.alarm_notify_count ?? 0} src=${gps.source}`
+    );
+
+    // ── STATE 1: Back in range ────────────────────────────────────────────────
+    if (!dragging) {
+      if (watch.alarming) {
+        // All-clear: cancel Pushover emergency + send Telegram clear
+        await cancelPushoverByTag(watch.pushover_app_token, pushoverTag);
+
+        const msg =
+          `✅ <b>Anchor back in range — ${boatName}</b>\n` +
+          `Distance: ${Math.round(dist)} m (radius: ${watch.radius_m} m)`;
+        await sendTelegram(watch.telegram_token, watch.telegram_chat_ids, msg);
+        await sendPushover(
+          watch.pushover_app_token,
+          watch.pushover_user_keys,
+          `✅ Anchor back in range — ${boatName}`,
+          `Distance: ${Math.round(dist)} m (radius: ${watch.radius_m} m)`,
+          0
+        );
+
+        await supabase.from('anchor_config').update({
+          alarming: false,
+          alarm_started_at: null,
+          alarm_notify_count: 0,
+          alarm_next_notify_at: null,
+          alarm_telegram_muted: false,
+        }).eq('boat_id', watch.boat_id);
+
+        results.push({ boat: boatName, status: 'alarm_cleared', dist_m: Math.round(dist) });
+      } else {
+        // Was in grace period or not alarming — clear any grace period start
+        if (watch.alarm_started_at) {
+          await supabase.from('anchor_config')
+            .update({ alarm_started_at: null })
+            .eq('boat_id', watch.boat_id);
+        }
+        results.push({ boat: boatName, status: 'ok', dist_m: Math.round(dist) });
+      }
+      continue;
+    }
+
+    // ── STATE 2: Dragging — start or check grace period ───────────────────────
+    let alarmStartedAt = watch.alarm_started_at
+      ? new Date(watch.alarm_started_at).getTime()
+      : null;
+
+    if (alarmStartedAt == null) {
+      // First time we detect drag — record start time, wait for next tick
+      await supabase.from('anchor_config')
+        .update({ alarm_started_at: new Date(nowMs).toISOString() })
+        .eq('boat_id', watch.boat_id);
+      results.push({ boat: boatName, status: 'grace_period', dist_m: Math.round(dist) });
+      continue;
+    }
+
+    const elapsedSec = (nowMs - alarmStartedAt) / 1000;
+    if (elapsedSec < alarmDelaySec) {
+      results.push({ boat: boatName, status: 'grace_period', dist_m: Math.round(dist) });
+      continue;
+    }
+
+    // ── STATE 3: Dragging, past grace period — fire or escalate ───────────────
+    const notifyCount = watch.alarm_notify_count ?? 0;
+    const nextNotifyAt = watch.alarm_next_notify_at
+      ? new Date(watch.alarm_next_notify_at).getTime()
+      : null;
+
+    const shouldNotify =
+      notifyCount === 0 ||
+      (nextNotifyAt != null && nowMs >= nextNotifyAt);
+
+    if (shouldNotify) {
+      const msg =
+        `⚓ <b>ANCHOR ALARM — ${boatName}</b>\n` +
         `Distance: <b>${Math.round(dist)} m</b> (radius: ${watch.radius_m} m)\n` +
-        `Position: ${gps.lat.toFixed(5)}, ${gps.lon.toFixed(5)}`;
+        `Position: ${gps.lat.toFixed(5)}, ${gps.lon.toFixed(5)}` +
+        (notifyCount > 0 ? `\nAlert #${notifyCount + 1}` : '');
 
-      await sendTelegram(watch.telegram_token, watch.telegram_chat_ids, msg);
+      // Telegram: skip if muted
+      if (!watch.alarm_telegram_muted) {
+        await sendTelegram(watch.telegram_token, watch.telegram_chat_ids, msg);
+      }
+
+      // Pushover: always fire (emergency priority with tag for cancel-on-clear)
       await sendPushover(
         watch.pushover_app_token,
         watch.pushover_user_keys,
         `⚓ Anchor Alarm — ${boatName}`,
-        `Distance: ${Math.round(dist)} m (radius: ${watch.radius_m} m)`,
-        2  // emergency priority
+        `Distance: ${Math.round(dist)} m (radius: ${watch.radius_m} m)` +
+          (notifyCount > 0 ? ` · Alert #${notifyCount + 1}` : ''),
+        2,
+        pushoverTag
       );
 
-      await supabase
-        .from('anchor_config')
-        .update({ alarming: true })
-        .eq('boat_id', watch.boat_id);
+      const newCount = notifyCount + 1;
+      // Escalation schedule: first 5 alerts every 15 min, then every 60 min
+      const nextIntervalMs = newCount <= 5 ? 15 * 60 * 1000 : 60 * 60 * 1000;
+      const nextNotify = new Date(nowMs + nextIntervalMs).toISOString();
+
+      await supabase.from('anchor_config').update({
+        alarming: true,
+        alarm_notify_count: newCount,
+        alarm_next_notify_at: nextNotify,
+      }).eq('boat_id', watch.boat_id);
 
       results.push({ boat: boatName, status: 'alarm_triggered', dist_m: Math.round(dist) });
-
-    } else if (!violated && watch.alarming) {
-      // ── CLEAR ────────────────────────────────────────────────────────────
-      const msg = `✅ <b>Anchor back in range — ${boatName}</b>\n` +
-        `Distance: ${Math.round(dist)} m (radius: ${watch.radius_m} m)`;
-
-      await sendTelegram(watch.telegram_token, watch.telegram_chat_ids, msg);
-      await sendPushover(
-        watch.pushover_app_token,
-        watch.pushover_user_keys,
-        `✅ Anchor back in range — ${boatName}`,
-        `Distance: ${Math.round(dist)} m (radius: ${watch.radius_m} m)`,
-        0
-      );
-
-      await supabase
-        .from('anchor_config')
-        .update({ alarming: false })
-        .eq('boat_id', watch.boat_id);
-
-      results.push({ boat: boatName, status: 'alarm_cleared', dist_m: Math.round(dist) });
-
     } else {
-      results.push({
-        boat: boatName,
-        status: violated ? 'still_alarming' : 'ok',
-        dist_m: Math.round(dist),
-      });
+      // Alarm already active, not yet time for next notification
+      results.push({ boat: boatName, status: 'still_alarming', dist_m: Math.round(dist) });
     }
   }
 

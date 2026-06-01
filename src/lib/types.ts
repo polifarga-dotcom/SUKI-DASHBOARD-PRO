@@ -91,6 +91,11 @@ export type AnchorConfig = {
 	plugin_api_key: string | null;    // SignalK bridge authentication key
 	auto_trip_enabled: boolean;       // server-side auto-trip detection on/off
 	auto_fast_since:   string | null; // set by log-position when SOG first ≥ 1.5 kn (confirm window)
+	// Anchor alarm escalation state (added migration 015)
+	alarm_started_at:      string | null; // when drag was first detected (null = not dragging)
+	alarm_notify_count:    number;        // how many notifications have fired in this alarm
+	alarm_next_notify_at:  string | null; // when to fire the next notification
+	alarm_telegram_muted:  boolean;       // true = skip Telegram but keep Pushover + alarm overlay
 };
 
 export type Boat = {
