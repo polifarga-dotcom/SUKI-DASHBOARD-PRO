@@ -17,7 +17,7 @@
  * Standard SignalK paths are mapped to SUKI's telemetry columns.
  * Victron-specific paths (solar total) use the Victron SignalK plugin conventions.
  *
- * v1.0.6 — Persistent Venus-source lock for battery SOC
+ * v1.0.8 — Correct multi-instance battery SOC discovery + persistent Venus lock
  *   Solar MPPTs and tanks use non-zero instance IDs that vary per installation.
  *   This version adds a dynamic discovery pass (at 5 s and 60 s after start) that
  *   enumerates all available electrical.solar / electrical.chargers and tanks.*
@@ -72,8 +72,11 @@ module.exports = function (app) {
   //
   // For boats without Victron (pure N2K), _battSocVenusSeen stays false and the
   // normal first-value-wins behaviour applies.
-  let _battSocVenusSeen = {};  // col → boolean: Venus/Victron source seen at least once (persists)
-  let _battSocVenusLast = {};  // col → number:  last value from a Venus source (persists)
+  let _battSocVenusSeen   = {};  // col → boolean: Venus battery source seen at least once (persists)
+  let _battSocVenusLast   = {};  // col → number:  last value from a Venus battery source (persists)
+  let _battDiscoveredCols = {};  // instKey → column assignment ('batt_main_soc' | 'batt_eng_soc')
+                                 // Sorted by numeric instance ID: lowest → main, second → engine.
+                                 // Persists so re-discovery at 60 s respects prior assignments.
 
   // ── SignalK path → telemetry column mapping ─────────────────────────────────
   // Standard paths work across any NMEA-connected SignalK server.
@@ -207,42 +210,10 @@ module.exports = function (app) {
         continue;
       }
 
-      // ── Battery SOC (discover additional instances beyond 0 and 1) ───────
-      // Victron systems often use high VRM device IDs (e.g. instance 278 for
-      // BMV-712) rather than instance 0. The real BMV is typically sourced from
-      // venus.com.victronenergy.battery.* while instance 0 mixes in N2K charger
-      // sources that report 1.0. Subscribing to the high-ID instance lets the
-      // source-priority filter above prefer it over the N2K charger value.
-      // Instance 1 is excluded (handled by static PATH_MAP as engine battery).
+      // Battery SOC paths are collected below and processed after the main loop
+      // (they need to be sorted by instance ID before column assignment).
       if ((m = path.match(/^electrical\.batteries\.(\w+)\.capacity\.stateOfCharge$/))) {
-        const [, inst] = m;
-        if (inst === '0' || inst === '1') continue; // already in static PATH_MAP
-        try {
-          const unsub = app.streambundle.getSelfBus(path).onValue(({ value, source }) => {
-            if (typeof value !== 'number' || !isFinite(value)) return;
-            const col = 'batt_main_soc';
-            const src = typeof source === 'string' ? source
-              : (source?.label ?? source?.name ?? source?.$source ?? String(source ?? ''));
-            const isVictron = src.includes('victronenergy');
-
-            if (isVictron) {
-              _battSocVenusSeen[col] = true;
-              _battSocVenusLast[col] = value;
-              pending[col] = value;
-            } else if (_battSocVenusSeen[col]) {
-              return; // Venus seen before → ignore N2K
-            } else {
-              if (pending[col] != null) return;
-              pending[col] = value;
-            }
-          });
-          unsubscribes.push(unsub);
-          _discoveredPaths.add(path);
-          newCount++;
-        } catch (e) {
-          app.debug(`Discovery: could not subscribe to ${path}: ${e.message}`);
-        }
-        continue;
+        continue; // handled in the sorted pass below
       }
 
       // ── Tanks ──────────────────────────────────────────────────────────────
@@ -265,6 +236,59 @@ module.exports = function (app) {
           app.debug(`Discovery: could not subscribe to ${path}: ${e.message}`);
         }
         continue;
+      }
+    }
+
+    // ── Battery SOC — sorted instance discovery ────────────────────────────
+    // Collect all non-0/non-1 battery SOC paths, sort by numeric instance ID,
+    // then assign: lowest instance → batt_main_soc, second → batt_eng_soc.
+    // This ensures e.g. instance 278 (BMV) always becomes "main" and
+    // instance 291 (starter/engine battery) becomes "engine", regardless of
+    // the order getAvailablePaths() returns them.
+    const newBattSocPaths = available
+      .filter(p => !_discoveredPaths.has(p))
+      .map(p => {
+        const bm = p.match(/^electrical\.batteries\.(\w+)\.capacity\.stateOfCharge$/);
+        return bm ? { path: p, inst: bm[1] } : null;
+      })
+      .filter(x => x && x.inst !== '0' && x.inst !== '1')
+      .sort((a, b) => Number(a.inst) - Number(b.inst));
+
+    for (const { path, inst } of newBattSocPaths) {
+      // Look up existing assignment or assign the next available column
+      let col = _battDiscoveredCols[inst];
+      if (!col) {
+        const used = new Set(Object.values(_battDiscoveredCols));
+        if      (!used.has('batt_main_soc')) col = 'batt_main_soc';
+        else if (!used.has('batt_eng_soc'))  col = 'batt_eng_soc';
+        else { _discoveredPaths.add(path); continue; } // > 2 instances, skip
+        _battDiscoveredCols[inst] = col;
+        app.debug(`Battery discovery: instance ${inst} → ${col}`);
+      }
+      const assignedCol = col; // capture in closure
+      try {
+        const unsub = app.streambundle.getSelfBus(path).onValue(({ value, source }) => {
+          if (typeof value !== 'number' || !isFinite(value)) return;
+          const src = typeof source === 'string' ? source
+            : (source?.label ?? source?.name ?? source?.$source ?? String(source ?? ''));
+          const isVictronBattery = src.startsWith('venus.com.victronenergy.battery');
+
+          if (isVictronBattery) {
+            _battSocVenusSeen[assignedCol] = true;
+            _battSocVenusLast[assignedCol] = value;
+            pending[assignedCol] = value;
+          } else if (_battSocVenusSeen[assignedCol]) {
+            return;
+          } else {
+            if (pending[assignedCol] != null) return;
+            pending[assignedCol] = value;
+          }
+        });
+        unsubscribes.push(unsub);
+        _discoveredPaths.add(path);
+        newCount++;
+      } catch (e) {
+        app.debug(`Discovery: could not subscribe to ${path}: ${e.message}`);
       }
     }
 
@@ -326,26 +350,24 @@ module.exports = function (app) {
 
             // ── Battery SOC source-priority filter ──────────────────────────
             if (col === 'batt_main_soc' || col === 'batt_eng_soc') {
-              // Robustly extract source label whether it's a string or an object
-              // (SignalK server version and transport can affect the format).
+              // Robustly extract source label (string or {label/name/$source} object).
               const src = typeof source === 'string' ? source
                 : (source?.label ?? source?.name ?? source?.$source ?? String(source ?? ''));
-              const isVictron = src.includes('victronenergy');
+              // Only venus.com.victronenergy.battery.* is a real battery monitor (BMV/SmartShunt).
+              // Chargers use venus.com.victronenergy.solarcharger / vebus / etc. — excluded.
+              const isVictronBattery = src.startsWith('venus.com.victronenergy.battery');
 
-              if (isVictron) {
-                // Venus/BMV source → always accept, remember for future cycles
+              if (isVictronBattery) {
                 _battSocVenusSeen[col] = true;
                 _battSocVenusLast[col] = value;
                 pending[col] = value;
               } else if (_battSocVenusSeen[col]) {
-                // Venus source has been seen before → permanently ignore all N2K values
-                return;
+                return; // Venus battery source seen before → discard all N2K/other values
               } else {
-                // Non-Victron boat (pure N2K): first value in cycle wins
-                if (pending[col] != null) return;
+                if (pending[col] != null) return; // non-Victron: first N2K value wins
                 pending[col] = value;
               }
-              return; // skip the generic pending[col] = transformed assignment below
+              return;
             }
 
             // Apply unit transform if defined (e.g. Hz → RPM for engine revolutions)
@@ -483,6 +505,7 @@ module.exports = function (app) {
       _discoveredPaths       = new Set();
       _battSocVenusSeen      = {};
       _battSocVenusLast      = {};
+      _battDiscoveredCols    = {};
 
       app.setPluginStatus('Stopped');
     },
