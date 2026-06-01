@@ -200,7 +200,6 @@
 	<header class="app-header">
 		<div class="header-left">
 			<button class="boat-btn" onclick={() => (boatPickerOpen = !boatPickerOpen)}>
-				<img src="/logo.png" alt="logo" class="vessel-logo-sm" />
 				<div class="boat-btn-text">
 					<span class="boat-name">{activeBoat?.name ?? '—'}</span>
 					<span class="boat-role-tag" class:master={roles[activeBoat?.id ?? ''] === 'admin'}>
@@ -303,8 +302,7 @@
 		padding: 5px 8px 5px 6px; cursor: pointer; color: var(--text);
 	}
 	.boat-btn:hover { background: var(--card2); }
-	.vessel-logo-sm { height: 20px; width: auto; display: block; object-fit: contain; max-width: 80px; flex-shrink: 0; }
-	.boat-btn-text { display: flex; flex-direction: column; gap: 1px; align-items: flex-start; }
+.boat-btn-text { display: flex; flex-direction: column; gap: 1px; align-items: flex-start; }
 	.boat-name { font-size: 13px; font-weight: 600; line-height: 1.1; white-space: nowrap; }
 	.boat-role-tag {
 		font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
