@@ -17,14 +17,13 @@
  * Standard SignalK paths are mapped to SUKI's telemetry columns.
  * Victron-specific paths (solar total) use the Victron SignalK plugin conventions.
  *
- * v1.0.8 — Correct multi-instance battery SOC discovery + persistent Venus lock
- *   Solar MPPTs and tanks use non-zero instance IDs that vary per installation.
- *   This version adds a dynamic discovery pass (at 5 s and 60 s after start) that
- *   enumerates all available electrical.solar / electrical.chargers and tanks.*
- *   paths via app.streambundle.getAvailablePaths() and subscribes to each.
- *   Solar values across all discovered instances are summed; tank values use the
- *   lowest instance ID as the primary tank. Static PATH_MAP entries for well-known
- *   instance IDs (e.g. Victron default instance 0) are kept as fast-path fallbacks.
+ * v1.0.10 — Add Venus-priority source filter to the V/A/W discovery subscriptions.
+ *   Victron MPPT solar chargers report their output voltage on the same SignalK
+ *   path as the BMV (e.g. electrical.batteries.278.voltage), causing 14.15 V
+ *   (absorption charging voltage) to overwrite 13.28 V (BMV true reading) in
+ *   cycles where the BMV doesn't update. The fix: once a Venus battery source
+ *   (BMV/SmartShunt) has been seen for SOC, reject V/A/W from non-battery sources
+ *   (solar chargers, inverters, etc.) on the same battery instance paths.
  */
 
 'use strict';
@@ -100,15 +99,14 @@ module.exports = function (app) {
     'environment.wind.speedTrue':                            'env_tws_ms',
     'environment.outside.pressure':                          'env_pressure_pa',
 
-    // Batteries — Victron SignalK plugin uses integer instance IDs.
-    // Instance 0 = house bank (main), instance 1 = engine/starter.
-    'electrical.batteries.0.capacity.stateOfCharge':         'batt_main_soc',
-    'electrical.batteries.0.voltage':                        'batt_main_v',
-    'electrical.batteries.0.current':                        'batt_main_a',
-    'electrical.batteries.0.power':                          'batt_main_w',
-    'electrical.batteries.1.capacity.stateOfCharge':         'batt_eng_soc',
-    'electrical.batteries.1.voltage':                        'batt_eng_v',
-    'electrical.batteries.1.current':                        'batt_eng_a',
+    // Batteries — static instance IDs removed in v1.0.9.
+    // On Victron/Cerbo systems the real BMV/SmartShunt appears at a non-zero
+    // instance ID (e.g. 278 on SUKI), while instance 0 is an N2K charger that
+    // reports SOC=1.0 (100%) at all times. Keeping static instance 0 entries
+    // caused permanent SOC/V/A flicker even when the Venus priority filter was
+    // active. Battery paths are now subscribed exclusively via dynamic discovery
+    // (see discoverDynamicPaths below), which finds the correct instance IDs and
+    // applies the Venus-source priority filter.
 
     // Propulsion / Engine
     // SignalK value for `revolutions` is in Hz (rev/sec); the TRANSFORMS map below
@@ -289,6 +287,50 @@ module.exports = function (app) {
         newCount++;
       } catch (e) {
         app.debug(`Discovery: could not subscribe to ${path}: ${e.message}`);
+      }
+    }
+
+    // ── Battery V/A/W — subscribe voltage/current/power for each discovered instance ─
+    // _battDiscoveredCols was populated by the SOC sorted pass above.
+    // We skip instance IDs 0 and 1 for the same reason as the SOC pass: those are
+    // N2K chargers on Victron/Cerbo systems, not the authoritative battery monitor.
+    // For each discovered instance (e.g. 278 → batt_main, 291 → batt_eng) we
+    // subscribe to the three remaining battery metrics so V/A/W come from the
+    // same physical device as SOC — no conflict, no flicker.
+    for (const [inst, socCol] of Object.entries(_battDiscoveredCols)) {
+      const prefix = socCol === 'batt_main_soc' ? 'batt_main' : 'batt_eng';
+      const metrics = {
+        voltage: `${prefix}_v`,
+        current: `${prefix}_a`,
+        power:   `${prefix}_w`,
+      };
+      const capturedSocCol = socCol; // for Venus-priority closure
+      for (const [metric, targetCol] of Object.entries(metrics)) {
+        const mPath = `electrical.batteries.${inst}.${metric}`;
+        if (_discoveredPaths.has(mPath)) continue;
+        if (!available.includes(mPath)) continue;
+        try {
+          const unsub = app.streambundle.getSelfBus(mPath).onValue(({ value, source }) => {
+            if (typeof value !== 'number' || !isFinite(value)) return;
+            // Apply the same Venus-battery source priority as SOC:
+            // once a BMV/SmartShunt has been confirmed for this battery, reject
+            // V/A/W values from solar chargers or other non-battery devices that
+            // share the same battery instance path (they report charging voltage,
+            // not the true battery terminal voltage measured by the BMV).
+            if (_battSocVenusSeen[capturedSocCol]) {
+              const src = typeof source === 'string' ? source
+                : (source?.label ?? source?.name ?? source?.$source ?? String(source ?? ''));
+              if (!src.startsWith('venus.com.victronenergy.battery')) return;
+            }
+            pending[targetCol] = value;
+          });
+          unsubscribes.push(unsub);
+          _discoveredPaths.add(mPath);
+          newCount++;
+          app.debug(`Battery discovery: ${mPath} → ${targetCol}`);
+        } catch (e) {
+          app.debug(`Discovery: could not subscribe to ${mPath}: ${e.message}`);
+        }
       }
     }
 
