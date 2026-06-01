@@ -526,7 +526,7 @@
 								disabled={actionBusy === u.id || u.id === currentUid}
 								title="Toggle role"
 							>
-								{u.role ?? '—'}
+								{u.role === 'viewer' ? 'crew' : u.role ?? '—'}
 							</button>
 							<!-- PW reset -->
 							<button class="icon-btn" title="Force password reset"
@@ -574,7 +574,7 @@
 			<div class="role-row">
 				<span class="role-lbl">Role</span>
 				<div class="role-picker">
-					<button class="role-opt" class:sel={addRole === 'viewer'} onclick={() => { addRole = 'viewer'; }}>Viewer</button>
+					<button class="role-opt" class:sel={addRole === 'viewer'} onclick={() => { addRole = 'viewer'; }}>Crew</button>
 					<button class="role-opt" class:sel={addRole === 'admin'}  onclick={() => { addRole = 'admin'; }}>Admin</button>
 				</div>
 			</div>
