@@ -53,6 +53,23 @@ module.exports = function (app) {
   // Tracks paths already subscribed by discovery to avoid duplicates on re-scan
   let _discoveredPaths = new Set();
 
+  // ── Battery SOC source-priority tracking ─────────────────────────────────────
+  // On Victron/Cerbo systems the same SignalK path (e.g.
+  // electrical.batteries.0.capacity.stateOfCharge) can be published by multiple
+  // sources in the same 5-second window:
+  //   • venus.com.victronenergy.battery.ttyS*  — BMV / SmartShunt (authoritative)
+  //   • n2k-on-ve.can-socket.*                 — charger, BMS, or other N2K device
+  //
+  // The charger often reports SOC = 1.0 ("fully charged") while the actual
+  // coulomb counter shows the real value. When the charger fires last, the
+  // plugin would send 1.0 and the UI shows a spurious 100%.
+  //
+  // Fix: within each 5-second batch, a Venus/Victron source wins over any N2K
+  // source for SOC columns. Once a Venus value is recorded, subsequent N2K
+  // updates for the same column are discarded for that cycle.
+  // For boats without Victron (all N2K), normal last-value behaviour applies.
+  let _battSocSource = {};  // col → source string for the current cycle
+
   // ── SignalK path → telemetry column mapping ─────────────────────────────────
   // Standard paths work across any NMEA-connected SignalK server.
   // Instance IDs (e.g. batteries.0, chargers.0) are Victron defaults; boats with
@@ -185,6 +202,38 @@ module.exports = function (app) {
         continue;
       }
 
+      // ── Battery SOC (discover additional instances beyond 0 and 1) ───────
+      // Victron systems often use high VRM device IDs (e.g. instance 278 for
+      // BMV-712) rather than instance 0. The real BMV is typically sourced from
+      // venus.com.victronenergy.battery.* while instance 0 mixes in N2K charger
+      // sources that report 1.0. Subscribing to the high-ID instance lets the
+      // source-priority filter above prefer it over the N2K charger value.
+      // Instance 1 is excluded (handled by static PATH_MAP as engine battery).
+      if ((m = path.match(/^electrical\.batteries\.(\w+)\.capacity\.stateOfCharge$/))) {
+        const [, inst] = m;
+        if (inst === '0' || inst === '1') continue; // already in static PATH_MAP
+        try {
+          const unsub = app.streambundle.getSelfBus(path).onValue(({ value, source }) => {
+            if (typeof value !== 'number' || !isFinite(value)) return;
+            const col    = 'batt_main_soc';
+            const src    = String(source ?? '');
+            const curSrc = _battSocSource[col] ?? '';
+            const newIsVictron = src.startsWith('venus.com.victronenergy.battery');
+            const curIsVictron = curSrc.startsWith('venus.com.victronenergy.battery');
+            if (curIsVictron) return;
+            if (!newIsVictron && pending[col] != null) return;
+            _battSocSource[col] = src;
+            pending[col] = value;
+          });
+          unsubscribes.push(unsub);
+          _discoveredPaths.add(path);
+          newCount++;
+        } catch (e) {
+          app.debug(`Discovery: could not subscribe to ${path}: ${e.message}`);
+        }
+        continue;
+      }
+
       // ── Tanks ──────────────────────────────────────────────────────────────
       // Matches: tanks.{freshWater|fuel|diesel|blackWater}.N.currentLevel
       if ((m = path.match(
@@ -257,12 +306,28 @@ module.exports = function (app) {
       const paths = Object.keys(PATH_MAP);
       unsubscribes = paths.map(path => {
         try {
-          return app.streambundle.getSelfBus(path).onValue(({ value }) => {
+          return app.streambundle.getSelfBus(path).onValue(({ value, source }) => {
             const col = PATH_MAP[path];
             if (!col || value == null || typeof value !== 'number' || !isFinite(value)) return;
 
             // Fallback paths: skip if a primary source already populated the column
             if (FALLBACKS.has(path) && pending[col] != null) return;
+
+            // ── Battery SOC source-priority filter ──────────────────────────
+            // Prefer venus.com.victronenergy.battery.* (real BMV/SmartShunt)
+            // over n2k-on-ve.can-socket.* (chargers / BMS) within the same cycle.
+            // Once a Venus source has written the value, nothing else may overwrite
+            // it — this prevents both N2K chargers and other Venus devices (e.g.
+            // the engine/starter battery) from clobbering the main BMV reading.
+            if (col === 'batt_main_soc' || col === 'batt_eng_soc') {
+              const src    = String(source ?? '');
+              const curSrc = _battSocSource[col] ?? '';
+              const newIsVictron = src.startsWith('venus.com.victronenergy.battery');
+              const curIsVictron = curSrc.startsWith('venus.com.victronenergy.battery');
+              if (curIsVictron) return; // Venus reading is locked for this cycle
+              if (!newIsVictron && pending[col] != null) return; // prefer first N2K value over later ones
+              _battSocSource[col] = src;
+            }
 
             // Apply unit transform if defined (e.g. Hz → RPM for engine revolutions)
             const transformed = TRANSFORMS[path] ? TRANSFORMS[path](value) : value;
@@ -306,6 +371,7 @@ module.exports = function (app) {
         // Copy pending (from static subscriptions) and reset for next cycle
         const payload = { ...pending };
         pending = {};
+        _battSocSource = {};  // reset source priority tracking for next cycle
 
         // ── Merge dynamic solar values (sum across all discovered MPPT instances) ─
         // Static PATH_MAP may already have set solar_total_w (chargers.0 fast path);
@@ -386,6 +452,7 @@ module.exports = function (app) {
       _tankDSLByInst         = {};
       _tankBWByInst          = {};
       _discoveredPaths       = new Set();
+      _battSocSource         = {};
 
       app.setPluginStatus('Stopped');
     },
