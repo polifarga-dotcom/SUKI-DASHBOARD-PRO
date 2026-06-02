@@ -268,15 +268,15 @@ Deno.serve(async (req: Request) => {
 
     const { data: autoCfgs } = await supabase
       .from('anchor_config')
-      .select('boat_id, auto_trip_enabled, auto_fast_since, alarming, vrm_api_token, vrm_installation_id')
+      .select('boat_id, auto_trip_enabled, auto_fast_since, active, vrm_api_token, vrm_installation_id')
       .eq('auto_trip_enabled', true)
       .not('boat_id', 'is', null);
 
     for (const ac of autoCfgs ?? []) {
       const boatId = ac.boat_id as string;
 
-      // Don't auto-start while the anchor alarm is active
-      if (ac.alarming) {
+      // Don't auto-start while the anchor is actively being held (regardless of alarm state)
+      if (ac.active) {
         if (ac.auto_fast_since) {
           await supabase.from('anchor_config').update({ auto_fast_since: null }).eq('boat_id', boatId);
         }
