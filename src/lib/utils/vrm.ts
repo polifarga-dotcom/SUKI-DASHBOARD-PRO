@@ -30,14 +30,13 @@ const FLUID_TYPE: Record<number, string> = {
 export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	const rows = attrs as DiagAttr[];
 
-	// Debug: log all temperature-related records to understand VRM structure
-	const tempRecords = rows.filter(r =>
-		r.dbusPath?.includes('Temperature') ||
-		r.dbusPath?.includes('Humidity') ||
-		r.dbusPath?.includes('CustomName')
+	// Debug: log ALL records for temperature sensor instances (20-29) to find sensor names
+	const tempSensorRecords = rows.filter(r =>
+		r.Device?.includes('Temperature sensor') ||
+		(r.instance >= 20 && r.instance <= 29 && r.dbusServiceType === 'temperature')
 	);
-	if (tempRecords.length > 0) {
-		console.log('[VRM] Temperature-related records:', JSON.stringify(tempRecords, null, 2));
+	if (tempSensorRecords.length > 0) {
+		console.log('[VRM] ALL temperature sensor records:', JSON.stringify(tempSensorRecords, null, 2));
 	}
 
 	const find    = (path: string) => rows.find(r => r.dbusPath === path);
