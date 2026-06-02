@@ -431,40 +431,36 @@
 	{#if apiReady() && data.mpptsArr.length > 0}
 	<div class="section">
 		<div class="section-title">☀️ Solar Chargers</div>
-		<div class="solar-grid">
+		<div class="solar-list">
 			{#each data.mpptsArr as mppt}
 			{@const barPct = mpptMaxW > 0 ? Math.min(100, (mppt.power_w / mpptMaxW) * 100) : 0}
-			<div class="solar-card">
-				<div class="solar-card-name" title={mppt.name}>{mpptShortName(mppt.name)}</div>
-				<div class="solar-card-power">
-					<div class="power-val" style="color:{mppt.power_w > 0 ? SOLAR_C : 'var(--muted)'}">{fmtW(mppt.power_w)}</div>
-					<div class="power-bar-track">
-						<div class="power-bar-fill" style="width:{barPct}%; background:{SOLAR_C}"></div>
-					</div>
-				</div>
-				<div class="solar-card-details">
-					{#if mppt.pv_v != null}
-					<span class="detail-item"><span class="detail-label">PV:</span> <span class="val-mono">{mppt.pv_v.toFixed(0)}V</span></span>
-					{/if}
-					{#if mppt.state != null}
-					<span class="detail-item">
+			<div class="solar-row">
+				<div class="solar-info">
+					<span class="solar-name" title={mppt.name}>{mpptShortName(mppt.name)}</span>
+					<span class="solar-meta">
+						{#if mppt.state != null}
 						<span class="state-badge" style="background:{mpptStateColor(mppt.state)}20; color:{mpptStateColor(mppt.state)}; border:1px solid {mpptStateColor(mppt.state)}40">
 							{mpptStateLabel(mppt.state)}
 						</span>
+						{/if}
+						{#if mppt.pv_v != null}
+						<span class="meta-item">{mppt.pv_v.toFixed(0)}V</span>
+						{/if}
 					</span>
-					{/if}
 				</div>
-				<div class="solar-card-yields">
-					<div class="yield-item">
-						<span class="yield-label">Today</span>
-						<span class="yield-val">{fmtWh(mppt.yield_today_wh)}</span>
+				<div class="solar-power-section">
+					<div class="power-bar-wrapper">
+						<div class="power-bar-track">
+							<div class="power-bar-fill" style="width:{barPct}%; background:{SOLAR_C}"></div>
+						</div>
+						<span class="power-val" style="color:{mppt.power_w > 0 ? SOLAR_C : 'var(--muted)'}">{fmtW(mppt.power_w)}</span>
 					</div>
-					{#if mppt.yield_total_kwh != null}
-					<div class="yield-item">
-						<span class="yield-label">Total</span>
-						<span class="yield-val">{mppt.yield_total_kwh.toFixed(1)}</span>
+					<div class="solar-yields">
+						<span class="yield-val">{fmtWh(mppt.yield_today_wh)} today</span>
+						{#if mppt.yield_total_kwh != null}
+						<span class="yield-total">{mppt.yield_total_kwh.toFixed(1)} kWh</span>
+						{/if}
 					</div>
-					{/if}
 				</div>
 			</div>
 			{/each}
@@ -723,25 +719,34 @@
 .tank-fill  { height: 100%; border-radius: 3px; transition: width 0.4s; }
 .tank-pct   { font-size: 12px; min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 
-/* ── Solar Chargers Grid (responsive card layout) ─────────── */
-.solar-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-	gap: 10px;
-}
-
-.solar-card {
-	background: var(--card2);
-	border-radius: 8px;
-	padding: 12px;
+/* ── Solar Chargers List (clean, hierarchical) ────────────── */
+.solar-list {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
-	border: 1px solid rgba(255, 255, 255, 0.08);
+	gap: 8px;
 }
 
-.solar-card-name {
-	font-size: 13px;
+.solar-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px;
+	background: rgba(255, 255, 255, 0.02);
+	border-radius: 6px;
+	border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.solar-info {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+	flex: 0 0 140px;
+}
+
+.solar-name {
+	font-size: 12px;
 	font-weight: 600;
 	white-space: nowrap;
 	overflow: hidden;
@@ -749,96 +754,88 @@
 	color: var(--text);
 }
 
-.solar-card-power {
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-}
-
-.power-val {
-	font-weight: 700;
-	font-size: 16px;
-	font-variant-numeric: tabular-nums;
-}
-
-.power-bar-track {
-	height: 8px;
-	background: rgba(255, 255, 255, 0.08);
-	border-radius: 4px;
-	overflow: hidden;
-	width: 100%;
-}
-
-.power-bar-fill {
-	height: 100%;
-	border-radius: 4px;
-	transition: width 0.6s ease;
-}
-
-.solar-card-details {
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-	font-size: 11px;
-}
-
-.detail-item {
+.solar-meta {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	color: var(--muted);
-}
-
-.detail-label {
-	font-weight: 600;
-	color: var(--muted);
-	min-width: 30px;
+	flex-wrap: wrap;
+	font-size: 10px;
 }
 
 .state-badge {
-	padding: 3px 8px;
-	border-radius: 4px;
-	font-size: 10px;
+	padding: 2px 6px;
+	border-radius: 3px;
+	font-size: 9px;
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.2px;
 	white-space: nowrap;
-	display: inline-block;
 }
 
-.val-mono {
-	font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+.meta-item {
+	color: var(--muted);
+	font-size: 10px;
 	font-variant-numeric: tabular-nums;
-	font-size: 11px;
-	font-weight: 500;
 }
 
-.solar-card-yields {
-	display: grid;
-	grid-template-columns: 1fr 1fr;
+.solar-power-section {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	flex: 1;
+	min-width: 0;
+}
+
+.power-bar-wrapper {
+	display: flex;
+	align-items: center;
 	gap: 8px;
-	border-top: 1px solid rgba(255, 255, 255, 0.06);
-	padding-top: 8px;
+	flex: 1;
+	min-width: 100px;
 }
 
-.yield-item {
+.power-bar-track {
+	height: 6px;
+	background: rgba(255, 255, 255, 0.08);
+	border-radius: 3px;
+	overflow: hidden;
+	flex: 1;
+	min-width: 80px;
+}
+
+.power-bar-fill {
+	height: 100%;
+	border-radius: 3px;
+	transition: width 0.6s ease;
+}
+
+.power-val {
+	font-weight: 700;
+	font-size: 13px;
+	font-variant-numeric: tabular-nums;
+	min-width: 55px;
+	text-align: right;
+}
+
+.solar-yields {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
-	text-align: center;
-}
-
-.yield-label {
-	font-size: 10px;
-	color: var(--muted);
-	text-transform: uppercase;
-	letter-spacing: 0.3px;
-	font-weight: 600;
+	text-align: right;
+	flex: 0 0 auto;
+	min-width: 90px;
 }
 
 .yield-val {
-	font-size: 12px;
+	font-size: 11px;
 	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: var(--text);
+}
+
+.yield-total {
+	font-size: 10px;
+	color: var(--muted);
 	font-variant-numeric: tabular-nums;
 }
 
