@@ -265,3 +265,12 @@ export type InReachPoint = {
   device_name: string | null;
   in_emergency: boolean;
 };
+
+export type TemperatureSensor = {
+  id: number;
+  boat_id: string;
+  instance: number;
+  custom_name: string;
+  created_at: string;
+  updated_at: string;
+};
