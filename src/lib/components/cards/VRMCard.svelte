@@ -431,36 +431,47 @@
 	{#if apiReady() && data.mpptsArr.length > 0}
 	<div class="section">
 		<div class="section-title">☀️ Solar Chargers</div>
-		<div class="solar-list">
+		<div class="solar-cards">
 			{#each data.mpptsArr as mppt}
 			{@const barPct = mpptMaxW > 0 ? Math.min(100, (mppt.power_w / mpptMaxW) * 100) : 0}
-			<div class="solar-row">
-				<div class="solar-info">
-					<span class="solar-name" title={mppt.name}>{mpptShortName(mppt.name)}</span>
-					<span class="solar-meta">
+			<div class="solar-card">
+				<!-- Header: Name + State/PV -->
+				<div class="card-header">
+					<div class="card-name" title={mppt.name}>{mpptShortName(mppt.name)}</div>
+					<div class="card-badges">
 						{#if mppt.state != null}
-						<span class="state-badge" style="background:{mpptStateColor(mppt.state)}20; color:{mpptStateColor(mppt.state)}; border:1px solid {mpptStateColor(mppt.state)}40">
+						<span class="state-pill" style="background:{mpptStateColor(mppt.state)}25; color:{mpptStateColor(mppt.state)}">
 							{mpptStateLabel(mppt.state)}
 						</span>
 						{/if}
 						{#if mppt.pv_v != null}
-						<span class="meta-item">{mppt.pv_v.toFixed(0)}V</span>
+						<span class="pv-pill">{mppt.pv_v.toFixed(0)}V</span>
 						{/if}
-					</span>
+					</div>
 				</div>
-				<div class="solar-power-section">
-					<div class="power-bar-wrapper">
+
+				<!-- Power Display -->
+				<div class="card-power">
+					<div class="power-big" style="color:{mppt.power_w > 0 ? SOLAR_C : 'var(--muted)'}">{fmtW(mppt.power_w)}</div>
+					<div class="power-bar">
 						<div class="power-bar-track">
 							<div class="power-bar-fill" style="width:{barPct}%; background:{SOLAR_C}"></div>
 						</div>
-						<span class="power-val" style="color:{mppt.power_w > 0 ? SOLAR_C : 'var(--muted)'}">{fmtW(mppt.power_w)}</span>
 					</div>
-					<div class="solar-yields">
-						<span class="yield-val">{fmtWh(mppt.yield_today_wh)} today</span>
-						{#if mppt.yield_total_kwh != null}
-						<span class="yield-total">{mppt.yield_total_kwh.toFixed(1)} kWh</span>
-						{/if}
+				</div>
+
+				<!-- Yields -->
+				<div class="card-yields">
+					<div class="yield-today">
+						<span class="yield-label">Today</span>
+						<span class="yield-number">{fmtWh(mppt.yield_today_wh)}</span>
 					</div>
+					{#if mppt.yield_total_kwh != null}
+					<div class="yield-total-item">
+						<span class="yield-label">Total</span>
+						<span class="yield-number">{mppt.yield_total_kwh.toFixed(1)}</span>
+					</div>
+					{/if}
 				</div>
 			</div>
 			{/each}
@@ -719,124 +730,135 @@
 .tank-fill  { height: 100%; border-radius: 3px; transition: width 0.4s; }
 .tank-pct   { font-size: 12px; min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 
-/* ── Solar Chargers List (clean, hierarchical) ────────────── */
-.solar-list {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-}
-
-.solar-row {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
+/* ── Solar Chargers Cards (clean 2-column grid) ────────────── */
+.solar-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 	gap: 12px;
-	padding: 10px;
-	background: rgba(255, 255, 255, 0.02);
-	border-radius: 6px;
-	border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.solar-info {
+.solar-card {
+	background: var(--card2);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 8px;
+	padding: 14px;
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
-	min-width: 0;
-	flex: 0 0 140px;
+	gap: 12px;
 }
 
-.solar-name {
-	font-size: 12px;
-	font-weight: 600;
+/* Card Header: Name + State/PV Badges */
+.card-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 10px;
+}
+
+.card-name {
+	font-size: 14px;
+	font-weight: 700;
+	color: var(--text);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	color: var(--text);
+	flex: 1;
 }
 
-.solar-meta {
+.card-badges {
 	display: flex;
-	align-items: center;
 	gap: 6px;
 	flex-wrap: wrap;
-	font-size: 10px;
+	justify-content: flex-end;
+	flex-shrink: 0;
 }
 
-.state-badge {
-	padding: 2px 6px;
-	border-radius: 3px;
+.state-pill {
+	padding: 3px 8px;
+	border-radius: 4px;
 	font-size: 9px;
-	font-weight: 600;
+	font-weight: 700;
 	text-transform: uppercase;
-	letter-spacing: 0.2px;
+	letter-spacing: 0.3px;
 	white-space: nowrap;
+	border: 1px solid currentColor;
+	border-opacity: 0.3;
 }
 
-.meta-item {
-	color: var(--muted);
+.pv-pill {
+	padding: 3px 8px;
+	border-radius: 4px;
 	font-size: 10px;
+	font-weight: 600;
+	color: var(--muted);
+	background: rgba(255, 255, 255, 0.06);
+	white-space: nowrap;
 	font-variant-numeric: tabular-nums;
 }
 
-.solar-power-section {
+/* Power Section: Big number + Bar */
+.card-power {
 	display: flex;
-	align-items: center;
-	gap: 16px;
-	flex: 1;
-	min-width: 0;
+	flex-direction: column;
+	gap: 8px;
 }
 
-.power-bar-wrapper {
+.power-big {
+	font-size: 28px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	line-height: 1;
+}
+
+.power-bar {
 	display: flex;
-	align-items: center;
-	gap: 8px;
-	flex: 1;
-	min-width: 100px;
+	flex-direction: column;
+	gap: 4px;
 }
 
 .power-bar-track {
-	height: 6px;
+	height: 8px;
 	background: rgba(255, 255, 255, 0.08);
-	border-radius: 3px;
+	border-radius: 4px;
 	overflow: hidden;
-	flex: 1;
-	min-width: 80px;
+	width: 100%;
 }
 
 .power-bar-fill {
 	height: 100%;
-	border-radius: 3px;
+	border-radius: 4px;
 	transition: width 0.6s ease;
 }
 
-.power-val {
-	font-weight: 700;
-	font-size: 13px;
-	font-variant-numeric: tabular-nums;
-	min-width: 55px;
-	text-align: right;
+/* Yields: Today + Total */
+.card-yields {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+	border-top: 1px solid rgba(255, 255, 255, 0.06);
+	padding-top: 10px;
 }
 
-.solar-yields {
+.yield-today,
+.yield-total-item {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
-	text-align: right;
-	flex: 0 0 auto;
-	min-width: 90px;
+	gap: 3px;
 }
 
-.yield-val {
-	font-size: 11px;
-	font-weight: 600;
-	font-variant-numeric: tabular-nums;
-	color: var(--text);
-}
-
-.yield-total {
+.yield-label {
 	font-size: 10px;
 	color: var(--muted);
+	text-transform: uppercase;
+	letter-spacing: 0.3px;
+	font-weight: 600;
+}
+
+.yield-number {
+	font-size: 13px;
+	font-weight: 700;
 	font-variant-numeric: tabular-nums;
+	color: var(--text);
 }
 
 /* ── Temperatures ────────────────────────────────────────── */
