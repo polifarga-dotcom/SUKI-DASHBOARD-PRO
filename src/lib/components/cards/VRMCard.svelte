@@ -3,11 +3,12 @@
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { supabase } from '$lib/supabase.js';
 	import { currentBoat } from '$lib/stores/boat.js';
+	import { vrmData as vrmDataStore, vrmError as vrmErrorStore } from '$lib/stores/vrm.js';
 	import { parseVRMDiagnostics, MPPT_STATE } from '$lib/utils/vrm.js';
 	import type { VRMData, TemperatureSensor } from '$lib/types.js';
 
-	let data         = $state<VRMData | null>(null);
-	let error        = $state('');
+	let data         = $derived($vrmDataStore);
+	let error        = $derived($vrmErrorStore);
 	let now          = $state(Math.floor(Date.now() / 1000));
 	let lastFetchAt  = $state<number | null>(null);  // epoch-s of our last successful API call
 	let lastKnownTs  = $state<number | null>(null);  // last_ts we've confirmed from the API
@@ -66,12 +67,12 @@
 					}));
 				}
 			}
-			if (fnErr) { error = fnErr.message; schedule(30_000); return; }
+			if (fnErr) { vrmErrorStore.set(fnErr.message); schedule(30_000); return; }
 
 			const parsed = parseVRMDiagnostics(json?.records ?? []);
-			data        = parsed;
+			vrmDataStore.set(parsed);
 			lastFetchAt = Math.floor(Date.now() / 1000);
-			error       = '';
+			vrmErrorStore.set('');
 
 			const newTs = parsed.last_ts;
 
@@ -89,7 +90,7 @@
 				schedule(5_000);
 			}
 		} catch (e) {
-			error = String(e);
+			vrmErrorStore.set(String(e));
 			schedule(30_000);
 		} finally {
 			fetching = false;

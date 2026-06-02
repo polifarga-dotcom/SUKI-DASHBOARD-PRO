@@ -1,47 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import type { Telemetry } from '$lib/types.js';
-	import type { VRMData } from '$lib/types.js';
 	import { fmtW, joule2kwh } from '$lib/utils/units.js';
-	import { supabase } from '$lib/supabase.js';
-	import { anchorConfig } from '$lib/stores/anchor.js';
-	import { currentBoat } from '$lib/stores/boat.js';
-	import { parseVRMDiagnostics, MPPT_STATE } from '$lib/utils/vrm.js';
+	import { vrmData, vrmError } from '$lib/stores/vrm.js';
+	import { MPPT_STATE } from '$lib/utils/vrm.js';
 
 	interface Props { t: Telemetry | null; }
 	let { t }: Props = $props();
-
-	// ── VRM Data ──────────────────────────────────────────────────────────────────
-	let vrmData = $state<VRMData | null>(null);
-	let vrmError = $state('');
-	const cfg = $derived($anchorConfig);
-	function apiReady() { return !!(cfg?.vrm_api_token && cfg?.vrm_installation_id); }
-
-	async function fetchVRM() {
-		if (!apiReady()) return;
-		const boatId = $currentBoat?.id;
-		let { data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy', {
-			body: { boat_id: boatId },
-		});
-		if (fnErr) {
-			const { error: refreshErr } = await supabase.auth.refreshSession();
-			if (!refreshErr) {
-				({ data: json, error: fnErr } = await supabase.functions.invoke('vrm-proxy', {
-					body: { boat_id: boatId },
-				}));
-			}
-		}
-		if (fnErr) { vrmError = fnErr.message; return; }
-		const parsed = parseVRMDiagnostics(json?.records ?? []);
-		vrmData = parsed;
-		vrmError = '';
-	}
-
-	onMount(() => {
-		if (apiReady()) fetchVRM();
-		const interval = setInterval(fetchVRM, 60000);
-		return () => clearInterval(interval);
-	});
 
 	// ── Colors & Helpers ──────────────────────────────────────────────────────────
 	const SOLAR_C = '#f5c842';
@@ -65,7 +29,7 @@
 	}
 	function fmtC(v: number) { return `${v.toFixed(1)} °C`; }
 
-	const mpptMaxW = $derived(vrmData ? Math.max(100, ...vrmData.mpptsArr.map(m => m.power_w)) : 100);
+	const mpptMaxW = $derived($vrmData ? Math.max(100, ...$vrmData.mpptsArr.map(m => m.power_w)) : 100);
 
 	// ── Total power (from plugin or server.py) ────────────────────────────────────
 	const total = $derived(t?.solar_total_w ?? null);
@@ -115,10 +79,10 @@
 		</div>
 	</div>
 
-	{#if vrmData?.mpptsArr.length}
+	{#if $vrmData?.mpptsArr.length}
 		<!-- VRM Solar Chargers: Horizontal List Layout -->
 		<div class="solar-items">
-			{#each vrmData.mpptsArr as mppt}
+			{#each $vrmData.mpptsArr as mppt}
 				<div class="solar-item">
 					<!-- Left: Name + Badges -->
 					<div class="item-left">
