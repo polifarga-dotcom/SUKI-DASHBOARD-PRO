@@ -661,9 +661,9 @@
 .tank-pct   { font-size: 12px; min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ── Temperatures ────────────────────────────────────────── */
-.temp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 6px; }
+.temp-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
 .temp-cell { background: var(--card2); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
-.temp-name { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.temp-name { font-size: 10px; color: var(--muted); word-break: break-word; }
 .temp-val  { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .temp-hum  { font-size: 10px; color: var(--muted); }
 
