@@ -30,14 +30,6 @@ const FLUID_TYPE: Record<number, string> = {
 export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	const rows = attrs as DiagAttr[];
 
-	// Debug: log ALL records for temperature sensor instances (20-29) to find sensor names
-	const tempSensorRecords = rows.filter(r =>
-		r.Device?.includes('Temperature sensor') ||
-		(r.instance >= 20 && r.instance <= 29 && r.dbusServiceType === 'temperature')
-	);
-	if (tempSensorRecords.length > 0) {
-		console.log('[VRM] ALL temperature sensor records:', JSON.stringify(tempSensorRecords, null, 2));
-	}
 
 	const find    = (path: string) => rows.find(r => r.dbusPath === path);
 	const findAll = (path: string) => rows.filter(r => r.dbusPath === path);
@@ -170,6 +162,15 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	const load_w = acL.some(v => v > 0) ? acL.reduce((s, v) => s + v, 0) : (acOutP ?? null);
 
 	// ── Temperature & Humidity Sensors ───────────────────────────────────────
+	// Map instance IDs to human-readable sensor names (SUKI-specific)
+	const TEMP_SENSOR_NAMES: Record<number, string> = {
+		20: 'Salon',
+		21: 'Fridge',
+		22: 'Tech Room',
+		23: 'AMA SB',
+		29: 'AMA Aft',
+	};
+
 	const tempMap = new Map<string, VRMTempSensor>();
 
 	rows.forEach(r => {
@@ -179,7 +180,11 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 
 		const key = `${r.Device}__${r.instance}`;
 		const entry: VRMTempSensor = tempMap.get(key) ?? {
-			name: deviceName(r.Device, r.instance, `Sensor ${r.instance}`, r.description),
+			// Priority: SUKI-specific mapping > CustomName > description > fallback
+			name: TEMP_SENSOR_NAMES[r.instance] ??
+				  customNames.get(key) ??
+				  (r.description && r.description !== 'Temperature' && r.description !== 'Humidity' ? r.description : null) ??
+				  `Sensor ${r.instance}`,
 			instance: r.instance,
 			celsius: 0,
 			humidity: null,
