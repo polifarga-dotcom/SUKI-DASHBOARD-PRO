@@ -17,14 +17,14 @@ function num(v: string | number | null | undefined): number | null {
 
 // MPPT charger state labels
 export const MPPT_STATE: Record<number, string> = {
-	0: 'Aus', 2: 'Fehler', 3: 'Bulk', 4: 'Absorb.', 5: 'Float',
+	0: 'Off', 2: 'Error', 3: 'Bulk', 4: 'Absorb.', 5: 'Float',
 	7: 'Equalize', 252: 'Hub-1', 255: 'N/A',
 };
 
 // Tank fluid type → display name
 const FLUID_TYPE: Record<number, string> = {
-	0: 'Kraftstoff', 1: 'Frischwasser', 2: 'Abwasser',
-	3: 'Live Well', 4: 'Öl', 5: 'Schwarzwasser', 6: 'Diesel',
+	0: 'Fuel', 1: 'Fresh water', 2: 'Wastewater',
+	3: 'Live Well', 4: 'Oil', 5: 'Blackwater', 6: 'Diesel',
 };
 
 export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
@@ -75,7 +75,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 
 		const key = `${r.Device}__${r.instance}`;
 		const entry: VRMBattery = battMap.get(key) ?? {
-			name: deviceName(r.Device, r.instance, `Batterie ${r.instance}`),
+			name: deviceName(r.Device, r.instance, `Battery ${r.instance}`),
 			instance: r.instance,
 			soc: null, v: null, a: null, w: null,
 			temp_c: null, time_to_go_s: null, consumed_ah: null,

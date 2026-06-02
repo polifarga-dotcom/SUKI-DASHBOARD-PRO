@@ -12,7 +12,7 @@
 		anc.alarming ? 'var(--red)' : 'var(--green)'
 	);
 	const anchLabel = $derived(
-		!anc?.active ? 'ANKER' :
+		!anc?.active ? 'ANCHOR' :
 		anc.alarming ? 'ALARM' : 'OK'
 	);
 
@@ -58,16 +58,16 @@
 	const engLabel = $derived(
 		t?.eng_rpm != null && t.eng_rpm > 100
 			? t.eng_rpm.toFixed(0) + ' rpm'
-			: 'AUS'
+			: 'OFF'
 	);
 
 	const items = $derived([
-		{ label: 'ANKER', val: anchLabel,  color: anchColor,     title: 'Anker' },
-		{ label: 'BATT',  val: battLabel,  color: battColor,     title: 'Batterie' },
-		{ label: 'RIG',   val: rigLabel(), color: rigColorVal(), title: 'Rigg' },
-		{ label: 'WIND',  val: windLabel,  color: windColor(),   title: 'Wind' },
-		{ label: 'DRUCK', val: pressLabel, color: pressColor,    title: 'Luftdruck' },
-		{ label: 'MOTOR', val: engLabel,   color: engColor(),    title: 'Motor' },
+		{ label: 'ANCHOR', val: anchLabel,  color: anchColor,     title: 'Anchor' },
+		{ label: 'BATT',   val: battLabel,  color: battColor,     title: 'Battery' },
+		{ label: 'RIG',    val: rigLabel(), color: rigColorVal(), title: 'Rigging' },
+		{ label: 'WIND',   val: windLabel,  color: windColor(),   title: 'Wind' },
+		{ label: 'PRESS',  val: pressLabel, color: pressColor,    title: 'Pressure' },
+		{ label: 'ENGINE', val: engLabel,   color: engColor(),    title: 'Engine' },
 	]);
 </script>
 
