@@ -84,17 +84,45 @@
 		<div class="solar-items">
 			{#each $vrmData.mpptsArr as mppt}
 				<div class="solar-item">
-					<!-- Left: Name + Badges -->
+					<!-- Left: Name + State + Error -->
 					<div class="item-left">
 						<div class="item-name">{mpptShortName(mppt.name)}</div>
 						<div class="item-badges">
 							<span class="state-badge" style="--state-color: {mpptStateColor(mppt.state)}">
 								{mpptStateLabel(mppt.state)}
 							</span>
-							{#if mppt.pv_v != null}
-								<span class="pv-val">{mppt.pv_v.toFixed(1)}V</span>
+							{#if mppt.error_code != null && mppt.error_code > 0}
+								<span class="error-badge">Err {mppt.error_code}</span>
 							{/if}
 						</div>
+						<!-- PV Input Info -->
+						{#if mppt.pv_v != null || mppt.pv_i != null}
+							<div class="info-row">
+								{#if mppt.pv_v != null}
+									<span class="info-label">PV</span>
+									<span class="info-val">{mppt.pv_v.toFixed(1)}V</span>
+								{/if}
+								{#if mppt.pv_i != null}
+									<span class="info-val">{mppt.pv_i.toFixed(1)}A</span>
+								{/if}
+							</div>
+						{/if}
+						<!-- Battery & Temperature -->
+						{#if mppt.batt_v != null || mppt.temp_c != null}
+							<div class="info-row">
+								{#if mppt.batt_v != null}
+									<span class="info-label">B</span>
+									<span class="info-val">{mppt.batt_v.toFixed(1)}V</span>
+								{/if}
+								{#if mppt.batt_i != null}
+									<span class="info-val">{mppt.batt_i.toFixed(1)}A</span>
+								{/if}
+								{#if mppt.temp_c != null}
+									<span class="info-label">T</span>
+									<span class="info-val">{mppt.temp_c.toFixed(0)}°</span>
+								{/if}
+							</div>
+						{/if}
 					</div>
 					<!-- Middle: Power + Bar -->
 					<div class="item-power">
@@ -262,9 +290,31 @@
 		color: var(--surface);
 		font-weight: 600;
 	}
-	.pv-val {
+	.error-badge {
+		font-size: 9px;
+		padding: 2px 4px;
+		border-radius: 2px;
+		background: var(--red);
+		color: var(--surface);
+		font-weight: 600;
+	}
+
+	.info-row {
+		display: flex;
+		gap: 4px;
 		font-size: 10px;
+		margin-top: 2px;
+		align-items: baseline;
+	}
+	.info-label {
 		color: var(--muted);
+		font-weight: 500;
+		min-width: 12px;
+	}
+	.info-val {
+		color: var(--text);
+		font-weight: 600;
+		white-space: nowrap;
 	}
 
 	.item-power {

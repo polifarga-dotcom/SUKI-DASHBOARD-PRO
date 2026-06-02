@@ -96,7 +96,18 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	// Built BEFORE filtering batteries so we can cross-reference and exclude
 	// MPPT charger devices from the battery list (they share /Dc/0/* paths).
 	const mpptMap = new Map<string, VRMMppt>();
-	const mpptPaths = ['/Yield/Power', '/Yield/User', '/Yield/System', '/Pv/V', '/State'];
+	const mpptPaths = [
+		// Output (battery)
+		'/Yield/Power', '/Dc/0/Voltage', '/Dc/0/Current', '/Dc/0/Power',
+		// Input (solar)
+		'/Pv/V', '/Pv/I', '/Pv/P',
+		// Energy
+		'/Yield/User', '/Yield/System',
+		// State & diagnostics
+		'/State', '/MppOperatingMode', '/ErrorCode', '/Dc/0/Temperature',
+		// Metadata
+		'/FirmwareVersion', '/SerialNumber',
+	];
 
 	rows.forEach(r => {
 		if (!mpptPaths.includes(r.dbusPath)) return;
@@ -106,15 +117,38 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		const entry: VRMMppt = mpptMap.get(key) ?? {
 			name: deviceName(r.Device, r.instance, `MPPT ${r.instance}`),
 			instance: r.instance,
-			power_w: 0, yield_today_wh: 0, yield_total_kwh: null,
-			pv_v: null, state: null,
+			// Output
+			power_w: 0, batt_v: null, batt_i: null, batt_p: null,
+			// Input
+			pv_v: null, pv_i: null, pv_p: null,
+			// Energy
+			yield_today_wh: 0, yield_total_kwh: null,
+			// State & diagnostics
+			state: null, mppt_mode: null, error_code: null, temp_c: null,
+			// Metadata
+			firmware: null, serial: null,
 		};
 
+		// Output (battery)
 		if (r.dbusPath === '/Yield/Power')       entry.power_w         = v ?? 0;
+		else if (r.dbusPath === '/Dc/0/Voltage') entry.batt_v          = v;
+		else if (r.dbusPath === '/Dc/0/Current') entry.batt_i          = v;
+		else if (r.dbusPath === '/Dc/0/Power')   entry.batt_p          = v;
+		// Input (solar)
+		else if (r.dbusPath === '/Pv/V')         entry.pv_v            = v;
+		else if (r.dbusPath === '/Pv/I')         entry.pv_i            = v;
+		else if (r.dbusPath === '/Pv/P')         entry.pv_p            = v;
+		// Energy
 		else if (r.dbusPath === '/Yield/User')   entry.yield_today_wh  = (v ?? 0) * 1000;
 		else if (r.dbusPath === '/Yield/System') entry.yield_total_kwh = v;
-		else if (r.dbusPath === '/Pv/V')         entry.pv_v            = v;
+		// State & diagnostics
 		else if (r.dbusPath === '/State')        entry.state           = v != null ? Math.round(v) : null;
+		else if (r.dbusPath === '/MppOperatingMode') entry.mppt_mode   = v != null ? Math.round(v) : null;
+		else if (r.dbusPath === '/ErrorCode')    entry.error_code      = v != null ? Math.round(v) : null;
+		else if (r.dbusPath === '/Dc/0/Temperature') entry.temp_c      = v;
+		// Metadata
+		else if (r.dbusPath === '/FirmwareVersion') entry.firmware = String(r.rawValue);
+		else if (r.dbusPath === '/SerialNumber')    entry.serial    = String(r.rawValue);
 
 		mpptMap.set(key, entry);
 	});

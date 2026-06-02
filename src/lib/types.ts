@@ -116,11 +116,26 @@ export type BoatMember = {
 export type VRMMppt = {
 	name: string;
 	instance: number;
-	power_w: number;
-	yield_today_wh: number;
-	yield_total_kwh: number | null;
-	pv_v: number | null;
-	state: number | null;        // 0=off 3=bulk 4=absorption 5=float 7=equalize
+	// Output (battery side)
+	power_w: number;             // Output power W
+	batt_v: number | null;       // Battery voltage V
+	batt_i: number | null;       // Battery current A
+	batt_p: number | null;       // Battery power W
+	// Input (solar side)
+	pv_v: number | null;         // PV voltage V
+	pv_i: number | null;         // PV current A
+	pv_p: number | null;         // PV power W
+	// Energy
+	yield_today_wh: number;      // Daily yield Wh (user resettable)
+	yield_total_kwh: number | null; // Total yield kWh (system)
+	// State & diagnostics
+	state: number | null;        // 0=off 2=fault 3=bulk 4=absorb 5=float 7=equalize 252=hub-1
+	mppt_mode: number | null;    // MPPT operating mode
+	error_code: number | null;   // Error/warning code
+	temp_c: number | null;       // Charger temperature °C
+	// Metadata
+	firmware: string | null;     // Firmware version
+	serial: string | null;       // Serial number
 };
 
 export type VRMBattery = {
