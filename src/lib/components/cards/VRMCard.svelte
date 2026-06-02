@@ -4,7 +4,7 @@
 	import { supabase } from '$lib/supabase.js';
 	import { currentBoat } from '$lib/stores/boat.js';
 	import { parseVRMDiagnostics, MPPT_STATE } from '$lib/utils/vrm.js';
-	import type { VRMData } from '$lib/types.js';
+	import type { VRMData, TemperatureSensor } from '$lib/types.js';
 
 	let data         = $state<VRMData | null>(null);
 	let error        = $state('');
@@ -12,6 +12,7 @@
 	let lastFetchAt  = $state<number | null>(null);  // epoch-s of our last successful API call
 	let lastKnownTs  = $state<number | null>(null);  // last_ts we've confirmed from the API
 	let polling      = $state(false);                // true = hot-window (waiting for new upload)
+	let sensorNames  = $state<Record<number, string>>({});  // Load custom sensor names
 
 	let nextTimer: ReturnType<typeof setTimeout> | null = null;
 	let tickTimer:  ReturnType<typeof setInterval>;
@@ -19,6 +20,25 @@
 
 	const cfg = $derived($anchorConfig);
 	function apiReady() { return !!(cfg?.vrm_api_token && cfg?.vrm_installation_id); }
+
+	// Load custom temperature sensor names from database
+	async function loadSensorNames() {
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
+		const { data, error } = await supabase
+			.from('temperature_sensors')
+			.select('instance, custom_name')
+			.eq('boat_id', boatId);
+		if (error) {
+			console.warn('[VRM] Failed to load sensor names:', error);
+			return;
+		}
+		// Build a map of instance → custom_name
+		sensorNames = {};
+		data?.forEach(row => {
+			sensorNames[row.instance] = row.custom_name;
+		});
+	}
 
 	// Schedule the next fetch after delayMs — self-scheduling, no setInterval needed
 	function schedule(delayMs: number) {
@@ -75,6 +95,13 @@
 			fetching = false;
 		}
 	}
+
+	// Load sensor names when boat changes
+	$effect(() => {
+		if ($currentBoat?.id) {
+			loadSensorNames();
+		}
+	});
 
 	// Start self-scheduling loop when credentials are ready
 	$effect(() => {
@@ -460,7 +487,7 @@
 			{#each data.temperatures as t}
 			<div class="temp-cell">
 				<div class="temp-header">
-					<div class="temp-name">{t.name}</div>
+					<div class="temp-name">{sensorNames[t.instance] ?? t.name}</div>
 					<div class="temp-val" style="color:{tempColor(t.celsius)}">{fmtC(t.celsius)}</div>
 				</div>
 				<div class="temp-bar-track">
