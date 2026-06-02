@@ -431,55 +431,39 @@
 	{#if apiReady() && data.mpptsArr.length > 0}
 	<div class="section">
 		<div class="section-title">☀️ Solar Chargers</div>
-		<div class="solar-table">
-			<!-- Header Row -->
-			<div class="solar-row solar-header">
-				<div class="solar-col solar-name">Charger</div>
-				<div class="solar-col solar-power">Power</div>
-				<div class="solar-col solar-pv">PV V</div>
-				<div class="solar-col solar-state">State</div>
-				<div class="solar-col solar-yield">Today</div>
-				<div class="solar-col solar-total">Total</div>
-			</div>
-			<!-- Data Rows -->
+		<div class="solar-grid">
 			{#each data.mpptsArr as mppt}
 			{@const barPct = mpptMaxW > 0 ? Math.min(100, (mppt.power_w / mpptMaxW) * 100) : 0}
-			<div class="solar-row">
-				<div class="solar-col solar-name">
-					<span title={mppt.name}>{mpptShortName(mppt.name)}</span>
-				</div>
-				<div class="solar-col solar-power">
-					<div class="power-bar-wrapper">
-						<span class="power-val" style="color:{mppt.power_w > 0 ? SOLAR_C : 'var(--muted)'}">{fmtW(mppt.power_w)}</span>
-						<div class="power-bar-track">
-							<div class="power-bar-fill" style="width:{barPct}%; background:{SOLAR_C}"></div>
-						</div>
+			<div class="solar-card">
+				<div class="solar-card-name" title={mppt.name}>{mpptShortName(mppt.name)}</div>
+				<div class="solar-card-power">
+					<div class="power-val" style="color:{mppt.power_w > 0 ? SOLAR_C : 'var(--muted)'}">{fmtW(mppt.power_w)}</div>
+					<div class="power-bar-track">
+						<div class="power-bar-fill" style="width:{barPct}%; background:{SOLAR_C}"></div>
 					</div>
 				</div>
-				<div class="solar-col solar-pv">
+				<div class="solar-card-details">
 					{#if mppt.pv_v != null}
-					<span class="val-mono" title="Panel voltage">{mppt.pv_v.toFixed(0)}V</span>
-					{:else}
-					<span class="c-muted">—</span>
+					<span class="detail-item"><span class="detail-label">PV:</span> <span class="val-mono">{mppt.pv_v.toFixed(0)}V</span></span>
 					{/if}
-				</div>
-				<div class="solar-col solar-state">
 					{#if mppt.state != null}
-					<span class="state-badge" style="background:{mpptStateColor(mppt.state)}20; color:{mpptStateColor(mppt.state)}; border:1px solid {mpptStateColor(mppt.state)}40">
-						{mpptStateLabel(mppt.state)}
+					<span class="detail-item">
+						<span class="state-badge" style="background:{mpptStateColor(mppt.state)}20; color:{mpptStateColor(mppt.state)}; border:1px solid {mpptStateColor(mppt.state)}40">
+							{mpptStateLabel(mppt.state)}
+						</span>
 					</span>
-					{:else}
-					<span class="c-muted">—</span>
 					{/if}
 				</div>
-				<div class="solar-col solar-yield">
-					<span class="val-mono">{fmtWh(mppt.yield_today_wh)}</span>
-				</div>
-				<div class="solar-col solar-total">
+				<div class="solar-card-yields">
+					<div class="yield-item">
+						<span class="yield-label">Today</span>
+						<span class="yield-val">{fmtWh(mppt.yield_today_wh)}</span>
+					</div>
 					{#if mppt.yield_total_kwh != null}
-					<span class="val-mono">{mppt.yield_total_kwh.toFixed(1)}</span>
-					{:else}
-					<span class="c-muted">—</span>
+					<div class="yield-item">
+						<span class="yield-label">Total</span>
+						<span class="yield-val">{mppt.yield_total_kwh.toFixed(1)}</span>
+					</div>
 					{/if}
 				</div>
 			</div>
@@ -739,98 +723,123 @@
 .tank-fill  { height: 100%; border-radius: 3px; transition: width 0.4s; }
 .tank-pct   { font-size: 12px; min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 
-/* ── Solar Table (fancy MPPT breakdown) ───────────────────── */
-.solar-table {
+/* ── Solar Chargers Grid (responsive card layout) ─────────── */
+.solar-grid {
 	display: grid;
-	grid-template-columns: 140px 100px 60px 75px 75px 75px;
-	gap: 1px;
-	background: rgba(255, 255, 255, 0.03);
-	border-radius: 6px;
-	overflow: hidden;
-	font-size: 12px;
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	gap: 10px;
 }
 
-.solar-row {
-	display: contents;
-}
-
-.solar-header {
-	font-weight: 600;
-	color: var(--muted);
-	text-transform: uppercase;
-	letter-spacing: 0.4px;
-	font-size: 10px;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.solar-col {
-	background: rgba(255, 255, 255, 0.02);
-	padding: 10px 8px;
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	overflow: hidden;
-}
-
-.solar-header .solar-col {
-	background: rgba(255, 255, 255, 0.04);
-	padding: 8px 8px;
-	font-weight: 700;
-}
-
-.solar-name { flex-direction: column; align-items: flex-start; gap: 0; font-weight: 500; }
-.solar-power { flex-direction: column; align-items: stretch; gap: 4px; }
-.solar-pv { justify-content: center; }
-.solar-state { justify-content: center; }
-.solar-yield { justify-content: flex-end; }
-.solar-total { justify-content: flex-end; }
-
-.power-bar-wrapper {
+.solar-card {
+	background: var(--card2);
+	border-radius: 8px;
+	padding: 12px;
 	display: flex;
 	flex-direction: column;
-	gap: 3px;
-	width: 100%;
+	gap: 10px;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.solar-card-name {
+	font-size: 13px;
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--text);
+}
+
+.solar-card-power {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
 }
 
 .power-val {
-	font-weight: 600;
+	font-weight: 700;
+	font-size: 16px;
 	font-variant-numeric: tabular-nums;
-	font-size: 12px;
 }
 
 .power-bar-track {
-	height: 6px;
+	height: 8px;
 	background: rgba(255, 255, 255, 0.08);
-	border-radius: 3px;
+	border-radius: 4px;
 	overflow: hidden;
 	width: 100%;
 }
 
 .power-bar-fill {
 	height: 100%;
-	border-radius: 3px;
+	border-radius: 4px;
 	transition: width 0.6s ease;
 }
 
+.solar-card-details {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	font-size: 11px;
+}
+
+.detail-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--muted);
+}
+
+.detail-label {
+	font-weight: 600;
+	color: var(--muted);
+	min-width: 30px;
+}
+
 .state-badge {
-	padding: 2px 6px;
+	padding: 3px 8px;
 	border-radius: 4px;
 	font-size: 10px;
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.2px;
 	white-space: nowrap;
+	display: inline-block;
 }
 
 .val-mono {
 	font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
 	font-variant-numeric: tabular-nums;
 	font-size: 11px;
+	font-weight: 500;
 }
 
-/* Alternate row backgrounds for readability */
-.solar-row:nth-child(odd) .solar-col {
-	background: rgba(255, 255, 255, 0.025);
+.solar-card-yields {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+	border-top: 1px solid rgba(255, 255, 255, 0.06);
+	padding-top: 8px;
+}
+
+.yield-item {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	text-align: center;
+}
+
+.yield-label {
+	font-size: 10px;
+	color: var(--muted);
+	text-transform: uppercase;
+	letter-spacing: 0.3px;
+	font-weight: 600;
+}
+
+.yield-val {
+	font-size: 12px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
 }
 
 /* ── Temperatures ────────────────────────────────────────── */
