@@ -282,7 +282,8 @@
 	<div class="vflow">
 
 		<!-- SOURCE BOX: Solar (full width), or Shore when no solar -->
-		{#if hasSolar}
+		<!-- ONLY show Solar if VRM is connected (apiReady) -->
+		{#if apiReady() && hasSolar}
 		<div class="vf-source vf-solar-src">
 			<div class="vf-src-top">
 				<div class="vf-src-lbl">
@@ -425,33 +426,61 @@
 	</div><!-- /vflow -->
 
 	<!-- ══════════════════════════════════════════════════════════
-	     MPPT LADEREGLER — individual chargers with power bars
-	     (MPPT pills already shown in the solar source box above;
-	      this section shows the detailed per-charger breakdown)
+	     SOLAR CHARGERS — Detailed MPPT breakdown (VRM only)
 	═══════════════════════════════════════════════════════════════ -->
-	{#if data.mpptsArr.length > 0}
+	{#if apiReady() && data.mpptsArr.length > 0}
 	<div class="section">
-		<div class="section-title">MPPT Chargers</div>
-		<div class="mppt-list">
+		<div class="section-title">☀️ Solar Chargers</div>
+		<div class="solar-table">
+			<!-- Header Row -->
+			<div class="solar-row solar-header">
+				<div class="solar-col solar-name">Charger</div>
+				<div class="solar-col solar-power">Power</div>
+				<div class="solar-col solar-pv">PV V</div>
+				<div class="solar-col solar-state">State</div>
+				<div class="solar-col solar-yield">Today</div>
+				<div class="solar-col solar-total">Total</div>
+			</div>
+			<!-- Data Rows -->
 			{#each data.mpptsArr as mppt}
 			{@const barPct = mpptMaxW > 0 ? Math.min(100, (mppt.power_w / mpptMaxW) * 100) : 0}
-			<div class="mppt-row">
-				<div class="mppt-head">
-					<span class="mppt-name">{mpptShortName(mppt.name)}</span>
-					<div class="mppt-nums">
-						<span class="mppt-w" style={mppt.power_w > 0 ? `color:${SOLAR_C}` : ''}>{fmtW(mppt.power_w)}</span>
-						<span class="mppt-wh c-muted">{fmtWh(mppt.yield_today_wh)}</span>
+			<div class="solar-row">
+				<div class="solar-col solar-name">
+					<span title={mppt.name}>{mpptShortName(mppt.name)}</span>
+				</div>
+				<div class="solar-col solar-power">
+					<div class="power-bar-wrapper">
+						<span class="power-val" style="color:{mppt.power_w > 0 ? SOLAR_C : 'var(--muted)'}">{fmtW(mppt.power_w)}</span>
+						<div class="power-bar-track">
+							<div class="power-bar-fill" style="width:{barPct}%; background:{SOLAR_C}"></div>
+						</div>
 					</div>
 				</div>
-				<div class="mppt-bar-track">
-					<div class="mppt-bar-fill" style="width:{barPct}%; background:{SOLAR_C}70"></div>
-				</div>
-				<div class="mppt-meta">
-					{#if mppt.state != null}
-					<span class="mppt-state" style="color:{mpptStateColor(mppt.state)}">{mpptStateLabel(mppt.state)}</span>
+				<div class="solar-col solar-pv">
+					{#if mppt.pv_v != null}
+					<span class="val-mono" title="Panel voltage">{mppt.pv_v.toFixed(0)}V</span>
+					{:else}
+					<span class="c-muted">—</span>
 					{/if}
-					{#if mppt.pv_v != null}<span class="c-muted mppt-pv">{mppt.pv_v.toFixed(0)} V PV</span>{/if}
-					{#if mppt.yield_total_kwh != null}<span class="c-muted mppt-pv">{mppt.yield_total_kwh.toFixed(0)} kWh total</span>{/if}
+				</div>
+				<div class="solar-col solar-state">
+					{#if mppt.state != null}
+					<span class="state-badge" style="background:{mpptStateColor(mppt.state)}20; color:{mpptStateColor(mppt.state)}; border:1px solid {mpptStateColor(mppt.state)}40">
+						{mpptStateLabel(mppt.state)}
+					</span>
+					{:else}
+					<span class="c-muted">—</span>
+					{/if}
+				</div>
+				<div class="solar-col solar-yield">
+					<span class="val-mono">{fmtWh(mppt.yield_today_wh)}</span>
+				</div>
+				<div class="solar-col solar-total">
+					{#if mppt.yield_total_kwh != null}
+					<span class="val-mono">{mppt.yield_total_kwh.toFixed(1)}</span>
+					{:else}
+					<span class="c-muted">—</span>
+					{/if}
 				</div>
 			</div>
 			{/each}
@@ -709,6 +738,100 @@
 .tank-track { flex: 1; height: 6px; background: var(--card2); border-radius: 3px; overflow: hidden; }
 .tank-fill  { height: 100%; border-radius: 3px; transition: width 0.4s; }
 .tank-pct   { font-size: 12px; min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Solar Table (fancy MPPT breakdown) ───────────────────── */
+.solar-table {
+	display: grid;
+	grid-template-columns: 140px 100px 60px 75px 75px 75px;
+	gap: 1px;
+	background: rgba(255, 255, 255, 0.03);
+	border-radius: 6px;
+	overflow: hidden;
+	font-size: 12px;
+}
+
+.solar-row {
+	display: contents;
+}
+
+.solar-header {
+	font-weight: 600;
+	color: var(--muted);
+	text-transform: uppercase;
+	letter-spacing: 0.4px;
+	font-size: 10px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.solar-col {
+	background: rgba(255, 255, 255, 0.02);
+	padding: 10px 8px;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	overflow: hidden;
+}
+
+.solar-header .solar-col {
+	background: rgba(255, 255, 255, 0.04);
+	padding: 8px 8px;
+	font-weight: 700;
+}
+
+.solar-name { flex-direction: column; align-items: flex-start; gap: 0; font-weight: 500; }
+.solar-power { flex-direction: column; align-items: stretch; gap: 4px; }
+.solar-pv { justify-content: center; }
+.solar-state { justify-content: center; }
+.solar-yield { justify-content: flex-end; }
+.solar-total { justify-content: flex-end; }
+
+.power-bar-wrapper {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	width: 100%;
+}
+
+.power-val {
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	font-size: 12px;
+}
+
+.power-bar-track {
+	height: 6px;
+	background: rgba(255, 255, 255, 0.08);
+	border-radius: 3px;
+	overflow: hidden;
+	width: 100%;
+}
+
+.power-bar-fill {
+	height: 100%;
+	border-radius: 3px;
+	transition: width 0.6s ease;
+}
+
+.state-badge {
+	padding: 2px 6px;
+	border-radius: 4px;
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.2px;
+	white-space: nowrap;
+}
+
+.val-mono {
+	font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+	font-variant-numeric: tabular-nums;
+	font-size: 11px;
+}
+
+/* Alternate row backgrounds for readability */
+.solar-row:nth-child(odd) .solar-col {
+	background: rgba(255, 255, 255, 0.025);
+}
 
 /* ── Temperatures ────────────────────────────────────────── */
 .temp-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
