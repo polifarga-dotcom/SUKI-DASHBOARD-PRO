@@ -5,6 +5,7 @@ type DiagAttr = {
 	instance: number;
 	dbusPath: string;
 	rawValue: string | number | null;
+	description?: string;  // e.g., "Salon", "Tech Room" from VRM diagnostics metadata
 	timestamp?: number;
 };
 
@@ -52,9 +53,10 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	});
 
 	// Helper: best display name for a Device+instance key
-	function deviceName(device: string, instance: number, fallback: string): string {
+	function deviceName(device: string, instance: number, fallback: string, description?: string): string {
 		const key = `${device}__${instance}`;
-		return customNames.get(key) ?? (device ? device : fallback);
+		// Priority: CustomName > description > Device > fallback
+		return customNames.get(key) ?? description ?? (device ? device : fallback);
 	}
 
 	// ── Battery Monitors ──────────────────────────────────────────────────────
@@ -168,7 +170,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 
 		const key = `${r.Device}__${r.instance}`;
 		const entry: VRMTempSensor = tempMap.get(key) ?? {
-			name: deviceName(r.Device, r.instance, `Sensor ${r.instance}`),
+			name: deviceName(r.Device, r.instance, `Sensor ${r.instance}`, r.description),
 			instance: r.instance,
 			celsius: 0,
 			humidity: null,
