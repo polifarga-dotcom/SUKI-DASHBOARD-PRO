@@ -230,6 +230,8 @@ export type LogEntry = {
 	sails:          string | null;
 	wind_speed_kn:  number | null;
 	wind_dir_deg:   number | null;
+	apparent_wind_speed_kn:  number | null;
+	apparent_wind_angle_deg: number | null;
 	baro_hpa:       number | null;
 	air_temp_c:     number | null;
 	water_temp_c:   number | null;

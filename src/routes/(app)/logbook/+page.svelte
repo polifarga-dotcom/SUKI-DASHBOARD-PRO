@@ -562,6 +562,8 @@
 			engine_hours: liveEngH(), engine_temp_c: liveEngT(),
 			sails: opts.sails?.trim() || null,
 			wind_speed_kn: liveWind(), wind_dir_deg: liveWindDir(),
+			apparent_wind_speed_kn: t?.env_aws_ms != null ? +(t.env_aws_ms * 1.94384).toFixed(2) : null,
+			apparent_wind_angle_deg: t?.env_awa_rad != null ? +((t.env_awa_rad * 180 / Math.PI) % 360).toFixed(1) : null,
 			baro_hpa: liveBaro(), air_temp_c: liveAirT(), water_temp_c: liveWaterT(),
 			wave_height_m: wave.wave_height_m, wave_period_s: wave.wave_period_s,
 			notes: opts.notes?.trim() || null, source: opts.source,
