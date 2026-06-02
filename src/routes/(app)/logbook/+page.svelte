@@ -9,7 +9,9 @@
 	import { inreachPoints } from '$lib/stores/inreach.js';
 	import { latestWave } from '$lib/stores/weather.js';
 	import { activeTrip, tripEntries, allTrips, logLoaded } from '$lib/stores/logbook.js';
+	import { isOnline, pendingCount, syncInProgress } from '$lib/stores/offline.js';
 	import { haversine } from '$lib/utils/geo.js';
+	import { queueLogEntry, getPendingCount, syncPendingEntries, subscribeToOnline } from '$lib/offline.js';
 	import type { LogEntry, LogTrip } from '$lib/types.js';
 
 	// ── Reactive store snapshots ──────────────────────────────────────────────
@@ -568,12 +570,26 @@
 			wave_height_m: wave.wave_height_m, wave_period_s: wave.wave_period_s,
 			notes: opts.notes?.trim() || null, source: opts.source,
 		};
-		const { data } = await supabase.from('log_entries').insert(entry).select().single();
-		if (data) {
-			tripEntries.update(es => [data as LogEntry, ...es]);
-			if (lat != null && lon != null) lastEntryPos = { lat, lon };
-			if (at && distNm > 0) await updateTripTotals(at.id, distNm, engOn);
-			pushLog(`+ ${lat?.toFixed(4) ?? '?'} ${lon?.toFixed(4) ?? '?'}  ${sog?.toFixed(1) ?? '-'} kn  ${engOn ? '[eng]' : '[sail]'}${distNm > 0 ? `  +${distNm.toFixed(2)} nm` : ''}`);
+		try {
+			const { data } = await supabase.from('log_entries').insert(entry).select().single();
+			if (data) {
+				tripEntries.update(es => [data as LogEntry, ...es]);
+				if (lat != null && lon != null) lastEntryPos = { lat, lon };
+				if (at && distNm > 0) await updateTripTotals(at.id, distNm, engOn);
+				pushLog(`+ ${lat?.toFixed(4) ?? '?'} ${lon?.toFixed(4) ?? '?'}  ${sog?.toFixed(1) ?? '-'} kn  ${engOn ? '[eng]' : '[sail]'}${distNm > 0 ? `  +${distNm.toFixed(2)} nm` : ''}`);
+			}
+		} catch (err: any) {
+			// Network error — queue to IndexedDB
+			if (!navigator.onLine) {
+				const queuedId = await queueLogEntry(entry, boat.id);
+				pushLog(`⚠ Entry queued offline (${queuedId.substring(0, 8)})`);
+				const count = await getPendingCount(boat.id);
+				pendingCount.set(count);
+			} else {
+				// Real error, not offline
+				console.error('Log entry failed:', err);
+				pushLog(`✗ Entry failed: ${err.message}`);
+			}
 		}
 	}
 
@@ -867,6 +883,41 @@
 		return () => { clearInterval(autoLogTimer); clearInterval(autoCheckTimer); };
 	});
 
+	// ── Offline listener + sync ──────────────────────────────────────────────────
+	$effect(() => {
+		const unsub = subscribeToOnline(async (online) => {
+			isOnline.set(online);
+			if (online && boat) {
+				// Auto-sync pending entries when coming back online
+				syncInProgress.set(true);
+				try {
+					const { synced, failed } = await syncPendingEntries(supabase, boat.id);
+					if (synced > 0) {
+						pushLog(`✓ Synced ${synced} queued entries`);
+					}
+					if (failed > 0) {
+						pushLog(`✗ ${failed} entries still pending`);
+					}
+					const remaining = await getPendingCount(boat.id);
+					pendingCount.set(remaining);
+				} catch (err: any) {
+					console.error('[offline] Sync error:', err);
+				} finally {
+					syncInProgress.set(false);
+				}
+			}
+		});
+		return unsub;
+	});
+
+	// ── Initialize pending count ──────────────────────────────────────────────────
+	$effect.pre(async () => {
+		if (boat) {
+			const count = await getPendingCount(boat.id);
+			pendingCount.set(count);
+		}
+	});
+
 	onDestroy(() => {
 		clearInterval(autoLogTimer); clearInterval(autoCheckTimer);
 		unsubscribeTrip();
@@ -883,6 +934,20 @@
 <svelte:head><title>Logbook · SUKI PRO</title></svelte:head>
 
 <div class="log-page">
+
+	<!-- ── Offline warning ──────────────────────────────────────────────────── -->
+	{#if !$isOnline}
+		<div class="offline-warning">
+			🌐 <strong>Offline</strong> — log entries will be queued locally and synced when you reconnect
+		</div>
+	{/if}
+
+	<!-- ── Sync progress ───────────────────────────────────────────────────── -->
+	{#if $syncInProgress}
+		<div class="sync-progress">
+			<span class="spinner"></span> Syncing {$pendingCount} queued entries…
+		</div>
+	{/if}
 
 	<!-- ── Active trip banner ───────────────────────────────────────────────── -->
 	{#if at}
@@ -1418,6 +1483,24 @@
 		padding-bottom: 24px;
 	}
 	.log-loading { font-size: 13px; color: var(--muted); padding: 20px 0; text-align: center; }
+
+	/* ── Offline indicators ───────────────────────────────────────────────────── */
+	.offline-warning {
+		background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3);
+		border-radius: 8px; padding: 12px 14px;
+		font-size: 13px; color: var(--red); font-weight: 500;
+	}
+	.sync-progress {
+		background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3);
+		border-radius: 8px; padding: 12px 14px;
+		font-size: 13px; color: var(--blue); display: flex; align-items: center; gap: 8px;
+	}
+	.spinner {
+		display: inline-block; width: 11px; height: 11px;
+		border: 2px solid rgba(59, 130, 246, 0.3); border-top-color: var(--blue);
+		border-radius: 50%; animation: spin 0.8s linear infinite;
+	}
+	@keyframes spin { to { transform: rotate(360deg); } }
 
 	/* ── Trip banner ──────────────────────────────────────────────────────── */
 	.trip-banner {
