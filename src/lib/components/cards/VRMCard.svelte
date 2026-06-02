@@ -156,6 +156,22 @@
 		if (soc > 20) return 'var(--amber)';
 		return 'var(--red)';
 	}
+
+	// Temperature gauge color thresholds
+	function tempColor(celsius: number | null) {
+		if (celsius == null) return 'var(--muted)';
+		if (celsius < 5) return '#4f46e5';      // Blue: cold
+		if (celsius < 20) return 'var(--green)'; // Green: comfortable
+		if (celsius < 28) return '#84cc16';      // Lime: warm but ok
+		if (celsius < 35) return 'var(--amber)'; // Amber: hot
+		return 'var(--red)';                     // Red: very hot
+	}
+
+	// Gauge width % based on temp (scale: 0°C = 0%, 40°C = 100%)
+	function tempGaugeWidth(celsius: number | null) {
+		if (celsius == null) return 0;
+		return Math.min(100, Math.max(0, (celsius / 40) * 100));
+	}
 	function mpptStateLabel(st: number | null) { return st != null ? (MPPT_STATE[st] ?? `St.${st}`) : ''; }
 	function mpptStateColor(st: number | null) {
 		if (st == null) return 'var(--muted)';
@@ -443,10 +459,17 @@
 		<div class="temp-grid">
 			{#each data.temperatures as t}
 			<div class="temp-cell">
-				<div class="temp-name">{t.name}</div>
-				<div class="temp-val">{fmtC(t.celsius)}</div>
+				<div class="temp-header">
+					<div class="temp-name">{t.name}</div>
+					<div class="temp-val" style="color:{tempColor(t.celsius)}">{fmtC(t.celsius)}</div>
+				</div>
+				<div class="temp-bar-track">
+					<div class="temp-bar-fill"
+						style="width:{tempGaugeWidth(t.celsius)}%; background:{tempColor(t.celsius)}">
+					</div>
+				</div>
 				{#if t.humidity != null}
-				<div class="temp-hum">{Math.round(t.humidity)} % RH</div>
+				<div class="temp-hum">💧 {Math.round(t.humidity)} % RH</div>
 				{/if}
 			</div>
 			{/each}
@@ -662,9 +685,12 @@
 
 /* ── Temperatures ────────────────────────────────────────── */
 .temp-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
-.temp-cell { background: var(--card2); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
-.temp-name { font-size: 10px; color: var(--muted); word-break: break-word; }
-.temp-val  { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.temp-cell { background: var(--card2); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.temp-header { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.temp-name { font-size: 11px; color: var(--muted); flex: 1; word-break: break-word; }
+.temp-val  { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.temp-bar-track { height: 4px; background: rgba(255, 255, 255, 0.06); border-radius: 2px; overflow: hidden; }
+.temp-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; min-width: 1px; }
 .temp-hum  { font-size: 10px; color: var(--muted); }
 
 /* ── Secondary batteries ─────────────────────────────────── */
