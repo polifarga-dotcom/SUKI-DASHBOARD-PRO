@@ -30,6 +30,16 @@ const FLUID_TYPE: Record<number, string> = {
 export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	const rows = attrs as DiagAttr[];
 
+	// Debug: log all temperature-related records to understand VRM structure
+	const tempRecords = rows.filter(r =>
+		r.dbusPath?.includes('Temperature') ||
+		r.dbusPath?.includes('Humidity') ||
+		r.dbusPath?.includes('CustomName')
+	);
+	if (tempRecords.length > 0) {
+		console.log('[VRM] Temperature-related records:', JSON.stringify(tempRecords, null, 2));
+	}
+
 	const find    = (path: string) => rows.find(r => r.dbusPath === path);
 	const findAll = (path: string) => rows.filter(r => r.dbusPath === path);
 
