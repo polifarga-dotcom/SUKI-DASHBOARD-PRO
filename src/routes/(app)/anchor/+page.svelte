@@ -128,9 +128,11 @@
 		cfg?.active && !isDragging ? 'Anchor' : 'Preview'
 	);
 
+	// Overlay radius — dynamically calculated to match alarm radius pixel distance
+	let overlayR = $state(0);
+
 	// ── Overlay pixel positions ────────────────────────────────────────────────
-	// Wind, compass, and other overlays appear at ~45% of viewport radius (closer to map center)
-	const overlayR = $derived(Math.min(mapBoxW / 2, mapBoxH / 2) * 0.45 - 14);
+	// Wind, compass overlays positioned at calculated alarm radius distance
 	const nPillPx  = $derived({
 		x: mapBoxW / 2 + overlayR * Math.sin(hdgDeg  * Math.PI / 180),
 		y: mapBoxH / 2 - overlayR * Math.cos(hdgDeg  * Math.PI / 180),
@@ -232,6 +234,24 @@
 	function updateMarkers() {
 		if (!map || !L) return;
 		const rot = hdgDeg;
+
+		// Calculate overlay radius to match alarm radius pixel distance
+		// Convert alarm radius (meters) to pixel distance at current zoom
+		if (liveAncLat != null && liveAncLon != null) {
+			try {
+				const centerPx = map.latLngToContainerPoint([liveAncLat, liveAncLon]);
+				const radiusMeters = localRadius; // or cfg?.radius_m
+				const radiusPt = map.latLngToContainerPoint([
+					liveAncLat + (radiusMeters / 111000), // approximate: 1 degree ≈ 111 km
+					liveAncLon
+				]);
+				const pixelRadius = Math.hypot(radiusPt.x - centerPx.x, radiusPt.y - centerPx.y);
+				overlayR = pixelRadius;
+			} catch (e) {
+				// Fallback if calculation fails
+				overlayR = Math.min(mapBoxW / 2, mapBoxH / 2) * 0.45;
+			}
+		}
 
 		// ── Boat marker ──
 		if (boatLat != null && boatLon != null) {
