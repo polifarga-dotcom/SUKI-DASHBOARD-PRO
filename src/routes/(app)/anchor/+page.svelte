@@ -296,15 +296,15 @@
 
 		// ── Wind & Compass markers (on alarm radius ring) ──
 		if (liveAncLat != null && liveAncLon != null && cfg?.active) {
-			// Wind marker: positioned at AWA direction, at localRadius distance from anchor
+			// Wind marker: positioned OPPOSITE to AWA direction (shows where wind comes from on circle)
 			if (awaDeg != null && awsKn != null) {
-				const windPos = destinationPoint(liveAncLat, liveAncLon, awaDeg, localRadius);
-				// SVG arrow points in wind direction; text stays horizontal below it
-				const windHtml = `<div style="position:relative; display:flex; flex-direction:column; align-items:center; width:24px;">
-					<svg viewBox="0 0 24 24" width="18" height="18" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="flex-shrink:0; transform:rotate(${awaDeg ?? 0}deg)">
+				const windPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius);
+				// SVG arrow points in wind direction; text stays horizontal (no rotation applied to text)
+				const windHtml = `<div style="display:flex; flex-direction:column; align-items:center; gap:1px;">
+					<svg viewBox="0 0 24 24" width="18" height="18" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(${awaDeg ?? 0}deg)">
 						<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
 					</svg>
-					<div style="position:absolute; bottom:-14px; left:50%; transform:translateX(-50%); font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px; white-space:nowrap;">
+					<div style="font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px; white-space:nowrap;">
 						${awsKn.toFixed(1)} kn
 					</div>
 				</div>`;
