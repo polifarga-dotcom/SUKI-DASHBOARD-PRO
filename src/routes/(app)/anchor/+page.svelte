@@ -296,7 +296,8 @@
 
 		// ── Wind & Compass markers (on alarm radius ring) ──
 		if (liveAncLat != null && liveAncLon != null && cfg?.active) {
-			// Wind marker: positioned OPPOSITE to AWA direction (shows where wind comes from on circle)
+			// Wind marker: positioned at AWA direction on the alarm radius ring
+			// Uses left/top positioning like the old app (NOT Leaflet markers)
 			if (awaDeg != null && awsKn != null) {
 				const windPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius);
 
@@ -312,16 +313,27 @@
 					windArrowMarker.setIcon(arrowIcon);
 				}
 
-				// Text overlay (DOM-based, positioned south of anchor, stays horizontal)
-				// Calculate the lat/lon 12px south of anchor, then convert to container pixels
-				const textPos = destinationPoint(liveAncLat, liveAncLon, 180, localRadius + 12);
-				const containerPt = map.latLngToContainerPoint(textPos);
+				// Text overlay (DOM-based with left/top positioning - stays horizontal)
+				// Calculate viewport position similar to old app's positionCompassOverlays()
+				const mapBoxEl = document.querySelector('.anc-map-box') as HTMLElement | null;
 				const textEl = document.querySelector('.wind-text-overlay') as HTMLElement | null;
-				if (textEl) {
-					textEl.textContent = `${awsKn.toFixed(1)} kn`;
-					textEl.style.opacity = '1';
-					textEl.style.left = `${containerPt.x - 20}px`;
-					textEl.style.top = `${containerPt.y - 6}px`;
+				if (mapBoxEl && textEl) {
+					const rect = mapBoxEl.getBoundingClientRect();
+					if (rect.width > 80 && rect.height > 80) {
+						const cx = rect.width / 2;
+						const cy = rect.height / 2;
+						const r = Math.min(cx, cy) - 22;  // radius for ring overlays
+
+						// Position on the circle based on AWA
+						const a = awaDeg * Math.PI / 180;
+						const x = cx + Math.sin(a) * r;
+						const y = cy - Math.cos(a) * r;
+
+						textEl.style.left = `${x}px`;
+						textEl.style.top = `${y}px`;
+						textEl.textContent = `${awsKn.toFixed(1)} kn`;
+						textEl.style.opacity = '1';
+					}
 				}
 			} else {
 				windArrowMarker?.remove();
@@ -906,9 +918,14 @@
 		white-space: nowrap;
 	}
 
-	/* Wind speed text overlay (DOM-based, positioned via latLngToContainerPoint) */
+	/* Wind speed text overlay (DOM-based, positioned with left/top like old app) */
 	.wind-text-overlay {
 		position: absolute;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+		transform: translate(-50%, -50%);
 		font-size: 8px;
 		color: var(--amber);
 		font-weight: 700;
