@@ -128,19 +128,9 @@
 		cfg?.active && !isDragging ? 'Anchor' : 'Preview'
 	);
 
-	// Overlay radius — dynamically calculated to match alarm radius pixel distance
-	let overlayR = $state(0);
-
-	// ── Overlay pixel positions ────────────────────────────────────────────────
-	// Wind, compass overlays positioned at calculated alarm radius distance
-	const nPillPx  = $derived({
-		x: mapBoxW / 2 + overlayR * Math.sin(hdgDeg  * Math.PI / 180),
-		y: mapBoxH / 2 - overlayR * Math.cos(hdgDeg  * Math.PI / 180),
-	});
-	const awaPx = $derived(awaDeg != null ? {
-		x: mapBoxW / 2 + overlayR * Math.sin(awaDeg * Math.PI / 180),
-		y: mapBoxH / 2 - overlayR * Math.cos(awaDeg * Math.PI / 180),
-	} : null);
+	// Leaflet markers for wind and compass (positioned on alarm radius ring)
+	let windMarker: any = null;
+	let compassMarker: any = null;
 
 	// ── "Boat position updated X ago" timestamp ───────────────────────────────
 	const posAgeSec = $derived(
@@ -320,6 +310,46 @@
 			} else {
 				crumbLine.setLatLngs(breadcrumb);
 			}
+		}
+
+		// ── Wind & Compass markers (on alarm radius ring) ──
+		if (liveAncLat != null && liveAncLon != null && cfg?.active) {
+			// Wind marker: positioned at AWA direction, at localRadius distance from anchor
+			if (awaDeg != null && awsKn != null) {
+				const windPos = destinationPoint(liveAncLat, liveAncLon, awaDeg, localRadius);
+				const windHtml = `<div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+					<svg viewBox="0 0 24 24" width="18" height="18" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="flex-shrink:0; transform:rotate(${(awaDeg ?? 0) + 180}deg)">
+						<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
+					</svg>
+					<div style="font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px; white-space:nowrap;">
+						${awsKn.toFixed(1)} kn
+					</div>
+				</div>`;
+				const windIcon = L.divIcon({ className: '', iconSize: [24, 36], iconAnchor: [12, 18], html: windHtml });
+				if (!windMarker) {
+					windMarker = L.marker(windPos, { icon: windIcon, interactive: false }).addTo(map);
+				} else {
+					windMarker.setLatLng(windPos);
+					windMarker.setIcon(windIcon);
+				}
+			} else {
+				windMarker?.remove();
+				windMarker = null;
+			}
+
+			// Compass marker: positioned at North (0°), at localRadius distance from anchor
+			const compassPos = destinationPoint(liveAncLat, liveAncLon, 0, localRadius);
+			const compassHtml = `<div style="background:rgba(0,0,0,0.78); color:#00c8ff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:10px; border:1px solid #00c8ff; letter-spacing:1px; white-space:nowrap;">N</div>`;
+			const compassIcon = L.divIcon({ className: '', iconSize: [20, 20], iconAnchor: [10, 10], html: compassHtml });
+			if (!compassMarker) {
+				compassMarker = L.marker(compassPos, { icon: compassIcon, interactive: false }).addTo(map);
+			} else {
+				compassMarker.setLatLng(compassPos);
+				compassMarker.setIcon(compassIcon);
+			}
+		} else {
+			windMarker?.remove(); windMarker = null;
+			compassMarker?.remove(); compassMarker = null;
 		}
 
 		// ── History anchor preview (only the button-selected entry) ──
@@ -560,30 +590,8 @@
 		</div>
 
 		<!-- DOM overlays (not inside rotating wrapper) -->
-		<div class="map-overlay">
-
-			<!-- N pill -->
-			<div class="north-pill" style="left:{nPillPx.x}px;top:{nPillPx.y}px">N</div>
-
-			<!-- AWA / wind flag -->
-			{#if awaPx && awsKn != null}
-			<div class="awa-marker" style="left:{awaPx.x}px;top:{awaPx.y}px">
-				<svg
-					class="awa-arrow"
-					viewBox="0 0 24 24" width="20" height="20"
-					fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round"
-					style="transform:rotate({(awaDeg ?? 0) + 180}deg)"
-				>
-					<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
-				</svg>
-				<div class="awa-label">
-					{#if awsKn != null}<div class="awa-kn">{awsKn.toFixed(1)} kn</div>{/if}
-					{#if awaDeg != null}<div class="awa-deg">AWA {((Math.round(awaDeg) % 360) + 360) % 360}°</div>{/if}
-				</div>
-			</div>
-			{/if}
-
-		</div>
+		<!-- Map overlays: wind & compass are Leaflet markers -->
+		<div class="map-overlay"></div>
 
 		<!-- Map control buttons -->
 		<div class="map-btns">
