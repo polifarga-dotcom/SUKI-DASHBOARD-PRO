@@ -502,8 +502,16 @@
 
 	function jumpToBoat() {
 		followMode = true;
-		if (map && boatLat != null && boatLon != null)
+		if (!map) return;
+		// Center on anchor if available, zoom so alarm radius fills ~70% of map
+		if (liveAncLat != null && liveAncLon != null && localRadius > 0) {
+			// radius that fills 70% → divide by 0.7 to get the "full map" radius
+			const targetRadius = localRadius / 0.7;
+			const bounds = L.latLng(liveAncLat, liveAncLon).toBounds(targetRadius * 2);
+			map.fitBounds(bounds, { animate: true, padding: [0, 0] });
+		} else if (boatLat != null && boatLon != null) {
 			map.setView([boatLat, boatLon], map.getZoom(), { animate: true });
+		}
 	}
 
 	// ── Leaflet init ──────────────────────────────────────────────────────────
