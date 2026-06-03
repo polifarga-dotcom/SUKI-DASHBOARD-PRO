@@ -129,7 +129,8 @@
 	);
 
 	// Leaflet markers for wind and compass (positioned on alarm radius ring)
-	let windMarker: any = null;
+	let windArrowMarker: any = null;  // Rotated arrow only
+	let windTextMarker: any = null;   // Horizontal text only
 	let compassMarker: any = null;
 
 	// ── "Boat position updated X ago" timestamp ───────────────────────────────
@@ -299,25 +300,36 @@
 			// Wind marker: positioned OPPOSITE to AWA direction (shows where wind comes from on circle)
 			if (awaDeg != null && awsKn != null) {
 				const windPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius);
-				// SVG arrow rotates with wind; text explicitly kept horizontal with counter-rotation
-				const windHtml = `<div style="display:flex; flex-direction:column; align-items:center; gap:1px;">
-					<svg viewBox="0 0 24 24" width="18" height="18" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(${awaDeg ?? 0}deg)">
-						<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
-					</svg>
-					<div style="font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px; white-space:nowrap; transform:rotate(-${awaDeg ?? 0}deg);">
-						${awsKn.toFixed(1)} kn
-					</div>
-				</div>`;
-				const windIcon = L.divIcon({ className: '', iconSize: [24, 36], iconAnchor: [12, 18], html: windHtml });
-				if (!windMarker) {
-					windMarker = L.marker(windPos, { icon: windIcon, interactive: false }).addTo(map);
+
+				// Arrow marker (rotates with wind direction)
+				const arrowHtml = `<svg viewBox="0 0 24 24" width="18" height="18" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(${awaDeg ?? 0}deg); display:block;">
+					<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
+				</svg>`;
+				const arrowIcon = L.divIcon({ className: '', iconSize: [18, 18], iconAnchor: [9, 9], html: arrowHtml });
+				if (!windArrowMarker) {
+					windArrowMarker = L.marker(windPos, { icon: arrowIcon, interactive: false }).addTo(map);
 				} else {
-					windMarker.setLatLng(windPos);
-					windMarker.setIcon(windIcon);
+					windArrowMarker.setLatLng(windPos);
+					windArrowMarker.setIcon(arrowIcon);
+				}
+
+				// Text marker (stays horizontal below arrow position)
+				const textPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius + 12);
+				const textHtml = `<div style="font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px; white-space:nowrap;">
+					${awsKn.toFixed(1)} kn
+				</div>`;
+				const textIcon = L.divIcon({ className: '', iconSize: [40, 12], iconAnchor: [20, 6], html: textHtml });
+				if (!windTextMarker) {
+					windTextMarker = L.marker(textPos, { icon: textIcon, interactive: false }).addTo(map);
+				} else {
+					windTextMarker.setLatLng(textPos);
+					windTextMarker.setIcon(textIcon);
 				}
 			} else {
-				windMarker?.remove();
-				windMarker = null;
+				windArrowMarker?.remove();
+				windArrowMarker = null;
+				windTextMarker?.remove();
+				windTextMarker = null;
 			}
 
 			// Compass marker: positioned at North (0°), at localRadius distance from anchor
