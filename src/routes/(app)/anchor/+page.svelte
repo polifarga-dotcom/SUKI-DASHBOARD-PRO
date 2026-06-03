@@ -241,7 +241,14 @@
 				boatMarker.setLatLng([boatLat, boatLon]);
 				boatMarker.setIcon(icon);
 			}
-			if (followMode) map.panTo([boatLat, boatLon], { animate: true, duration: 0.3 });
+			if (followMode) {
+				// When anchor alarm is active, keep anchor centered; otherwise follow boat
+				if (alarming && liveAncLat != null && liveAncLon != null) {
+					map.panTo([liveAncLat, liveAncLon], { animate: true, duration: 0.3 });
+				} else if (!alarming) {
+					map.panTo([boatLat, boatLon], { animate: true, duration: 0.3 });
+				}
+			}
 		}
 
 		// ── Anchor marker — always visible when we have a position ──
@@ -503,9 +510,8 @@
 	function jumpToBoat() {
 		followMode = true;
 		if (!map) return;
-		// Center on anchor if available, zoom so alarm radius fills ~70% of map
-		if (liveAncLat != null && liveAncLon != null && localRadius > 0) {
-			// radius that fills 70% → divide by 0.7 to get the "full map" radius
+		// When alarm active: center on anchor and zoom to show radius at ~70%
+		if (alarming && liveAncLat != null && liveAncLon != null && localRadius > 0) {
 			const targetRadius = localRadius / 0.7;
 			const bounds = L.latLng(liveAncLat, liveAncLon).toBounds(targetRadius * 2);
 			map.fitBounds(bounds, { animate: true, padding: [0, 0] });
