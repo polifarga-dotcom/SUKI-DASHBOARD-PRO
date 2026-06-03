@@ -6,7 +6,7 @@
 	import { currentBoat } from '$lib/stores/boat.js';
 	import { supabase } from '$lib/supabase.js';
 	import { haversine, destinationPoint, bearingTo } from '$lib/utils/geo.js';
-	import { rad2deg, fmtDepth, ms2kn, bearingCardinal, m2ft } from '$lib/utils/units.js';
+	import { rad2deg, fmtDepth, ms2kn, bearingCardinal, m2ft, scopeStatus } from '$lib/utils/units.js';
 	import { unitSystem } from '$lib/stores/userSettings.js';
 	import type { AnchorHistoryEntry } from '$lib/types.js';
 
@@ -129,7 +129,8 @@
 	);
 
 	// ── Overlay pixel positions ────────────────────────────────────────────────
-	const overlayR = $derived(Math.min(mapBoxW / 2, mapBoxH / 2) * 0.72 - 14);
+	// Wind, compass, and other overlays appear at ~45% of viewport radius (closer to map center)
+	const overlayR = $derived(Math.min(mapBoxW / 2, mapBoxH / 2) * 0.45 - 14);
 	const nPillPx  = $derived({
 		x: mapBoxW / 2 + overlayR * Math.sin(hdgDeg  * Math.PI / 180),
 		y: mapBoxH / 2 - overlayR * Math.cos(hdgDeg  * Math.PI / 180),
@@ -595,18 +596,39 @@
 
 	<!-- ── Data cells ── -->
 	<div class="data-cells">
+		<!-- DIST: live boat-to-anchor distance (from cfg.lat/cfg.lon, not slider) -->
+		<div class="cell">
+			<div class="cell-label">DIST</div>
+			<div class="cell-val">
+				{#if ancDistM != null}
+					{$unitSystem === 'imperial' ? (ancDistM * 3.28084).toFixed(0) + ' ft' : ancDistM.toFixed(0) + ' m'}
+				{:else}
+					—
+				{/if}
+			</div>
+		</div>
+
+		<!-- DEPTH: live current water depth (from telemetry) -->
 		<div class="cell">
 			<div class="cell-label">DEPTH</div>
-			<div class="cell-val">{depth}</div>
+			<div class="cell-val">
+				{#if depth != null}
+					{$unitSystem === 'imperial' ? (depth * 3.28084).toFixed(1) + ' ft' : depth.toFixed(1) + ' m'}
+				{:else}
+					—
+				{/if}
+			</div>
 		</div>
-		<div class="cell">
-			<div class="cell-label">DEPTH</div>
-			<div class="cell-val">{depth != null ? ($unitSystem === 'imperial' ? (depth * 3.28084).toFixed(1) + ' ft' : depth.toFixed(1) + ' m') : '—'}</div>
+
+		<!-- SCOPE: chain/depth ratio with safety color -->
+		<div class="cell" style="background-color: {scopeStatus(scope).status === 'safe' ? 'rgba(34, 197, 94, 0.1)' : scopeStatus(scope).status === 'marginal' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)'};">
+			<div class="cell-label" style="color: {scopeStatus(scope).color}">{scopeStatus(scope).label}</div>
+			<div class="cell-val" style="color: {scopeStatus(scope).color}; font-weight: 600;">
+				{scope ? scope + ':1' : '—'}
+			</div>
 		</div>
-		<div class="cell">
-			<div class="cell-label">SCOPE</div>
-			<div class="cell-val">{scope ? scope + ':1' : '—'}</div>
-		</div>
+
+		<!-- BEARING: direction to anchor -->
 		<div class="cell">
 			<div class="cell-label">BEARING</div>
 			<div class="cell-val">

@@ -136,3 +136,14 @@ export const fmtTime = (date: Date | string, format: '12h' | '24h'): string => {
 		hour12: format === '12h'
 	});
 };
+
+// Scope status (Chain/Depth ratio) with maritime safety levels
+export type ScopeStatus = 'safe' | 'marginal' | 'dangerous';
+export type ScopeStatusInfo = { status: ScopeStatus; label: string; color: string };
+
+export const scopeStatus = (scope: number | null): ScopeStatusInfo => {
+	if (scope == null) return { status: 'dangerous', label: '—', color: 'var(--muted)' };
+	if (scope > 5) return { status: 'safe', label: 'Safe', color: 'var(--green)' };
+	if (scope >= 3) return { status: 'marginal', label: 'Marginal', color: 'var(--amber)' };
+	return { status: 'dangerous', label: 'Dangerous', color: 'var(--red)' };
+};
