@@ -104,7 +104,41 @@
 		return 'var(--red)';
 	}
 
-	function wmoEmoji(code: number): string {
+	// Calculate sunrise/sunset altitude (considering horizon elevation and refraction)
+	function sunAltRad(jd: number, latRad: number, lonRad: number): number {
+		const T  = (jd - 2_451_545.0) / 36_525.0;
+		const L  = ((280.46646 + 36000.76983 * T + 0.0003032 * T * T) % 360 + 360) % 360;
+		const M  = ((357.52911 + 35999.05029 * T - 0.0001537 * T * T) % 360 + 360) % 360;
+		const MM = M * D2R;
+		const e  = 1 - 0.002556 * T;
+		const C  = (1.914602 - 0.004817 * T - 0.000014 * T * T) * Math.sin(MM)
+		         + (0.019993 - 0.000101 * T) * Math.sin(2 * MM)
+		         + 0.000029 * Math.sin(3 * MM);
+		const sunLon = (L + C) * D2R;
+		const sunLat = Math.asin(0.39782 * Math.sin(sunLon));
+		const gm     = gmstRad(jd);
+		const ha     = gm + lonRad - 0.0057183 - Math.atan2(Math.cos(sunLon) * Math.sin(0.00569), Math.cos(sunLon) * Math.cos(sunLat) * Math.sin(0.00569) + Math.tan(sunLat) * Math.cos(latRad) * Math.sin(0.00569));
+		return Math.asin(Math.sin(latRad) * Math.sin(sunLat) + Math.cos(latRad) * Math.cos(sunLat) * Math.cos(ha));
+	}
+
+	// Check if sun is above horizon (day: alt > 0, night: alt < 0)
+	function isSunUp(time: string, p: { lat: number; lon: number }): boolean {
+		if (!p) return true;  // fallback to day
+		const date = new Date(time);
+		const jd = toJD(date);
+		const alt = sunAltRad(jd, p.lat * D2R, p.lon * D2R);
+		return alt > -0.0087;  // ~0.5° below horizon (twilight threshold)
+	}
+
+	function wmoEmoji(code: number, time?: string, p?: { lat: number; lon: number }): string {
+		// At night (sun below horizon), show moon instead of sun
+		if (time && p && !isSunUp(time, p)) {
+			const date = new Date(time);
+			const ph = moonPhase(date);
+			return ph.emoji;
+		}
+
+		// Daytime: show weather condition
 		if (code === 0)  return '☀️';
 		if (code <= 3)   return '⛅';
 		if (code <= 48)  return '🌫';
@@ -421,7 +455,7 @@
 					<span class="wx-now-dir">{dirAbbr(now.dir)}</span>
 				</div>
 				<div class="wx-now-cond">
-					<span class="wx-now-emoji">{wmoEmoji(now.wmo)}</span>
+					<span class="wx-now-emoji">{wmoEmoji(now.wmo, now.time, pos)}</span>
 					<span class="wx-now-temp">{now.temp}°C</span>
 					{#if now.precip > 0}<span class="wx-now-precip">{now.precip}%</span>{/if}
 				</div>
@@ -462,7 +496,7 @@
 				{/if}
 				<div class="wx-row">
 					<span class="wx-time">{fmtHour(h.time)}</span>
-					<span class="wx-icon">{wmoEmoji(h.wmo)}</span>
+					<span class="wx-icon">{wmoEmoji(h.wmo, h.time, pos)}</span>
 					<svg class="wx-arrow" style="transform: rotate({h.dir}deg)"
 						viewBox="0 0 12 18" width="13" height="13" fill="currentColor">
 						<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
