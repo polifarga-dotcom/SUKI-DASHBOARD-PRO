@@ -51,6 +51,11 @@
 	// Seconds ticker for the "boat position updated X ago" overlay
 	let nowMs = $state(Date.now());
 
+	// Wind text overlay positioning
+	let windTextX = $state(0);
+	let windTextY = $state(0);
+	let windTextVisible = $state(false);
+
 	// ── Derived boat/anchor values ────────────────────────────────────────────
 	const t   = $derived($telemetry);
 	const vrm = $derived($vrmData);
@@ -597,8 +602,8 @@
 		</div>
 
 		<!-- DOM overlays (not inside rotating wrapper) -->
-		<!-- Wind speed text (positioned via latLngToContainerPoint) -->
-		<div class="wind-text-overlay"></div>
+		<!-- Wind speed text overlay - positioned by Svelte state binding -->
+		<div class="wind-text-overlay" style="left: {windTextX}px; top: {windTextY}px; opacity: {windTextVisible ? 1 : 0};"></div>
 
 		<!-- Map control buttons -->
 		<div class="map-btns">
