@@ -26,17 +26,30 @@
 		unit_system?: 'metric' | 'imperial';
 		time_format?: '12h' | '24h';
 	}) {
-		if (!$currentBoat?.id) return;
+		if (!$currentBoat?.id) {
+			unitMessage = 'Error: No boat selected';
+			return;
+		}
 
 		unitSaving = true;
 		unitMessage = '';
 		try {
-			await updateBoatSettings(supabase, $currentBoat.id, updates);
+			const { error } = await supabase
+				.from('boats')
+				.update(updates)
+				.eq('id', $currentBoat.id);
+
+			if (error) {
+				console.error('Supabase error:', error);
+				unitMessage = `Error: ${error.message || 'Failed to save'}`;
+				return;
+			}
+
 			unitMessage = 'Settings saved ✓';
 			setTimeout(() => { unitMessage = ''; }, 2000);
 		} catch (err) {
 			console.error('Failed to save settings:', err);
-			unitMessage = 'Error saving settings';
+			unitMessage = `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
 		} finally {
 			unitSaving = false;
 		}
