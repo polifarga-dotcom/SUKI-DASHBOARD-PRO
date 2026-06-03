@@ -309,10 +309,10 @@
 				const windPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius);
 
 				// Arrow marker (rotates with wind direction)
-				const arrowHtml = `<svg viewBox="0 0 24 24" width="18" height="18" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(${awaDeg ?? 0}deg); display:block;">
+				const arrowHtml = `<svg viewBox="0 0 24 24" width="27" height="27" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(${awaDeg ?? 0}deg); display:block;">
 					<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
 				</svg>`;
-				const arrowIcon = L.divIcon({ className: '', iconSize: [18, 18], iconAnchor: [9, 9], html: arrowHtml });
+				const arrowIcon = L.divIcon({ className: '', iconSize: [27, 27], iconAnchor: [13, 13], html: arrowHtml });
 				if (!windArrowMarker) {
 					windArrowMarker = L.marker(windPos, { icon: arrowIcon, interactive: false }).addTo(map);
 				} else {
@@ -925,12 +925,12 @@
 		align-items: center;
 		gap: 2px;
 		transform: translate(-50%, -50%);
-		font-size: 8px;
+		font-size: 16px;
 		color: var(--amber);
 		font-weight: 700;
 		background: rgba(0, 0, 0, 0.8);
-		padding: 1px 3px;
-		border-radius: 2px;
+		padding: 2px 6px;
+		border-radius: 3px;
 		white-space: nowrap;
 		pointer-events: none;
 		opacity: 0;
