@@ -323,7 +323,7 @@
 				// Text overlay — positioned 15m BEYOND the arrow (outward from anchor)
 				// so it doesn't cover the arrow itself.
 				// Same rotation correction as arrow position.
-				const windTextPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius + 15);
+				const windTextPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius + 25);
 				const pt = map.latLngToContainerPoint(windTextPos);
 				const θ = hdgDeg * Math.PI / 180;
 				const dx = pt.x - 0.75 * mapBoxW;  // relative to map-wrap center
