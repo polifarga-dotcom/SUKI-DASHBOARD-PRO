@@ -326,11 +326,12 @@
 			// Wind marker: positioned at AWA bearing, at alarm radius distance from anchor
 			if (awaDeg != null && awsKn != null) {
 				const windPos = destinationPoint(liveAncLat, liveAncLon, awaDeg, localRadius);
-				const windHtml = `<div style="position:relative; width:24px; height:24px; display:flex; align-items:center; justify-content:center;">
-					<svg viewBox="0 0 24 24" width="20" height="20" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(${(awaDeg ?? 0) + 180}deg)">
+				// SVG rotates with wind direction, but text stays horizontal
+				const windHtml = `<div style="position:relative; width:28px; height:40px; display:flex; align-items:center; justify-content:center;">
+					<svg viewBox="0 0 24 24" width="20" height="20" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="position:absolute; top:4px; transform:rotate(${(awaDeg ?? 0) + 180}deg)">
 						<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
 					</svg>
-					<div style="position:absolute; top:18px; left:50%; transform:translateX(-50%); white-space:nowrap; font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px;">
+					<div style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); white-space:nowrap; font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px;">
 						${awsKn.toFixed(1)} kn
 					</div>
 				</div>`;
