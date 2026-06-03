@@ -24,6 +24,8 @@
 	let chainLine:    any = null;
 	let crumbLine:    any = null;
 	let histLayers:   any[] = [];
+	let windMarker:   any = null;  // AWA wind direction marker (relative to boat)
+	let compassMarker: any = null; // North compass marker (relative to anchor)
 
 	// ── Reactive UI state ─────────────────────────────────────────────────────
 	let mapReady      = $state(false);
@@ -316,6 +318,47 @@
 					interactive: false
 				}).addTo(map)
 			);
+		}
+
+		// ── Wind marker (AWA, relative to boat) ──
+		// Positioned at apparent wind angle, at alarm radius distance from boat
+		if (boatLat != null && boatLon != null && awaDeg != null && awsKn != null) {
+			const windPos = destinationPoint(boatLat, boatLon, awaDeg, localRadius);
+			const windHtml = `<div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+				<svg viewBox="0 0 24 24" width="18" height="18" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="flex-shrink:0; transform:rotate(${(awaDeg ?? 0) + 180}deg)">
+					<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
+				</svg>
+				<div style="font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px; white-space:nowrap;">
+					${awsKn.toFixed(1)} kn
+				</div>
+			</div>`;
+			const windIcon = L.divIcon({ className: '', iconSize: [24, 36], iconAnchor: [12, 18], html: windHtml });
+			if (!windMarker) {
+				windMarker = L.marker(windPos, { icon: windIcon, interactive: false }).addTo(map);
+			} else {
+				windMarker.setLatLng(windPos);
+				windMarker.setIcon(windIcon);
+			}
+		} else {
+			windMarker?.remove();
+			windMarker = null;
+		}
+
+		// ── Compass marker (North, relative to anchor) ──
+		// Positioned at North (0°), at alarm radius distance from anchor
+		if (liveAncLat != null && liveAncLon != null) {
+			const compassPos = destinationPoint(liveAncLat, liveAncLon, 0, localRadius);
+			const compassHtml = `<div style="background:rgba(0,0,0,0.78); color:#00c8ff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:10px; border:1px solid #00c8ff; letter-spacing:1px; white-space:nowrap;">N</div>`;
+			const compassIcon = L.divIcon({ className: '', iconSize: [20, 20], iconAnchor: [10, 10], html: compassHtml });
+			if (!compassMarker) {
+				compassMarker = L.marker(compassPos, { icon: compassIcon, interactive: false }).addTo(map);
+			} else {
+				compassMarker.setLatLng(compassPos);
+				compassMarker.setIcon(compassIcon);
+			}
+		} else {
+			compassMarker?.remove();
+			compassMarker = null;
 		}
 	}
 
