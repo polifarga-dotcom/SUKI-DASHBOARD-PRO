@@ -93,6 +93,8 @@ module.exports = function (app) {
     // Environment (standard)
     'environment.depth.belowKeel':                           'env_depth_m',
     'environment.depth.belowTransducer':                     'env_depth_m',   // fallback
+    'environment.water.temperature':                         'temp_water',    // Water temp (Kelvin)
+    'environment.outside.temperature':                       'temp_water',    // fallback if no water sensor
     'environment.wind.angleApparent':                        'env_awa_rad',
     'environment.wind.speedApparent':                        'env_aws_ms',
     'environment.wind.angleTrueWater':                       'env_twa_rad',
