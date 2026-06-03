@@ -552,22 +552,35 @@
 				<div class="wx-row">
 					<span class="wx-time">{fmtHour(h.time)}</span>
 					<span class="wx-icon">{wmoEmoji(h.wmo, h.time, pos)}</span>
-					<svg class="wx-arrow" style="transform: rotate({h.dir}deg)"
-						viewBox="0 0 12 18" width="13" height="13" fill="currentColor">
+					<!-- Wind: bigger arrow with color -->
+					<svg class="wx-arrow-forecast" style="transform: rotate({h.dir}deg); color: {windColor(h.wind)}"
+						viewBox="0 0 12 18" width="15" height="15" fill="currentColor">
 						<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
 					</svg>
 					<span class="wx-wspd" style="color:{windColor(h.wind)}">{h.wind}</span>
 					<span class="wx-wunit">kn</span>
 					<span class="wx-gust">G{h.gusts}</span>
-					<span class="wx-wdir">{dirAbbr(h.dir)}</span>
 					<span class="wx-temp">{h.temp}°</span>
-					<!-- Sea state: right-aligned block -->
-					<div class="wx-sea-block">
+
+					<!-- Sea state: compact wave display with arrows -->
+					<div class="wx-sea-compact">
 						{#if h.waveH != null}
-							<span class="wx-sea-wave" style="color:{waveColor(h.waveH)}">{h.waveH}m{h.waveP != null ? ` @ ${h.waveP}s` : ''}{h.waveD != null ? ' ' + dirAbbr(h.waveD) : ''}</span>
+							<div class="wx-wave-forecast-item" style="color: {waveColor(h.waveH)}">
+								<svg style="transform: rotate({h.waveD ?? 0}deg)"
+									viewBox="0 0 12 18" width="11" height="11" fill="currentColor">
+									<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
+								</svg>
+								<span>{h.waveH}m</span>
+							</div>
 						{/if}
 						{#if h.swellH != null && h.swellH >= 0.1}
-							<span class="wx-sea-swell">{h.swellH}m{h.swellD != null ? ' '+dirAbbr(h.swellD) : ''}</span>
+							<div class="wx-swell-forecast-item" style="color: {waveColor(h.swellH)}">
+								<svg style="transform: rotate({h.swellD ?? 0}deg)"
+									viewBox="0 0 12 18" width="9" height="9" fill="currentColor">
+									<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
+								</svg>
+								<span>{h.swellH}m</span>
+							</div>
 						{/if}
 					</div>
 				</div>
@@ -735,27 +748,38 @@
 
 	.wx-row {
 		display: grid;
-		grid-template-columns: 36px 18px 16px 28px 18px 30px 36px 22px 1fr;
-		align-items: center; gap: 4px;
-		padding: 4px 12px;
+		grid-template-columns: 36px 18px 1fr 28px 18px 36px 22px 1fr;
+		align-items: center; gap: 5px;
+		padding: 5px 12px;
 		border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 		font-size: 12px; font-variant-numeric: tabular-nums;
 	}
 	.wx-row:last-child { border-bottom: none; }
 	.wx-time  { color: var(--muted); }
 	.wx-icon  { font-size: 13px; text-align: center; }
-	.wx-wspd  { font-weight: 700; text-align: right; }
+
+	/* Wind compact display */
+	.wx-wind-compact {
+		display: flex; align-items: center; gap: 3px;
+		justify-self: start;
+	}
+	.wx-arrow-forecast { flex-shrink: 0; }
+	.wx-wspd  { font-weight: 700; }
 	.wx-wunit { font-size: 10px; color: var(--muted); }
 	.wx-gust  { font-size: 11px; color: var(--muted); }
-	.wx-wdir  { font-size: 11px; color: var(--text); }
 	.wx-temp  { color: var(--muted); text-align: right; }
-	/* Sea block — right-aligned, stacked wave + swell */
-	.wx-sea-block {
-		display: flex; flex-direction: column; align-items: flex-end;
-		gap: 1px; justify-self: end;
+
+	/* Sea compact display — direction arrow + height */
+	.wx-sea-compact {
+		display: flex; gap: 6px; justify-self: end;
+		align-items: center;
 	}
-	.wx-sea-wave  { font-size: 11px; font-weight: 600; }
-	.wx-sea-swell { font-size: 10px; color: var(--muted); }
+	.wx-wave-forecast-item,
+	.wx-swell-forecast-item {
+		display: flex; gap: 2px; align-items: center;
+		font-size: 11px; font-weight: 600;
+	}
+	.wx-swell-forecast-item { opacity: 0.7; }
 
 	/* Moon section */
 	.wx-moon-section { padding: 10px 0 4px; border-top: 1px solid var(--border); }
