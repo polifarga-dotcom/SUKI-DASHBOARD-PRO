@@ -918,10 +918,11 @@
 		white-space: nowrap;
 	}
 
-	/* Wind speed text overlay (DOM-based, positioned with left/top like old app) */
+	/* Wind speed text overlay (DOM-based, positioned with left/top like old app's .anc-awa-marker) */
 	.wind-text-overlay {
 		position: absolute;
-		inset: 0;
+		top: 0;
+		left: 0;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
