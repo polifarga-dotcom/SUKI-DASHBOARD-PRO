@@ -110,21 +110,24 @@ module.exports = function (app) {
     // (see discoverDynamicPaths below), which finds the correct instance IDs and
     // applies the Venus-source priority filter.
 
-    // Propulsion / Engine
+    // Propulsion / Engine — Multi-Motor Support (Catamaran)
     // SignalK value for `revolutions` is in Hz (rev/sec); the TRANSFORMS map below
     // converts it to RPM (×60) before storing in the `eng_rpm` column.
-    // The Victron/Cerbo SignalK plugin may expose the engine as propulsion.main.*
-    // or propulsion.port.* depending on installation. Both are mapped; port paths
-    // are lower-priority fallbacks (won't overwrite a main.* value received in the
-    // same batch cycle).
+    // Single-motor boats use propulsion.main.* or propulsion.port.*
+    // Catamaran boats (e.g., Cooinda) use propulsion.port.* and propulsion.starboard.*
+    // Mapping priority: main.* > port.* for primary engine, starboard.* for secondary
     'propulsion.main.revolutions':                           'eng_rpm',
-    'propulsion.port.revolutions':                           'eng_rpm',       // fallback
+    'propulsion.port.revolutions':                           'eng_rpm',       // fallback (primary)
+    'propulsion.starboard.revolutions':                      'eng_sb_rpm',    // secondary (catamaran)
     'propulsion.main.runTime':                               'eng_run_sec',
-    'propulsion.port.runTime':                               'eng_run_sec',   // fallback
+    'propulsion.port.runTime':                               'eng_run_sec',   // fallback (primary)
+    'propulsion.starboard.runTime':                          'eng_sb_run_sec', // secondary (catamaran)
     'propulsion.main.temperature':                           'eng_temp_k',
-    'propulsion.port.temperature':                           'eng_temp_k',    // fallback
+    'propulsion.port.temperature':                           'eng_temp_k',    // fallback (primary)
+    'propulsion.starboard.temperature':                      'eng_sb_temp_k', // secondary (catamaran)
     'propulsion.main.alternatorVoltage':                     'eng_alt_v',
-    'propulsion.port.alternatorVoltage':                     'eng_alt_v',     // fallback
+    'propulsion.port.alternatorVoltage':                     'eng_alt_v',     // fallback (primary)
+    'propulsion.starboard.alternatorVoltage':                'eng_sb_alt_v',  // secondary (catamaran)
 
     // Tanks — instance 0 fast path (Victron default). Boats using other instance
     // IDs are handled by dynamic discovery (subscribed at 5 s / 60 s after start).
@@ -163,6 +166,7 @@ module.exports = function (app) {
   const TRANSFORMS = {
     'propulsion.main.revolutions': v => Math.round(v * 60),
     'propulsion.port.revolutions': v => Math.round(v * 60),
+    'propulsion.starboard.revolutions': v => Math.round(v * 60),
   };
 
   // ── Dynamic path discovery ──────────────────────────────────────────────────

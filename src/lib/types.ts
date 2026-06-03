@@ -51,10 +51,16 @@ export type Telemetry = {
 	hum_amabb: number | null;
 	rig_port: number | null;
 	rig_sb: number | null;
+	// Primary engine (or port on catamaran)
 	eng_rpm: number | null;
 	eng_run_sec: number | null;
 	eng_temp_k: number | null;
 	eng_alt_v: number | null;
+	// Starboard engine (catamaran only)
+	eng_sb_rpm: number | null;
+	eng_sb_run_sec: number | null;
+	eng_sb_temp_k: number | null;
+	eng_sb_alt_v: number | null;
 	rudder_rad: number | null;
 	shelly_108: 0 | 1 | null;
 	shelly_102: 0 | 1 | null;
