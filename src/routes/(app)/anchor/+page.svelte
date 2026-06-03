@@ -130,17 +130,8 @@
 		cfg?.active && !isDragging ? 'Anchor' : 'Preview'
 	);
 
-	// ── Overlay pixel positions ────────────────────────────────────────────────
-	// Wind, compass, and other overlays appear at ~45% of viewport radius (closer to map center)
-	const overlayR = $derived(Math.min(mapBoxW / 2, mapBoxH / 2) * 0.45 - 14);
-	const nPillPx  = $derived({
-		x: mapBoxW / 2 + overlayR * Math.sin(hdgDeg  * Math.PI / 180),
-		y: mapBoxH / 2 - overlayR * Math.cos(hdgDeg  * Math.PI / 180),
-	});
-	const awaPx = $derived(awaDeg != null ? {
-		x: mapBoxW / 2 + overlayR * Math.sin(awaDeg * Math.PI / 180),
-		y: mapBoxH / 2 - overlayR * Math.cos(awaDeg * Math.PI / 180),
-	} : null);
+	// Note: Wind and compass overlays are now Leaflet markers positioned at geographic coordinates
+	// They scale automatically with zoom and pan operations
 
 	// ── "Boat position updated X ago" timestamp ───────────────────────────────
 	const posAgeSec = $derived(
@@ -582,31 +573,8 @@
 			<div bind:this={mapInnerEl} class="map-inner"></div>
 		</div>
 
-		<!-- DOM overlays (not inside rotating wrapper) -->
-		<div class="map-overlay">
-
-			<!-- N pill -->
-			<div class="north-pill" style="left:{nPillPx.x}px;top:{nPillPx.y}px">N</div>
-
-			<!-- AWA / wind flag -->
-			{#if awaPx && awsKn != null}
-			<div class="awa-marker" style="left:{awaPx.x}px;top:{awaPx.y}px">
-				<svg
-					class="awa-arrow"
-					viewBox="0 0 24 24" width="20" height="20"
-					fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round"
-					style="transform:rotate({(awaDeg ?? 0) + 180}deg)"
-				>
-					<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
-				</svg>
-				<div class="awa-label">
-					{#if awsKn != null}<div class="awa-kn">{awsKn.toFixed(1)} kn</div>{/if}
-					{#if awaDeg != null}<div class="awa-deg">AWA {((Math.round(awaDeg) % 360) + 360) % 360}°</div>{/if}
-				</div>
-			</div>
-			{/if}
-
-		</div>
+		<!-- Map overlays: wind & compass are now Leaflet markers -->
+		<div class="map-overlay"></div>
 
 		<!-- Map control buttons -->
 		<div class="map-btns">
@@ -896,36 +864,6 @@
 	.map-overlay { position:absolute; inset:0; pointer-events:none; z-index:500; }
 
 	/* N pill */
-	.north-pill {
-		position: absolute;
-		transform: translate(-50%, -50%);
-		background: rgba(0,0,0,0.78);
-		color: var(--accent);
-		font-size: 11px; font-weight: 700;
-		padding: 2px 7px; border-radius: 10px;
-		border: 1px solid var(--accent);
-		letter-spacing: 1px; white-space: nowrap;
-	}
-
-	/* AWA / wind marker */
-	.awa-marker {
-		position: absolute;
-		transform: translate(-50%, -50%);
-		display: flex; flex-direction: column; align-items: center; gap: 1px;
-	}
-	.awa-arrow { display: block; flex-shrink: 0; }
-	.awa-label { display:flex; flex-direction:column; align-items:center; }
-	.awa-kn {
-		font-size: 10px; font-weight: 700; color: var(--amber);
-		background: rgba(0,0,0,0.8); padding: 1px 4px; border-radius: 3px;
-		white-space: nowrap;
-	}
-	.awa-deg {
-		font-size: 8px; color: var(--muted);
-		background: rgba(0,0,0,0.7); padding: 1px 3px; border-radius: 2px;
-		white-space: nowrap;
-	}
-
 	/* ── Boat position timestamp overlay ── */
 	.pos-age {
 		position: absolute;
