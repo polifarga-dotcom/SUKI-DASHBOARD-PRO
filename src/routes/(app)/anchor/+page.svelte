@@ -313,9 +313,9 @@
 					windArrowMarker.setIcon(arrowIcon);
 				}
 
-				// Text marker (stays horizontal below arrow position)
-				const textPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius + 12);
-				const textHtml = `<div style="font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px; white-space:nowrap;">${awsKn.toFixed(1)} kn</div>`;
+				// Text marker (stays horizontal, fixed south direction from anchor - not tied to wind)
+				const textPos = destinationPoint(liveAncLat, liveAncLon, 180, localRadius + 12);
+				const textHtml = `<div style="font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px; white-space:nowrap; transform:rotate(0deg) !important;">${awsKn.toFixed(1)} kn</div>`;
 				const textIcon = L.divIcon({ className: '', iconSize: [40, 12], iconAnchor: [20, 6], html: textHtml });
 				if (!windTextMarker) {
 					windTextMarker = L.marker(textPos, { icon: textIcon, interactive: false }).addTo(map);
