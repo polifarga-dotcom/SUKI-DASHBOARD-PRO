@@ -138,9 +138,9 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		else if (r.dbusPath === '/Pv/V')         entry.pv_v            = v;
 		else if (r.dbusPath === '/Pv/I')         entry.pv_i            = v;
 		else if (r.dbusPath === '/Pv/P')         entry.pv_p            = v;
-		// Energy
-		else if (r.dbusPath === '/Yield/User')   entry.yield_today_wh  = (v ?? 0) * 1000;
-		else if (r.dbusPath === '/Yield/System') entry.yield_total_kwh = v;
+		// Energy (both in Wh from VRM API)
+		else if (r.dbusPath === '/Yield/User')   entry.yield_today_wh  = v ?? 0;  // Already in Wh
+		else if (r.dbusPath === '/Yield/System') entry.yield_total_kwh = (v ?? 0) / 1000;  // Convert Wh to kWh
 		// State & diagnostics
 		else if (r.dbusPath === '/State')        entry.state           = v != null ? Math.round(v) : null;
 		else if (r.dbusPath === '/MppOperatingMode') entry.mppt_mode   = v != null ? Math.round(v) : null;

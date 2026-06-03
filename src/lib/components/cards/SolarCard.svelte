@@ -137,10 +137,12 @@
 							<div class="yield-label">Today</div>
 							<div class="yield-val">{mppt.yield_today_wh ? (mppt.yield_today_wh / 1000).toFixed(2) : '—'} kWh</div>
 						</div>
-						<div class="yield-col">
-							<div class="yield-label">Total</div>
-							<div class="yield-val">{mppt.yield_total_kwh ? mppt.yield_total_kwh.toFixed(1) : '—'} MWh</div>
-						</div>
+						{#if mppt.yield_total_kwh != null && mppt.yield_total_kwh > 0}
+							<div class="yield-col">
+								<div class="yield-label">Total</div>
+								<div class="yield-val">{(mppt.yield_total_kwh / 1000).toFixed(1)} MWh</div>
+							</div>
+						{/if}
 					</div>
 				</div>
 			{/each}
