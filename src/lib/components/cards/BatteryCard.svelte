@@ -35,7 +35,14 @@
 	// ── Second battery (SignalK instance 1) ───────────────────────────────────────
 	// Filter out ghost/disconnected readings (< 1 V — occasional noise from
 	// Victron when no sensor is attached to instance 1).
-	const engV    = $derived(t?.batt_eng_v   ?? null);
+	// HOTFIX: Some boats (e.g., Cooinda) have eng_v multiplied by ~4.88× (VRM API issue).
+	// Normalize values > 50V by dividing by 4.88 to recover the true 12V battery value.
+	const engVRaw = $derived(t?.batt_eng_v ?? null);
+	const engV    = $derived(
+		engVRaw != null && engVRaw > 50 && engVRaw < 70
+			? Math.round((engVRaw / 4.88) * 10) / 10  // Normalize (e.g., 58.6 → 12.0)
+			: engVRaw
+	);
 	const engSoc  = $derived(t?.batt_eng_soc ?? null);
 	const engA    = $derived(t?.batt_eng_a   ?? null);
 	const showEng = $derived(engV != null && engV > 1);

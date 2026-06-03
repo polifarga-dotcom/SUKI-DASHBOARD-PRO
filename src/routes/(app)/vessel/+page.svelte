@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { telemetry, dataStale } from '$lib/stores/telemetry.js';
+	import { currentBoat } from '$lib/stores/boat.js';
 	import BatteryCard from '$lib/components/cards/BatteryCard.svelte';
 	import SolarCard from '$lib/components/cards/SolarCard.svelte';
 	import EnvironmentCard from '$lib/components/cards/EnvironmentCard.svelte';
@@ -19,7 +20,7 @@
 	<BatteryCard t={$telemetry} />
 	<SolarCard t={$telemetry} />
 	<EnvironmentCard t={$telemetry} />
-	<EngineCard t={$telemetry} />
+	<EngineCard t={$telemetry} boatId={$currentBoat?.id} />
 	<RigCard t={$telemetry} />
 	<ShellyCard />
 	<VRMCard />

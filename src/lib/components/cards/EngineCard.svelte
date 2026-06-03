@@ -4,8 +4,15 @@
 	import ValueCell from '$lib/components/ui/ValueCell.svelte';
 	import { k2c, fmtRuntime } from '$lib/utils/units.js';
 
-	interface Props { t: Telemetry | null; }
-	let { t }: Props = $props();
+	interface Props {
+		t: Telemetry | null;
+		boatId?: string;  // For multi-boat localStorage isolation
+	}
+	let { t, boatId = 'default' }: Props = $props();
+
+	// Boat-specific localStorage keys for multi-boat support
+	const portKey = `engine.${boatId}.port.runtime_sec`;
+	const sbKey = `engine.${boatId}.starboard.runtime_sec`;
 
 	// Runtime persistence (localStorage)
 	let portRuntimeStored = $state<number | null>(null);
@@ -13,8 +20,8 @@
 
 	onMount(() => {
 		// Load stored runtimes from localStorage
-		const portStored = localStorage.getItem('engine.port.runtime_sec');
-		const sbStored = localStorage.getItem('engine.starboard.runtime_sec');
+		const portStored = localStorage.getItem(portKey);
+		const sbStored = localStorage.getItem(sbKey);
 		if (portStored) portRuntimeStored = parseFloat(portStored);
 		if (sbStored) sbRuntimeStored = parseFloat(sbStored);
 	});
@@ -23,11 +30,11 @@
 	$effect(() => {
 		if (t?.eng_run_sec != null) {
 			portRuntimeStored = t.eng_run_sec;
-			localStorage.setItem('engine.port.runtime_sec', t.eng_run_sec.toString());
+			localStorage.setItem(portKey, t.eng_run_sec.toString());
 		}
 		if (t?.eng_sb_run_sec != null) {
 			sbRuntimeStored = t.eng_sb_run_sec;
-			localStorage.setItem('engine.starboard.runtime_sec', t.eng_sb_run_sec.toString());
+			localStorage.setItem(sbKey, t.eng_sb_run_sec.toString());
 		}
 	});
 
