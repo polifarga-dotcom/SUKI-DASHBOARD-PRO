@@ -225,24 +225,6 @@
 		if (!map || !L) return;
 		const rot = hdgDeg;
 
-		// Calculate overlay radius to match alarm radius pixel distance
-		// Convert alarm radius (meters) to pixel distance at current zoom
-		if (liveAncLat != null && liveAncLon != null) {
-			try {
-				const centerPx = map.latLngToContainerPoint([liveAncLat, liveAncLon]);
-				const radiusMeters = localRadius; // or cfg?.radius_m
-				const radiusPt = map.latLngToContainerPoint([
-					liveAncLat + (radiusMeters / 111000), // approximate: 1 degree ≈ 111 km
-					liveAncLon
-				]);
-				const pixelRadius = Math.hypot(radiusPt.x - centerPx.x, radiusPt.y - centerPx.y);
-				overlayR = pixelRadius;
-			} catch (e) {
-				// Fallback if calculation fails
-				overlayR = Math.min(mapBoxW / 2, mapBoxH / 2) * 0.45;
-			}
-		}
-
 		// ── Boat marker ──
 		if (boatLat != null && boatLon != null) {
 			const icon = L.divIcon({ className: '', iconSize: [30, 34], iconAnchor: [15, 17], html: boatIconHtml(rot) });
