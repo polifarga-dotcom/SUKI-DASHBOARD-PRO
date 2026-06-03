@@ -320,11 +320,11 @@
 					windArrowMarker.setIcon(arrowIcon);
 				}
 
-				// Text overlay — convert geographic wind position to map-box screen coords,
-				// accounting for map-wrap CSS rotation (heading-up mode).
-				// map-wrap has inset: -25%, so its size = 1.5 × map-box.
-				// map-wrap center in container coords = (0.75 * mapBoxW, 0.75 * mapBoxH).
-				const pt = map.latLngToContainerPoint(windPos);
+				// Text overlay — positioned 15m BEYOND the arrow (outward from anchor)
+				// so it doesn't cover the arrow itself.
+				// Same rotation correction as arrow position.
+				const windTextPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius + 15);
+				const pt = map.latLngToContainerPoint(windTextPos);
 				const θ = hdgDeg * Math.PI / 180;
 				const dx = pt.x - 0.75 * mapBoxW;  // relative to map-wrap center
 				const dy = pt.y - 0.75 * mapBoxH;
