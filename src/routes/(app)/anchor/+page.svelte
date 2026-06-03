@@ -130,7 +130,6 @@
 
 	// Leaflet markers for wind and compass (positioned on alarm radius ring)
 	let windArrowMarker: any = null;  // Rotated arrow only
-	let windTextMarker: any = null;   // Horizontal text only
 	let compassMarker: any = null;
 
 	// ── "Boat position updated X ago" timestamp ───────────────────────────────
@@ -313,21 +312,22 @@
 					windArrowMarker.setIcon(arrowIcon);
 				}
 
-				// Text marker (stays horizontal, fixed south direction from anchor - not tied to wind)
+				// Text overlay (DOM-based, positioned south of anchor, stays horizontal)
+				// Calculate the lat/lon 12px south of anchor, then convert to container pixels
 				const textPos = destinationPoint(liveAncLat, liveAncLon, 180, localRadius + 12);
-				const textHtml = `<div style="font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px; white-space:nowrap; transform:rotate(0deg) !important;">${awsKn.toFixed(1)} kn</div>`;
-				const textIcon = L.divIcon({ className: '', iconSize: [40, 12], iconAnchor: [20, 6], html: textHtml });
-				if (!windTextMarker) {
-					windTextMarker = L.marker(textPos, { icon: textIcon, interactive: false }).addTo(map);
-				} else {
-					windTextMarker.setLatLng(textPos);
-					windTextMarker.setIcon(textIcon);
+				const containerPt = map.latLngToContainerPoint(textPos);
+				const textEl = document.querySelector('.wind-text-overlay') as HTMLElement | null;
+				if (textEl) {
+					textEl.textContent = `${awsKn.toFixed(1)} kn`;
+					textEl.style.opacity = '1';
+					textEl.style.left = `${containerPt.x - 20}px`;
+					textEl.style.top = `${containerPt.y - 6}px`;
 				}
 			} else {
 				windArrowMarker?.remove();
 				windArrowMarker = null;
-				windTextMarker?.remove();
-				windTextMarker = null;
+				const textEl = document.querySelector('.wind-text-overlay') as HTMLElement | null;
+				if (textEl) textEl.style.opacity = '0';
 			}
 
 			// Compass marker: positioned at North (0°), at localRadius distance from anchor
@@ -342,8 +342,9 @@
 			}
 		} else {
 			windArrowMarker?.remove(); windArrowMarker = null;
-			windTextMarker?.remove(); windTextMarker = null;
 			compassMarker?.remove(); compassMarker = null;
+			const textEl = document.querySelector('.wind-text-overlay') as HTMLElement | null;
+			if (textEl) textEl.style.opacity = '0';
 		}
 
 		// ── History anchor preview (only the button-selected entry) ──
@@ -584,8 +585,8 @@
 		</div>
 
 		<!-- DOM overlays (not inside rotating wrapper) -->
-		<!-- Map overlays: wind & compass are Leaflet markers -->
-		<div class="map-overlay"></div>
+		<!-- Wind speed text (positioned via latLngToContainerPoint) -->
+		<div class="wind-text-overlay"></div>
 
 		<!-- Map control buttons -->
 		<div class="map-btns">
@@ -903,6 +904,22 @@
 		font-size: 8px; color: var(--muted);
 		background: rgba(0,0,0,0.7); padding: 1px 3px; border-radius: 2px;
 		white-space: nowrap;
+	}
+
+	/* Wind speed text overlay (DOM-based, positioned via latLngToContainerPoint) */
+	.wind-text-overlay {
+		position: absolute;
+		font-size: 8px;
+		color: var(--amber);
+		font-weight: 700;
+		background: rgba(0, 0, 0, 0.8);
+		padding: 1px 3px;
+		border-radius: 2px;
+		white-space: nowrap;
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.2s ease-in-out;
+		z-index: 450;
 	}
 
 	/* ── Boat position timestamp overlay ── */
