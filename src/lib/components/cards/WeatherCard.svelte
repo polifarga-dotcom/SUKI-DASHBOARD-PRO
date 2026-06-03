@@ -562,27 +562,22 @@
 					<span class="wx-gust">G{h.gusts}</span>
 					<span class="wx-temp">{h.temp}°</span>
 
-					<!-- Sea state: compact wave display with arrows -->
-					<div class="wx-sea-compact">
-						{#if h.waveH != null}
-							<div class="wx-wave-forecast-item" style="color: {waveColor(h.waveH)}">
-								<svg style="transform: rotate({h.waveD ?? 0}deg)"
-									viewBox="0 0 12 18" width="11" height="11" fill="currentColor">
-									<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
-								</svg>
-								<span>{h.waveH}m</span>
-							</div>
-						{/if}
-						{#if h.swellH != null && h.swellH >= 0.1}
-							<div class="wx-swell-forecast-item" style="color: {waveColor(h.swellH)}">
-								<svg style="transform: rotate({h.swellD ?? 0}deg)"
-									viewBox="0 0 12 18" width="9" height="9" fill="currentColor">
-									<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
-								</svg>
-								<span>{h.swellH}m</span>
-							</div>
-						{/if}
-					</div>
+					<!-- Sea state: wave display with period (swell only if dominant) -->
+					{#if h.waveH != null}
+						<div class="wx-sea-wave-group" style="color: {waveColor(h.waveH)}">
+							<svg style="transform: rotate({h.waveD ?? 0}deg)"
+								viewBox="0 0 12 18" width="11" height="11" fill="currentColor">
+								<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
+							</svg>
+							<span class="wx-wave-height">{h.waveH}m</span>
+							{#if h.waveP != null}
+								<span class="wx-wave-period">@{h.waveP}s</span>
+							{/if}
+							{#if h.swellH != null && h.swellH >= 0.1}
+								<span class="wx-swell-note" style="opacity: 0.6">+{h.swellH}m</span>
+							{/if}
+						</div>
+					{/if}
 				</div>
 			{/each}
 		</div>
@@ -769,17 +764,14 @@
 	.wx-gust  { font-size: 11px; color: var(--muted); }
 	.wx-temp  { color: var(--muted); text-align: right; }
 
-	/* Sea compact display — direction arrow + height */
-	.wx-sea-compact {
-		display: flex; gap: 6px; justify-self: end;
-		align-items: center;
-	}
-	.wx-wave-forecast-item,
-	.wx-swell-forecast-item {
-		display: flex; gap: 2px; align-items: center;
+	/* Sea wave display — arrow, height, period, optional swell note */
+	.wx-sea-wave-group {
+		display: flex; gap: 2px; align-items: center; justify-self: end;
 		font-size: 11px; font-weight: 600;
 	}
-	.wx-swell-forecast-item { opacity: 0.7; }
+	.wx-wave-height { font-weight: 700; }
+	.wx-wave-period { font-size: 10px; color: var(--muted); font-weight: 400; }
+	.wx-swell-note { font-size: 10px; color: var(--muted); }
 
 	/* Moon section */
 	.wx-moon-section { padding: 10px 0 4px; border-top: 1px solid var(--border); }
