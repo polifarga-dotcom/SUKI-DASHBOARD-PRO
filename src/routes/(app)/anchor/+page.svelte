@@ -61,8 +61,18 @@
 	const hdgDeg   = $derived(rad2deg(t?.nav_hdg_rad ?? null) ?? 0);
 	const awaDeg   = $derived(rad2deg(t?.env_awa_rad ?? null));
 	const awsKn    = $derived(t?.env_aws_ms != null ? parseFloat(ms2kn(t.env_aws_ms)) : null);
-	const depth    = $derived(fmtDepth(t?.env_depth_m ?? null));
+	const depth    = $derived(t?.env_depth_m ?? null);
+	const depthStr = $derived(fmtDepth(depth));
 	const alarming = $derived(cfg?.alarming ?? false);
+
+	// Scope = Chain / Depth ratio
+	// Uses depth captured when anchor was set (stored in DB)
+	// Only recalculates when chain slider is moved; does not change with current depth
+	const scope = $derived(
+		cfg?.anchor_depth_at_set != null && cfg.anchor_depth_at_set > 0.5 && localChain > 0
+			? (localChain / cfg.anchor_depth_at_set).toFixed(1)
+			: null
+	);
 
 	// ── Projected anchor position (slider preview, also used when saving to DB) ──
 	// Always computed from current bearing/chain + boat position.
@@ -335,7 +345,8 @@
 		const [ancLat, ancLon] = destinationPoint(boatLat, boatLon, localBearing, localChain);
 		await saveConfig({
 			lat: ancLat, lon: ancLon, active: true, alarming: false,
-			chain_length_m: localChain, radius_m: localRadius, bearing_deg: localBearing
+			chain_length_m: localChain, radius_m: localRadius, bearing_deg: localBearing,
+			anchor_depth_at_set: depth
 		});
 		if (map) map.setView([ancLat, ancLon], Math.max(map.getZoom(), 16));
 	}
@@ -380,7 +391,7 @@
 		const lat = parseFloat(manLatStr);
 		const lon = parseFloat(manLonStr);
 		if (!isFinite(lat) || !isFinite(lon)) return;
-		await saveConfig({ lat, lon, active: true, alarming: false });
+		await saveConfig({ lat, lon, active: true, alarming: false, anchor_depth_at_set: depth });
 		if (boatLat != null && boatLon != null) {
 			localBearing = Math.round(bearingTo(boatLat, boatLon, lat, lon)) % 360;
 			localChain   = Math.min(Math.round(haversine(boatLat, boatLon, lat, lon)), 120);
@@ -506,7 +517,7 @@
 <div class="alarm-overlay">
 	<div class="alarm-icon">⚓</div>
 	<div class="alarm-title">ANCHOR ALARM</div>
-	<div class="alarm-dist">{ancDistM != null ? ancDistM.toFixed(0) + ' m from anchor' : 'Position unknown'}</div>
+	<div class="alarm-dist">{scope ? `Scope: ${scope}:1` : 'Position unknown'}</div>
 	{#if cfg?.alarm_telegram_muted}
 		<div class="alarm-muted-badge">Telegram muted · Pushover active</div>
 	{/if}
@@ -589,12 +600,12 @@
 			<div class="cell-val">{depth}</div>
 		</div>
 		<div class="cell">
-			<div class="cell-label">DIST</div>
-			<div class="cell-val">{localChain} m</div>
+			<div class="cell-label">DEPTH</div>
+			<div class="cell-val">{depth != null ? ($unitSystem === 'imperial' ? (depth * 3.28084).toFixed(1) + ' ft' : depth.toFixed(1) + ' m') : '—'}</div>
 		</div>
 		<div class="cell">
 			<div class="cell-label">SCOPE</div>
-			<div class="cell-val">{ancDistM != null ? ancDistM.toFixed(0) + ' m' : '—'}</div>
+			<div class="cell-val">{scope ? scope + ':1' : '—'}</div>
 		</div>
 		<div class="cell">
 			<div class="cell-label">BEARING</div>

@@ -102,6 +102,8 @@ export type AnchorConfig = {
 	alarm_notify_count:    number;        // how many notifications have fired in this alarm
 	alarm_next_notify_at:  string | null; // when to fire the next notification
 	alarm_telegram_muted:  boolean;       // true = skip Telegram but keep Pushover + alarm overlay
+	// Scope calculation (added migration 102)
+	anchor_depth_at_set:   number | null; // water depth when anchor was set (for static scope: chain/depth)
 };
 
 export type Boat = {
