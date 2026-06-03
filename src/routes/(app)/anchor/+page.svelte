@@ -23,8 +23,6 @@
 	let radiusCircle: any = null;
 	let chainLine:    any = null;
 	let crumbLine:    any = null;
-	let windMarker:   any = null;  // AWA wind direction overlay
-	let compassMarker: any = null; // North compass overlay
 	let histLayers:   any[] = [];
 
 	// ── Reactive UI state ─────────────────────────────────────────────────────
@@ -319,48 +317,6 @@
 				}).addTo(map)
 			);
 		}
-
-		// ── Wind & Compass overlays (on alarm radius ring) ──
-		// Only show when anchor is active and we have position data
-		if (cfg?.active && liveAncLat != null && liveAncLon != null) {
-			// Wind marker: positioned at AWA bearing, at alarm radius distance from anchor
-			if (awaDeg != null && awsKn != null) {
-				const windPos = destinationPoint(liveAncLat, liveAncLon, awaDeg, localRadius);
-				const windHtml = `<div style="position:relative; width:24px; height:24px; display:flex; align-items:center; justify-content:center;">
-					<svg viewBox="0 0 24 24" width="20" height="20" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(${(awaDeg ?? 0) + 180}deg)">
-						<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
-					</svg>
-					<div style="position:absolute; top:18px; left:50%; transform:translateX(-50%); white-space:nowrap; font-size:8px; color:#f59e0b; font-weight:700; background:rgba(0,0,0,0.8); padding:1px 3px; border-radius:2px;">
-						${awsKn.toFixed(1)} kn
-					</div>
-				</div>`;
-				const windIcon = L.divIcon({ className: '', iconSize: [24, 30], iconAnchor: [12, 15], html: windHtml });
-				if (!windMarker) {
-					windMarker = L.marker(windPos, { icon: windIcon, interactive: false }).addTo(map);
-				} else {
-					windMarker.setLatLng(windPos);
-					windMarker.setIcon(windIcon);
-				}
-			} else {
-				windMarker?.remove();
-				windMarker = null;
-			}
-
-			// Compass marker: positioned at North (0°), at alarm radius distance from anchor
-			const compassPos = destinationPoint(liveAncLat, liveAncLon, 0, localRadius);
-			const compassHtml = `<div style="background:rgba(0,0,0,0.78); color:#00c8ff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:10px; border:1px solid #00c8ff; letter-spacing:1px; white-space:nowrap;">N</div>`;
-			const compassIcon = L.divIcon({ className: '', iconSize: [20, 20], iconAnchor: [10, 10], html: compassHtml });
-			if (!compassMarker) {
-				compassMarker = L.marker(compassPos, { icon: compassIcon, interactive: false }).addTo(map);
-			} else {
-				compassMarker.setLatLng(compassPos);
-				compassMarker.setIcon(compassIcon);
-			}
-		} else {
-			// Remove overlays when anchor is not active
-			windMarker?.remove();    windMarker    = null;
-			compassMarker?.remove(); compassMarker = null;
-		}
 	}
 
 	// ── Supabase helpers ──────────────────────────────────────────────────────
@@ -583,9 +539,30 @@
 			<div bind:this={mapInnerEl} class="map-inner"></div>
 		</div>
 
-		<!-- DOM overlays container (now minimal, wind/compass are Leaflet markers) -->
+		<!-- DOM overlays (not inside rotating wrapper) -->
 		<div class="map-overlay">
-			<!-- Wind and compass overlays are now Leaflet markers positioned on the map -->
+
+			<!-- N pill -->
+			<div class="north-pill" style="left:{nPillPx.x}px;top:{nPillPx.y}px">N</div>
+
+			<!-- AWA / wind flag -->
+			{#if awaPx && awsKn != null}
+			<div class="awa-marker" style="left:{awaPx.x}px;top:{awaPx.y}px">
+				<svg
+					class="awa-arrow"
+					viewBox="0 0 24 24" width="20" height="20"
+					fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round"
+					style="transform:rotate({(awaDeg ?? 0) + 180}deg)"
+				>
+					<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
+				</svg>
+				<div class="awa-label">
+					{#if awsKn != null}<div class="awa-kn">{awsKn.toFixed(1)} kn</div>{/if}
+					{#if awaDeg != null}<div class="awa-deg">AWA {((Math.round(awaDeg) % 360) + 360) % 360}°</div>{/if}
+				</div>
+			</div>
+			{/if}
+
 		</div>
 
 		<!-- Map control buttons -->
