@@ -301,8 +301,8 @@
 			if (awaDeg != null && awsKn != null) {
 				const windPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius);
 
-				// Arrow marker (rotates with wind direction, positioned opposite)
-				const arrowHtml = `<svg viewBox="0 0 24 24" width="18" height="18" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(${(awaDeg ?? 0) + 180}deg); display:block;">
+				// Arrow marker (rotates with wind direction)
+				const arrowHtml = `<svg viewBox="0 0 24 24" width="18" height="18" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(${awaDeg ?? 0}deg); display:block;">
 					<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
 				</svg>`;
 				const arrowIcon = L.divIcon({ className: '', iconSize: [18, 18], iconAnchor: [9, 9], html: arrowHtml });
