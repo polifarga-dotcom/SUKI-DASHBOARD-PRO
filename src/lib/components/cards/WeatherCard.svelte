@@ -155,6 +155,25 @@
 		return d[Math.round(deg / 22.5) % 16];
 	}
 
+	function waveLabel(m: number | null): string {
+		if (m == null) return '—';
+		if (m < 0.5) return 'Smooth';
+		if (m < 1.25) return 'Slight';
+		if (m < 2.5) return 'Moderate';
+		if (m < 4.0) return 'Rough';
+		return 'Very Rough';
+	}
+
+	// Visual indicator: number of wave icons to show height
+	function waveHeightIndicator(m: number | null): number {
+		if (m == null) return 0;
+		if (m < 0.5) return 1;
+		if (m < 1.25) return 1;
+		if (m < 2.5) return 2;
+		if (m < 4.0) return 3;
+		return 4;
+	}
+
 	function fmtHour(iso: string): string { return iso.slice(11, 16); }
 
 	function dayLabel(iso: string): string {
@@ -470,24 +489,53 @@
 			<!-- Sea-state row (only when marine data available) -->
 			{#if now.waveH != null}
 			<div class="wx-now-sea">
-				<div class="wx-now-sea-item">
-					<svg viewBox="0 0 16 10" width="13" height="8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-						<path d="M1 7 Q3 3 5 7 Q7 11 9 7 Q11 3 13 7 Q14 9 15 7"/>
-					</svg>
-					<span class="wx-sea-lbl">Wave</span>
-					<span class="wx-sea-val" style="color:{waveColor(now.waveH)}">
-						{now.waveH} m{now.waveP != null ? ` @ ${now.waveP}s` : ''}
-					</span>
-					{#if now.waveD != null}<span class="wx-sea-dir">{dirAbbr(now.waveD)}</span>{/if}
+				<!-- Wave section with direction arrow -->
+				<div class="wx-sea-item-box">
+					<div class="wx-wave-arrow-box">
+						<svg class="wx-arrow-wave"
+							style="transform: rotate({now.waveD ?? 0}deg); color: {waveColor(now.waveH)}"
+							viewBox="0 0 12 18" width="28" height="28" fill="currentColor">
+							<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
+						</svg>
+						<span class="wx-wave-dir-label">{dirAbbr(now.waveD ?? 0)}</span>
+					</div>
+					<div class="wx-wave-data">
+						<div class="wx-wave-height-row">
+							<span class="wx-wave-height" style="color:{waveColor(now.waveH)}">{now.waveH} m</span>
+							<span class="wx-wave-state" style="color:{waveColor(now.waveH)}">{waveLabel(now.waveH)}</span>
+						</div>
+						<div class="wx-wave-visual">
+							{#each Array(waveHeightIndicator(now.waveH)) as _, i}
+								<svg viewBox="0 0 16 10" width="12" height="8" fill="none"
+									stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+									style="color: {waveColor(now.waveH)}; opacity: {1 - i * 0.15}">
+									<path d="M1 7 Q3 3 5 7 Q7 11 9 7 Q11 3 13 7 Q14 9 15 7"/>
+								</svg>
+							{/each}
+						</div>
+						{#if now.waveP != null}
+						<span class="wx-wave-period">Period: {now.waveP}s</span>
+						{/if}
+					</div>
 				</div>
+
+				<!-- Swell section (if present) -->
 				{#if now.swellH != null && now.swellH >= 0.1}
-				<div class="wx-now-sea-item">
-					<svg viewBox="0 0 16 10" width="13" height="8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.6">
-						<path d="M1 8 Q4 4 7 8 Q10 12 13 8 Q14 6.5 15 8"/>
-					</svg>
-					<span class="wx-sea-lbl">Swell</span>
-					<span class="wx-sea-val">{now.swellH} m</span>
-					{#if now.swellD != null}<span class="wx-sea-dir">{dirAbbr(now.swellD)}</span>{/if}
+				<div class="wx-sea-item-box wx-swell">
+					<div class="wx-wave-arrow-box">
+						<svg class="wx-arrow-wave"
+							style="transform: rotate({now.swellD ?? 0}deg); color: {waveColor(now.swellH)}; opacity: 0.6;"
+							viewBox="0 0 12 18" width="24" height="24" fill="currentColor">
+							<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
+						</svg>
+						<span class="wx-wave-dir-label">{dirAbbr(now.swellD ?? 0)}</span>
+					</div>
+					<div class="wx-wave-data">
+						<div class="wx-wave-height-row">
+							<span class="wx-swell-label">Swell</span>
+							<span class="wx-wave-height" style="color:{waveColor(now.swellH)}; opacity: 0.7;">{now.swellH} m</span>
+						</div>
+					</div>
 				</div>
 				{/if}
 			</div>
@@ -635,14 +683,47 @@
 	.wx-now-precip{ font-size: 11px; color: #60a5fa; }
 	/* Sea-state row (wave + swell) */
 	.wx-now-sea {
-		display: flex; gap: 16px; padding: 7px 12px;
+		display: flex; gap: 16px; padding: 8px 12px;
 		border-top: 1px solid var(--border);
 	}
-	.wx-now-sea-item { display: flex; align-items: center; gap: 5px; }
-	.wx-sea-lbl  { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
-	.wx-sea-val  { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
-	.wx-sea-dim  { font-size: 11px; color: var(--muted); }
-	.wx-sea-dir  { font-size: 11px; font-weight: 600; color: var(--text); }
+	.wx-sea-item-box {
+		display: flex; align-items: center; gap: 10px;
+		flex: 1;
+	}
+	.wx-sea-item-box.wx-swell {
+		opacity: 0.8;
+		border-left: 1px solid var(--border);
+		padding-left: 12px;
+	}
+	.wx-wave-arrow-box {
+		display: flex; flex-direction: column; align-items: center; gap: 3px;
+		flex-shrink: 0;
+	}
+	.wx-arrow-wave { flex-shrink: 0; }
+	.wx-wave-dir-label {
+		font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+	}
+	.wx-wave-data {
+		display: flex; flex-direction: column; gap: 4px;
+	}
+	.wx-wave-height-row {
+		display: flex; align-items: baseline; gap: 6px;
+	}
+	.wx-wave-height {
+		font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums;
+	}
+	.wx-wave-state {
+		font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+	}
+	.wx-swell-label {
+		font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px;
+	}
+	.wx-wave-visual {
+		display: flex; gap: 2px; align-items: center;
+	}
+	.wx-wave-period {
+		font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px;
+	}
 
 	/* Forecast */
 	.wx-forecast { margin: 0 -12px; max-height: 360px; overflow-y: auto; }
