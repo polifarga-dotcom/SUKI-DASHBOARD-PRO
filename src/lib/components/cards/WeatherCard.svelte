@@ -443,16 +443,23 @@
 			<!-- Top row: wind | weather -->
 			<div class="wx-now-top">
 				<div class="wx-now-wind">
-					<svg class="wx-arrow" style="transform: rotate({now.dir}deg)"
-						viewBox="0 0 12 18" width="22" height="22" fill="currentColor">
-						<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
-					</svg>
-					<span class="wx-now-speed" style="color:{windColor(now.wind)}">{now.wind}</span>
-					<span class="wx-now-unit">kn</span>
-					<span class="wx-now-sep">·</span>
-					<span class="wx-now-gusts">G {now.gusts} kn</span>
-					<span class="wx-now-sep">·</span>
-					<span class="wx-now-dir">{dirAbbr(now.dir)}</span>
+					<div class="wx-wind-arrow-box">
+						<svg class="wx-arrow-large" style="transform: rotate({now.dir}deg)"
+							viewBox="0 0 12 18" width="32" height="32" fill="currentColor">
+							<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
+						</svg>
+						<span class="wx-wind-dir-label">{dirAbbr(now.dir)}</span>
+					</div>
+					<div class="wx-wind-data">
+						<div class="wx-wind-speed-row">
+							<span class="wx-now-speed" style="color:{windColor(now.wind)}">{now.wind}</span>
+							<span class="wx-now-unit">kn</span>
+						</div>
+						<div class="wx-wind-gusts-row">
+							<span class="wx-wind-label">Gusts:</span>
+							<span class="wx-wind-gusts">{now.gusts} kn</span>
+						</div>
+					</div>
 				</div>
 				<div class="wx-now-cond">
 					<span class="wx-now-emoji">{wmoEmoji(now.wmo, now.time, pos)}</span>
@@ -593,10 +600,32 @@
 		display: flex; justify-content: space-between; align-items: center;
 		padding: 10px 12px;
 	}
-	.wx-now-wind  { display: flex; align-items: center; gap: 6px; }
-	.wx-arrow     { flex-shrink: 0; color: var(--muted); }
+	.wx-now-wind {
+		display: flex; align-items: center; gap: 14px;
+	}
+	.wx-wind-arrow-box {
+		display: flex; flex-direction: column; align-items: center; gap: 4px;
+		flex-shrink: 0;
+	}
+	.wx-arrow { flex-shrink: 0; color: var(--muted); }
+	.wx-arrow-large { color: var(--amber); }
+	.wx-wind-dir-label {
+		font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+		color: var(--text);
+	}
+	.wx-wind-data {
+		display: flex; flex-direction: column; gap: 3px;
+	}
+	.wx-wind-speed-row {
+		display: flex; align-items: baseline; gap: 4px;
+	}
 	.wx-now-speed { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
 	.wx-now-unit  { font-size: 12px; color: var(--muted); }
+	.wx-wind-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+	.wx-wind-gusts-row {
+		display: flex; align-items: baseline; gap: 3px;
+	}
+	.wx-wind-gusts { font-size: 12px; color: var(--muted); font-weight: 600; }
 	.wx-now-sep   { color: var(--border); }
 	.wx-now-gusts { font-size: 12px; color: var(--muted); }
 	.wx-now-dir   { font-size: 13px; font-weight: 600; }
