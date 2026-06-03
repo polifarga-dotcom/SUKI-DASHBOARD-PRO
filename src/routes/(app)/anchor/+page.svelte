@@ -51,10 +51,12 @@
 	// Seconds ticker for the "boat position updated X ago" overlay
 	let nowMs = $state(Date.now());
 
-	// Wind text overlay positioning
+	// Wind text overlay positioning (DOM ref + state)
+	let windTextEl: HTMLDivElement;
 	let windTextX = $state(0);
 	let windTextY = $state(0);
 	let windTextVisible = $state(false);
+	let windTextContent = $state('');
 
 	// ── Derived boat/anchor values ────────────────────────────────────────────
 	const t   = $derived($telemetry);
@@ -318,33 +320,24 @@
 					windArrowMarker.setIcon(arrowIcon);
 				}
 
-				// Text overlay (DOM-based with left/top positioning - stays horizontal)
-				// Calculate viewport position similar to old app's positionCompassOverlays()
-				const mapBoxEl = document.querySelector('.anc-map-box') as HTMLElement | null;
-				const textEl = document.querySelector('.wind-text-overlay') as HTMLElement | null;
-				if (mapBoxEl && textEl) {
+				// Text overlay — use bound mapBoxEl DOM ref + Svelte state (no querySelector needed)
+				if (mapBoxEl) {
 					const rect = mapBoxEl.getBoundingClientRect();
 					if (rect.width > 80 && rect.height > 80) {
 						const cx = rect.width / 2;
 						const cy = rect.height / 2;
-						const r = Math.min(cx, cy) - 22;  // radius for ring overlays
-
-						// Position on the circle based on AWA
-						const a = awaDeg * Math.PI / 180;
-						const x = cx + Math.sin(a) * r;
-						const y = cy - Math.cos(a) * r;
-
-						textEl.style.left = `${x}px`;
-						textEl.style.top = `${y}px`;
-						textEl.textContent = `${awsKn.toFixed(1)} kn`;
-						textEl.style.opacity = '1';
+						const r = Math.min(cx, cy) - 22;
+						const a = (awaDeg as number) * Math.PI / 180;
+						windTextX = cx + Math.sin(a) * r;
+						windTextY = cy - Math.cos(a) * r;
+						windTextContent = `${(awsKn as number).toFixed(1)} kn`;
+						windTextVisible = true;
 					}
 				}
 			} else {
 				windArrowMarker?.remove();
 				windArrowMarker = null;
-				const textEl = document.querySelector('.wind-text-overlay') as HTMLElement | null;
-				if (textEl) textEl.style.opacity = '0';
+				windTextVisible = false;
 			}
 
 			// Compass marker: positioned at North (0°), at localRadius distance from anchor
@@ -603,7 +596,7 @@
 
 		<!-- DOM overlays (not inside rotating wrapper) -->
 		<!-- Wind speed text overlay - positioned by Svelte state binding -->
-		<div class="wind-text-overlay" style="left: {windTextX}px; top: {windTextY}px; opacity: {windTextVisible ? 1 : 0};"></div>
+		<div class="wind-text-overlay" style="left: {windTextX}px; top: {windTextY}px; opacity: {windTextVisible ? 1 : 0};">{windTextContent}</div>
 
 		<!-- Map control buttons -->
 		<div class="map-btns">
