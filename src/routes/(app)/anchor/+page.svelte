@@ -921,6 +921,7 @@
 	/* Wind speed text overlay (DOM-based, positioned with left/top like old app) */
 	.wind-text-overlay {
 		position: absolute;
+		inset: 0;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
