@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Telemetry } from '$lib/types.js';
 	import ValueCell from '$lib/components/ui/ValueCell.svelte';
-	import { k2c, k2cNum, ms2kn, rad2degStr, fmtDepth, fmtPressure, pressureColor, fmtTemp } from '$lib/utils/units.js';
+	import { k2c, k2cNum, ms2kn, rad2degStr, fmtDepth, fmtDepthWithUnit, fmtPressure, pressureColor, fmtTemp } from '$lib/utils/units.js';
 	import { unitSystem } from '$lib/stores/userSettings.js';
 
 	interface Props { t: Telemetry | null; }
@@ -13,7 +13,7 @@
 <div class="card">
 	<div class="title">Environment</div>
 	<div class="grid">
-		<ValueCell label="Depth"    value={fmtDepth(t?.env_depth_m ?? null)} />
+		<ValueCell label="Depth"    value={fmtDepthWithUnit(t?.env_depth_m ?? null, $unitSystem)} />
 		<ValueCell label="AWS"      value={ms2kn(t?.env_aws_ms ?? null)} unit="kn" />
 		<ValueCell label="AWA"      value={rad2degStr(t?.env_awa_rad ?? null)} />
 		<ValueCell label="Pressure" value={fmtPressure(t?.env_pressure_pa ?? null)} color={pressColor} />

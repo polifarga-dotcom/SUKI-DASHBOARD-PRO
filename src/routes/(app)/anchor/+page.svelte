@@ -6,7 +6,8 @@
 	import { currentBoat } from '$lib/stores/boat.js';
 	import { supabase } from '$lib/supabase.js';
 	import { haversine, destinationPoint, bearingTo } from '$lib/utils/geo.js';
-	import { rad2deg, fmtDepth, ms2kn, bearingCardinal } from '$lib/utils/units.js';
+	import { rad2deg, fmtDepth, ms2kn, bearingCardinal, m2ft } from '$lib/utils/units.js';
+	import { unitSystem } from '$lib/stores/userSettings.js';
 	import type { AnchorHistoryEntry } from '$lib/types.js';
 
 	// ── DOM refs ──────────────────────────────────────────────────────────────
@@ -695,7 +696,7 @@
 	<div class="sliders">
 
 		<div class="srow">
-			<div class="slabel">Distance from Anchor <span class="sval">{localChain} m</span></div>
+			<div class="slabel">Distance from Anchor <span class="sval">{$unitSystem === 'imperial' ? m2ft(localChain) : localChain.toFixed(1)} {$unitSystem === 'imperial' ? 'ft' : 'm'}</span></div>
 			<div class="sctrl">
 				<button class="sbtn" onclick={() => {
 					localChain = Math.max(0, localChain - 5);
@@ -721,7 +722,7 @@
 		</div>
 
 		<div class="srow">
-			<div class="slabel">Alarm radius <span class="sval">{localRadius} m</span></div>
+			<div class="slabel">Alarm radius <span class="sval">{$unitSystem === 'imperial' ? m2ft(localRadius) : localRadius.toFixed(1)} {$unitSystem === 'imperial' ? 'ft' : 'm'}</span></div>
 			<div class="sctrl">
 				<button class="sbtn" onclick={() => { localRadius = Math.max(10, localRadius - 10); saveConfig({ radius_m: localRadius }); }}>−</button>
 				<input type="range" min="10" max="500" step="10" value={localRadius}

@@ -36,8 +36,16 @@ export const fmtW = (w: number | null): string =>
 export const fmtSOC = (soc: number | null): string =>
 	soc == null ? '—' : (soc * 100).toFixed(0) + '%';
 
+// Depth formatting with unit support
 export const fmtDepth = (m: number | null): string =>
 	m == null ? '—' : m.toFixed(1) + 'm';
+
+export const fmtDepthWithUnit = (m: number | null, unit: 'metric' | 'imperial'): string => {
+	if (m == null) return '—';
+	return unit === 'imperial'
+		? `${m2ft(m)}ft`
+		: `${m.toFixed(1)}m`;
+};
 
 export const fmtPressure = (pa: number | null): string =>
 	pa == null ? '—' : (pa / 100).toFixed(1) + ' hPa';
