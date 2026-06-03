@@ -189,7 +189,7 @@
 		// explicit reads so Svelte tracks deps:
 		const _deps = [boatLat, boatLon, hdgDeg, cfg, alarming, breadcrumb,
 		               localChain, localRadius, localBearing, liveAncLat, liveAncLon,
-		               anchorHistory, isDragging, selectedHistory];
+		               anchorHistory, isDragging, selectedHistory, awaDeg, awsKn];
 		updateMarkers();
 	});
 
@@ -320,20 +320,19 @@
 					windArrowMarker.setIcon(arrowIcon);
 				}
 
-				// Text overlay — use bound mapBoxEl DOM ref + Svelte state (no querySelector needed)
-				if (mapBoxEl) {
-					const rect = mapBoxEl.getBoundingClientRect();
-					if (rect.width > 80 && rect.height > 80) {
-						const cx = rect.width / 2;
-						const cy = rect.height / 2;
-						const r = Math.min(cx, cy) - 22;
-						const a = (awaDeg as number) * Math.PI / 180;
-						windTextX = cx + Math.sin(a) * r;
-						windTextY = cy - Math.cos(a) * r;
-						windTextContent = `${(awsKn as number).toFixed(1)} kn`;
-						windTextVisible = true;
-					}
-				}
+				// Text overlay — convert geographic wind position to map-box screen coords,
+				// accounting for map-wrap CSS rotation (heading-up mode).
+				// map-wrap has inset: -25%, so its size = 1.5 × map-box.
+				// map-wrap center in container coords = (0.75 * mapBoxW, 0.75 * mapBoxH).
+				const pt = map.latLngToContainerPoint(windPos);
+				const θ = hdgDeg * Math.PI / 180;
+				const dx = pt.x - 0.75 * mapBoxW;  // relative to map-wrap center
+				const dy = pt.y - 0.75 * mapBoxH;
+				// Rotate by +hdgDeg to undo the CSS rotation and get map-box coords
+				windTextX = dx * Math.cos(θ) + dy * Math.sin(θ) + 0.5 * mapBoxW;
+				windTextY = -dx * Math.sin(θ) + dy * Math.cos(θ) + 0.5 * mapBoxH;
+				windTextContent = `${(awsKn as number).toFixed(1)} kn`;
+				windTextVisible = true;
 			} else {
 				windArrowMarker?.remove();
 				windArrowMarker = null;
