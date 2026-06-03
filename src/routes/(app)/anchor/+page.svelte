@@ -343,7 +343,8 @@
 				compassMarker.setIcon(compassIcon);
 			}
 		} else {
-			windMarker?.remove(); windMarker = null;
+			windArrowMarker?.remove(); windArrowMarker = null;
+			windTextMarker?.remove(); windTextMarker = null;
 			compassMarker?.remove(); compassMarker = null;
 		}
 
