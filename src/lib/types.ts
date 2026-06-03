@@ -109,6 +109,8 @@ export type Boat = {
 	name: string;
 	created_at: string;
 	created_by: string | null;
+	unit_system: 'metric' | 'imperial';  // Wave height & distance unit
+	time_format: '12h' | '24h';          // Time display format
 };
 
 export type BoatMember = {

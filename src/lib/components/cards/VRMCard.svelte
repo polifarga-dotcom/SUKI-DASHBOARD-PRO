@@ -6,6 +6,8 @@
 	import { vrmData as vrmDataStore, vrmError as vrmErrorStore } from '$lib/stores/vrm.js';
 	import { parseVRMDiagnostics, MPPT_STATE } from '$lib/utils/vrm.js';
 	import type { VRMData, TemperatureSensor } from '$lib/types.js';
+	import { fmtTemp } from '$lib/utils/units.js';
+	import { unitSystem } from '$lib/stores/userSettings.js';
 
 	let data         = $derived($vrmDataStore);
 	let error        = $derived($vrmErrorStore);
@@ -458,7 +460,7 @@
 			<div class="temp-cell">
 				<div class="temp-header">
 					<div class="temp-name">{sensorNames[t.instance] ?? t.name}</div>
-					<div class="temp-val" style="color:{tempColor(t.celsius)}">{fmtC(t.celsius)}</div>
+					<div class="temp-val" style="color:{tempColor(t.celsius)}">{fmtTemp(t.celsius, $unitSystem)}</div>
 				</div>
 				<div class="temp-bar-track">
 					<div class="temp-bar-fill"
@@ -489,7 +491,7 @@
 					{#if batt.a != null}
 					<span class:c-green={batt.a > 0.5} class:c-amber={batt.a < -0.5}>{fmtA(batt.a)}</span>
 					{/if}
-					{#if batt.temp_c != null}<span class="c-muted">{fmtC(batt.temp_c)}</span>{/if}
+					{#if batt.temp_c != null}<span class="c-muted">{fmtTemp(batt.temp_c, $unitSystem)}</span>{/if}
 				</div>
 			</div>
 			{#if batt.soc != null}

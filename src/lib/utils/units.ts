@@ -1,3 +1,8 @@
+// Kelvin to Celsius (numeric)
+export const k2cNum = (k: number | null): number | null =>
+	k == null ? null : k - 273.15;
+
+// Kelvin to Celsius (formatted string)
 export const k2c = (k: number | null): string =>
 	k == null ? '—' : (k - 273.15).toFixed(1) + '°C';
 
@@ -86,4 +91,40 @@ const CARDINALS = ['N','NNO','NO','ONO','O','OSO','SO','SSO','S','SSW','SW','WSW
 export const bearingCardinal = (deg: number | null): string => {
 	if (deg == null) return '—';
 	return CARDINALS[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+};
+
+// ── Unit Conversions & Formatting ──────────────────────────────────────────
+
+// Temperature: Celsius to Fahrenheit
+export const c2f = (celsius: number | null): number | null =>
+	celsius == null ? null : Math.round((celsius * 9/5 + 32) * 10) / 10;
+
+// Format temperature with unit (handles both Celsius and Fahrenheit)
+export const fmtTemp = (celsius: number | null, unit: 'metric' | 'imperial'): string => {
+	if (celsius == null) return '—';
+	return unit === 'imperial'
+		? `${c2f(celsius)}°F`
+		: `${celsius.toFixed(1)}°C`;
+};
+
+// Distance: Meters to Feet
+export const m2ft = (meters: number | null): number | null =>
+	meters == null ? null : Math.round(meters * 3.28084 * 10) / 10;
+
+// Format wave height with unit
+export const fmtWaveHeight = (meters: number | null, unit: 'metric' | 'imperial'): string => {
+	if (meters == null) return '—';
+	return unit === 'imperial'
+		? `${m2ft(meters)}ft`
+		: `${meters.toFixed(1)}m`;
+};
+
+// Format time with 12h/24h support
+export const fmtTime = (date: Date | string, format: '12h' | '24h'): string => {
+	const d = typeof date === 'string' ? new Date(date) : date;
+	return d.toLocaleTimeString('en-US', {
+		hour: '2-digit',
+		minute: '2-digit',
+		hour12: format === '12h'
+	});
 };

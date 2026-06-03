@@ -4,6 +4,8 @@
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { inreachPoints } from '$lib/stores/inreach.js';
 	import { latestWave } from '$lib/stores/weather.js';
+	import { unitSystem, timeFormat } from '$lib/stores/userSettings.js';
+	import { fmtTemp, fmtWaveHeight, fmtTime } from '$lib/utils/units.js';
 
 	type WxHour = {
 		time:   string;
@@ -482,7 +484,7 @@
 				</div>
 				<div class="wx-now-cond">
 					<span class="wx-now-emoji">{wmoEmoji(now.wmo, now.time, pos)}</span>
-					<span class="wx-now-temp">{now.temp}°C</span>
+					<span class="wx-now-temp">{fmtTemp(now.temp, $unitSystem)}</span>
 					{#if now.precip > 0}<span class="wx-now-precip">{now.precip}%</span>{/if}
 				</div>
 			</div>
@@ -501,7 +503,7 @@
 					</div>
 					<div class="wx-wave-data">
 						<div class="wx-wave-height-row">
-							<span class="wx-wave-height" style="color:{waveColor(now.waveH)}">{now.waveH} m</span>
+							<span class="wx-wave-height" style="color:{waveColor(now.waveH)}">{fmtWaveHeight(now.waveH, $unitSystem)}</span>
 							<span class="wx-wave-state" style="color:{waveColor(now.waveH)}">{waveLabel(now.waveH)}</span>
 						</div>
 						<div class="wx-wave-visual">
@@ -560,7 +562,7 @@
 					<span class="wx-wspd" style="color:{windColor(h.wind)}">{h.wind}</span>
 					<span class="wx-wunit">kn</span>
 					<span class="wx-gust">G{h.gusts}</span>
-					<span class="wx-temp">{h.temp}°</span>
+					<span class="wx-temp">{#if $unitSystem === 'imperial'}{Math.round((h.temp * 9/5 + 32) * 10) / 10}°F{:else}{h.temp}°C{/if}</span>
 
 					<!-- Sea state: wave display with period (swell only if dominant) -->
 					{#if h.waveH != null}
@@ -569,12 +571,12 @@
 								viewBox="0 0 12 18" width="11" height="11" fill="currentColor">
 								<path d="M6 0 L11.5 15 L6 11 L0.5 15 Z"/>
 							</svg>
-							<span class="wx-wave-height">{h.waveH}m</span>
+							<span class="wx-wave-height">{fmtWaveHeight(h.waveH, $unitSystem)}</span>
 							{#if h.waveP != null}
 								<span class="wx-wave-period">@{h.waveP}s</span>
 							{/if}
 							{#if h.swellH != null && h.swellH >= 0.1}
-								<span class="wx-swell-note" style="opacity: 0.6">+{h.swellH}m</span>
+								<span class="wx-swell-note" style="opacity: 0.6">+{fmtWaveHeight(h.swellH, $unitSystem)}</span>
 							{/if}
 						</div>
 					{/if}

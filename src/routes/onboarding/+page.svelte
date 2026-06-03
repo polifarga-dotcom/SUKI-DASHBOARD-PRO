@@ -5,10 +5,12 @@
 	// ── Step: 1 = name boat, 2 = configure APIs ───────────────────────────────
 	let step = $state(1);
 
-	// Step 1 — boat name
-	let boatName  = $state('');
-	let s1Loading = $state(false);
-	let s1Error   = $state('');
+	// Step 1 — boat name + unit preferences
+	let boatName     = $state('');
+	let unitSystem   = $state<'metric' | 'imperial'>('metric');
+	let timeFormat   = $state<'24h' | '12h'>('24h');
+	let s1Loading    = $state(false);
+	let s1Error      = $state('');
 	let createdBoatId = $state('');
 
 	// Step 2 — API credentials (optional, skippable)
@@ -26,7 +28,11 @@
 
 		// Use edge function — service role bypasses RLS; JWT is auto-attached by SDK
 		const { data: result, error: fnErr } = await supabase.functions.invoke('create-boat', {
-			body: { name: boatName.trim() },
+			body: {
+				name: boatName.trim(),
+				unit_system: unitSystem,
+				time_format: timeFormat,
+			},
 		});
 
 		if (fnErr || !result?.ok) {
@@ -94,6 +100,36 @@
 				autocomplete="off"
 				onkeydown={(e) => { if (e.key === 'Enter') createBoat(); }}
 			/>
+		</div>
+
+		<!-- Unit preferences -->
+		<div class="pref-section">
+			<h2>Preferred Units</h2>
+			<div class="radio-group">
+				<label>
+					<input type="radio" name="units" value="metric" bind:group={unitSystem} />
+					Metric (m, °C)
+				</label>
+				<label>
+					<input type="radio" name="units" value="imperial" bind:group={unitSystem} />
+					Imperial (feet, °F)
+				</label>
+			</div>
+		</div>
+
+		<!-- Time format -->
+		<div class="pref-section">
+			<h2>Time Format</h2>
+			<div class="radio-group">
+				<label>
+					<input type="radio" name="time" value="24h" bind:group={timeFormat} />
+					24-hour (14:30)
+				</label>
+				<label>
+					<input type="radio" name="time" value="12h" bind:group={timeFormat} />
+					12-hour (2:30 PM)
+				</label>
+			</div>
 		</div>
 
 		<button class="btn btn-primary" onclick={createBoat} disabled={s1Loading || !boatName.trim()}>
@@ -258,5 +294,44 @@
 	}
 	.ob-actions .btn-primary {
 		flex: 1;
+	}
+
+	.pref-section {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		background: var(--card);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 12px 14px;
+	}
+	.pref-section h2 {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--muted);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		margin: 0 0 4px;
+	}
+
+	.radio-group {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.radio-group label {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		cursor: pointer;
+		font-size: 13px;
+		color: var(--text);
+		padding: 4px;
+	}
+	.radio-group input[type='radio'] {
+		cursor: pointer;
+		width: 14px;
+		height: 14px;
+		margin: 0;
 	}
 </style>

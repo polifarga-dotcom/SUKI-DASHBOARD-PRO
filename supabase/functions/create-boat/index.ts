@@ -4,7 +4,7 @@
  * Creates a new boat and makes the caller its admin.
  * Uses service role to bypass RLS — auth is verified via JWT.
  *
- * POST body: { name: string }
+ * POST body: { name: string, unit_system?: 'metric'|'imperial', time_format?: '24h'|'12h' }
  * Returns:   { ok: true, boatId: string }
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
@@ -39,17 +39,26 @@ Deno.serve(async (req: Request) => {
   const { data: { user }, error: authErr } = await admin.auth.getUser(token);
   if (!user || authErr) return json({ error: 'Unauthorized' }, 403);
 
-  let body: { name?: string } = {};
+  let body: { name?: string; unit_system?: string; time_format?: string } = {};
   try { body = await req.json(); } catch { /* empty */ }
 
   const name = (body.name ?? '').trim();
   if (!name) return json({ error: 'Boat name is required' }, 400);
 
+  // Validate unit preferences (with defaults)
+  const unitSystem = body.unit_system === 'imperial' ? 'imperial' : 'metric';
+  const timeFormat = body.time_format === '12h' ? '12h' : '24h';
+
   try {
     // Create boat with service role (bypasses RLS)
     const { data: boat, error: boatErr } = await admin
       .from('boats')
-      .insert({ name, created_by: user.id })
+      .insert({
+        name,
+        created_by: user.id,
+        unit_system: unitSystem,
+        time_format: timeFormat,
+      })
       .select('id')
       .single();
 

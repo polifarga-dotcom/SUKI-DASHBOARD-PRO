@@ -2,7 +2,8 @@
 	import type { Telemetry } from '$lib/types.js';
 	import { onMount } from 'svelte';
 	import ValueCell from '$lib/components/ui/ValueCell.svelte';
-	import { k2c, fmtRuntime } from '$lib/utils/units.js';
+	import { k2c, k2cNum, fmtRuntime, fmtTemp } from '$lib/utils/units.js';
+	import { unitSystem } from '$lib/stores/userSettings.js';
 
 	interface Props {
 		t: Telemetry | null;
@@ -69,7 +70,7 @@
 			<div class="grid">
 				{#if portHasLiveData}
 					<ValueCell label="Speed" value={t?.eng_rpm != null ? t.eng_rpm.toFixed(0) : null} unit="RPM" />
-					<ValueCell label="Coolant" value={k2c(t?.eng_temp_k ?? null)} />
+					<ValueCell label="Coolant" value={fmtTemp(k2cNum(t?.eng_temp_k ?? null), $unitSystem)} />
 					<ValueCell label="Alternator" value={t?.eng_alt_v != null ? t.eng_alt_v.toFixed(1) : null} unit="V" />
 				{/if}
 				<ValueCell label="Runtime" value={fmtRuntime(portRuntime ?? null)} />
@@ -88,7 +89,7 @@
 					<div class="grid-compact">
 						{#if portHasLiveData}
 							<ValueCell label="Speed" value={t?.eng_rpm != null ? t.eng_rpm.toFixed(0) : null} unit="RPM" />
-							<ValueCell label="Coolant" value={k2c(t?.eng_temp_k ?? null)} />
+							<ValueCell label="Coolant" value={fmtTemp(k2cNum(t?.eng_temp_k ?? null), $unitSystem)} />
 							<ValueCell label="Alt" value={t?.eng_alt_v != null ? t.eng_alt_v.toFixed(1) : null} unit="V" />
 						{/if}
 						<ValueCell label="Runtime" value={fmtRuntime(portRuntime ?? null)} />
@@ -106,7 +107,7 @@
 					<div class="grid-compact">
 						{#if sbHasLiveData}
 							<ValueCell label="Speed" value={t?.eng_sb_rpm != null ? t.eng_sb_rpm.toFixed(0) : null} unit="RPM" />
-							<ValueCell label="Coolant" value={k2c(t?.eng_sb_temp_k ?? null)} />
+							<ValueCell label="Coolant" value={fmtTemp(k2cNum(t?.eng_sb_temp_k ?? null), $unitSystem)} />
 							<ValueCell label="Alt" value={t?.eng_sb_alt_v != null ? t.eng_sb_alt_v.toFixed(1) : null} unit="V" />
 						{/if}
 						<ValueCell label="Runtime" value={fmtRuntime(sbRuntime ?? null)} />
