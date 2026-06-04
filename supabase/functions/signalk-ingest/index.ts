@@ -40,8 +40,10 @@ const ALLOWED_COLUMNS = new Set([
   // Battery
   'batt_main_soc', 'batt_main_v', 'batt_main_a', 'batt_main_w',
   'batt_eng_soc', 'batt_eng_v', 'batt_eng_a',
-  // Engine
+  // Engine — port / primary
   'eng_rpm', 'eng_run_sec', 'eng_temp_k', 'eng_alt_v',
+  // Engine — starboard / secondary (catamaran twin-engine)
+  'eng_sb_rpm', 'eng_sb_run_sec', 'eng_sb_temp_k', 'eng_sb_alt_v',
   // Tanks
   'tank_fw', 'tank_dsl', 'tank_bwm', 'tank_bwg',
   // Solar (generic total — individual MPPT columns are VRM-specific)
