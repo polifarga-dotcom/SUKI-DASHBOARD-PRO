@@ -25,6 +25,7 @@
 	async function saveUnitSettings(updates: {
 		unit_system?: 'metric' | 'imperial';
 		time_format?: '12h' | '24h';
+		engine_count?: 1 | 2;
 	}) {
 		if (!$currentBoat?.id) {
 			unitMessage = 'Error: No boat selected';
@@ -45,6 +46,8 @@
 				return;
 			}
 
+			// Mirror into the store immediately so derived values (unitSystem, engine_count) react
+			currentBoat.update(b => b ? { ...b, ...updates } : b);
 			unitMessage = 'Settings saved ✓';
 			setTimeout(() => { unitMessage = ''; }, 2000);
 		} catch (err) {
@@ -660,6 +663,37 @@
 						{unitSaving}
 					/>
 					<span>12-hour (2:30 PM)</span>
+				</label>
+			</div>
+		</div>
+
+		<div class="setting-row">
+			<div class="setting-label">
+				<h3>Engines</h3>
+				<p>Number of propulsion engines</p>
+			</div>
+			<div class="radio-group">
+				<label>
+					<input
+						type="radio"
+						name="engines"
+						value="1"
+						checked={($currentBoat?.engine_count ?? 1) === 1}
+						onchange={() => saveUnitSettings({ engine_count: 1 })}
+						disabled={unitSaving}
+					/>
+					<span>Single engine</span>
+				</label>
+				<label>
+					<input
+						type="radio"
+						name="engines"
+						value="2"
+						checked={($currentBoat?.engine_count ?? 1) === 2}
+						onchange={() => saveUnitSettings({ engine_count: 2 })}
+						disabled={unitSaving}
+					/>
+					<span>Twin engines (catamaran)</span>
 				</label>
 			</div>
 		</div>

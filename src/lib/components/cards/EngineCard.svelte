@@ -7,9 +7,10 @@
 
 	interface Props {
 		t: Telemetry | null;
-		boatId?: string;  // For multi-boat localStorage isolation
+		boatId?: string;       // For multi-boat localStorage isolation
+		engineCount?: 1 | 2;   // Configured engine count (from boat settings)
 	}
-	let { t, boatId = 'default' }: Props = $props();
+	let { t, boatId = 'default', engineCount = 1 }: Props = $props();
 
 	// Boat-specific localStorage keys for multi-boat support
 	const portKey = `engine.${boatId}.port.runtime_sec`;
@@ -51,8 +52,10 @@
 	const portRuntime = $derived(t?.eng_run_sec ?? portRuntimeStored);
 	const sbRuntime = $derived(t?.eng_sb_run_sec ?? sbRuntimeStored);
 
-	// Motor count: engine is "active" if it has live data OR stored runtime
+	// Motor count: configured engine_count is authoritative;
+	// fall back to auto-detection from live data / stored runtime.
 	const motorCount = $derived(
+		engineCount === 2 ? 2 :
 		(portHasLiveData || portRuntime != null ? 1 : 0) +
 		(sbHasLiveData || sbRuntime != null ? 1 : 0)
 	);

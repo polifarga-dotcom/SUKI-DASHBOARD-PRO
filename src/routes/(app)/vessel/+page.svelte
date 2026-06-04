@@ -20,7 +20,7 @@
 	<BatteryCard t={$telemetry} />
 	<SolarCard t={$telemetry} />
 	<EnvironmentCard t={$telemetry} />
-	<EngineCard t={$telemetry} boatId={$currentBoat?.id} />
+	<EngineCard t={$telemetry} boatId={$currentBoat?.id} engineCount={($currentBoat?.engine_count ?? 1) as 1|2} />
 	<RigCard t={$telemetry} />
 	<ShellyCard />
 	<VRMCard />
