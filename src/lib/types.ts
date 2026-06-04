@@ -249,10 +249,15 @@ export type LogEntry = {
 	cog_deg:        number | null;
 	sog_kn:         number | null;
 	distance_nm:    number | null;
-	engine_on:      boolean;
-	engine_rpm:     number | null;
-	engine_hours:   number | null;
-	engine_temp_c:  number | null;
+	engine_on:        boolean;
+	engine_rpm:       number | null;
+	engine_hours:     number | null;
+	engine_temp_c:    number | null;
+	// Starboard / secondary engine (catamaran twin-engine)
+	engine_sb_on:     boolean;
+	engine_sb_rpm:    number | null;
+	engine_sb_hours:  number | null;
+	engine_sb_temp_c: number | null;
 	sails:          string | null;
 	wind_speed_kn:  number | null;
 	wind_dir_deg:   number | null;

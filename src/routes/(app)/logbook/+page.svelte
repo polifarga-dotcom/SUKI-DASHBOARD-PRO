@@ -652,16 +652,26 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	const liveBaro   = $derived(() => t?.env_pressure_pa != null ? +(t.env_pressure_pa / 100).toFixed(1) : null);
 	const liveAirT   = $derived(() => t?.temp_salon   != null ? +(t.temp_salon - 273.15).toFixed(1) : null);
 	const liveWaterT = $derived(() => t?.temp_water   != null ? +(t.temp_water - 273.15).toFixed(1) : null);
+	// Port / primary engine
 	const liveEngOn  = $derived(() => {
-		// Primary: RPM signal
-		if (t?.eng_rpm != null) return t.eng_rpm > 200;
-		// Fallback 1: alternator voltage > 13.6 V → engine charging
-		if (t?.eng_alt_v != null) return t.eng_alt_v > 13.6;
-		// Fallback 2: engine temp > 50 °C → engine warm/running
+		if (t?.eng_rpm    != null) return t.eng_rpm    > 200;
+		if (t?.eng_alt_v  != null) return t.eng_alt_v  > 13.6;
 		if (t?.eng_temp_k != null) return t.eng_temp_k > 323.15;
 		return false;
 	});
-	const liveEngH   = $derived(() => t?.eng_run_sec  != null ? +(t.eng_run_sec / 3600).toFixed(2) : null);
+	const liveEngH   = $derived(() => t?.eng_run_sec    != null ? +(t.eng_run_sec    / 3600).toFixed(2) : null);
+	// Starboard / secondary engine (only relevant when engine_count === 2)
+	const liveEngSbOn = $derived(() => {
+		if (t?.eng_sb_rpm    != null) return t.eng_sb_rpm    > 200;
+		if (t?.eng_sb_alt_v  != null) return t.eng_sb_alt_v  > 13.6;
+		if (t?.eng_sb_temp_k != null) return t.eng_sb_temp_k > 323.15;
+		return false;
+	});
+	const liveEngSbH  = $derived(() => t?.eng_sb_run_sec != null ? +(t.eng_sb_run_sec / 3600).toFixed(2) : null);
+	const liveEngSbT  = $derived(() => t?.eng_sb_temp_k  != null ? +(t.eng_sb_temp_k  - 273.15).toFixed(1) : null);
+	// Combined: any engine running = motoring (for sail/motor ratio)
+	const engineCount = $derived(() => boat?.engine_count ?? 1);
+	const anyEngOn    = $derived(() => liveEngOn() || (engineCount() === 2 && liveEngSbOn()));
 	const liveEngT   = $derived(() => t?.eng_temp_k   != null ? +(t.eng_temp_k - 273.15).toFixed(1) : null);
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
@@ -806,7 +816,8 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		const lat = liveLat(); const lon = liveLon();
 		const sog = opts.sogOverride ?? liveSog();
 		const cog = opts.cogOverride ?? liveCog();
-		const engOn = liveEngOn();
+		const engOn   = anyEngOn();   // true if ANY engine running
+		const engSbOn = engineCount() === 2 && liveEngSbOn();
 		const distNm = (lat != null && lon != null) ? calcDistanceSinceLast(lat, lon) : 0;
 		const entry: Omit<LogEntry, 'id' | 'created_at'> = {
 			trip_id: at?.id ?? null, boat_id: boat.id,
@@ -815,6 +826,9 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			distance_nm: distNm > 0 ? distNm : null,
 			engine_on: engOn, engine_rpm: t?.eng_rpm ?? null,
 			engine_hours: liveEngH(), engine_temp_c: liveEngT(),
+			engine_sb_on: engSbOn, engine_sb_rpm: engineCount() === 2 ? (t?.eng_sb_rpm ?? null) : null,
+			engine_sb_hours: engineCount() === 2 ? liveEngSbH() : null,
+			engine_sb_temp_c: engineCount() === 2 ? liveEngSbT() : null,
 			sails: opts.sails?.trim() || null,
 			wind_speed_kn: liveWind(), wind_dir_deg: liveWindDir(),
 			apparent_wind_speed_kn: t?.env_aws_ms != null ? +(t.env_aws_ms * 1.94384).toFixed(2) : null,
@@ -829,7 +843,10 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 				tripEntries.update(es => [data as LogEntry, ...es]);
 				if (lat != null && lon != null) lastEntryPos = { lat, lon };
 				if (at && distNm > 0) await updateTripTotals(at.id, distNm, engOn);
-				pushLog(`+ ${lat?.toFixed(4) ?? '?'} ${lon?.toFixed(4) ?? '?'}  ${sog?.toFixed(1) ?? '-'} kn  ${engOn ? '[eng]' : '[sail]'}${distNm > 0 ? `  +${distNm.toFixed(2)} nm` : ''}`);
+				const engTag = engineCount() === 2
+					? `[P:${liveEngOn() ? 'on' : 'off'} S:${liveEngSbOn() ? 'on' : 'off'}]`
+					: (engOn ? '[eng]' : '[sail]');
+				pushLog(`+ ${lat?.toFixed(4) ?? '?'} ${lon?.toFixed(4) ?? '?'}  ${sog?.toFixed(1) ?? '-'} kn  ${engTag}${distNm > 0 ? `  +${distNm.toFixed(2)} nm` : ''}`);
 			}
 		} catch (err: any) {
 			// Network error — queue to IndexedDB
@@ -1243,11 +1260,11 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			{/if}
 			{#if liveEngH() != null && at.engine_hours_start != null}
 				{@const motorH = +Math.max(0, liveEngH()! - at.engine_hours_start).toFixed(2)}
-				<div class="snap-item" class:eng-on={liveEngOn()}>
+				<div class="snap-item" class:eng-on={anyEngOn()}>
 					<span class="snap-val">{motorH.toFixed(1)}</span><span class="snap-lbl">motor h</span>
 				</div>
 			{:else if liveEngH() != null}
-				<div class="snap-item" class:eng-on={liveEngOn()}>
+				<div class="snap-item" class:eng-on={anyEngOn()}>
 					<span class="snap-val">{liveEngH()?.toFixed(0)}</span><span class="snap-lbl">eng h total</span>
 				</div>
 			{/if}
@@ -1340,7 +1357,9 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 				<div class="entry-nav">
 					{#if e.sog_kn != null}<span class="entry-chip">{e.sog_kn.toFixed(1)} kn</span>{/if}
 					{#if e.cog_deg != null}<span class="entry-chip">{dirAbbr(e.cog_deg)}</span>{/if}
-					{#if e.engine_rpm != null}<span class="entry-chip eng">eng {e.engine_rpm} rpm{e.engine_temp_c != null ? ` · ${e.engine_temp_c.toFixed(0)}°C` : ''}</span>{/if}
+					{#if e.engine_rpm != null}<span class="entry-chip eng">P {e.engine_rpm} rpm{e.engine_temp_c != null ? ` · ${e.engine_temp_c.toFixed(0)}°C` : ''}</span>{/if}
+								{#if e.engine_sb_rpm != null}<span class="entry-chip eng">S {e.engine_sb_rpm} rpm{e.engine_sb_temp_c != null ? ` · ${e.engine_sb_temp_c.toFixed(0)}°C` : ''}</span>{/if}
+								{#if e.engine_on && e.engine_rpm == null && e.engine_sb_rpm == null}<span class="entry-chip eng">engine on</span>{/if}
 					{#if e.sails}<span class="entry-chip sail">{e.sails}</span>{/if}
 					{#if e.distance_nm != null && e.distance_nm > 0}
 						<span class="entry-chip dist">+{e.distance_nm.toFixed(1)} nm</span>
@@ -1661,7 +1680,9 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 							<div class="entry-nav">
 								{#if e.sog_kn != null}<span class="entry-chip">{e.sog_kn.toFixed(1)} kn</span>{/if}
 								{#if e.cog_deg != null}<span class="entry-chip">{dirAbbr(e.cog_deg)}</span>{/if}
-								{#if e.engine_rpm != null}<span class="entry-chip eng">eng {e.engine_rpm} rpm{e.engine_temp_c != null ? ` · ${e.engine_temp_c.toFixed(0)}°C` : ''}</span>{/if}
+								{#if e.engine_rpm != null}<span class="entry-chip eng">P {e.engine_rpm} rpm{e.engine_temp_c != null ? ` · ${e.engine_temp_c.toFixed(0)}°C` : ''}</span>{/if}
+								{#if e.engine_sb_rpm != null}<span class="entry-chip eng">S {e.engine_sb_rpm} rpm{e.engine_sb_temp_c != null ? ` · ${e.engine_sb_temp_c.toFixed(0)}°C` : ''}</span>{/if}
+								{#if e.engine_on && e.engine_rpm == null && e.engine_sb_rpm == null}<span class="entry-chip eng">engine on</span>{/if}
 								{#if e.sails}<span class="entry-chip sail">{e.sails}</span>{/if}
 								{#if e.distance_nm != null && e.distance_nm > 0}<span class="entry-chip dist">+{e.distance_nm.toFixed(1)} nm</span>{/if}
 							</div>
@@ -1771,7 +1792,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		{#if liveSog() != null}<span class="prev-chip">{liveSog()} kn</span>{/if}
 		{#if liveWind() != null}<span class="prev-chip">{liveWind()} kn wind</span>{/if}
 		{#if wave.wave_height_m != null}<span class="prev-chip">{wave.wave_height_m} m wave</span>{/if}
-		{#if liveEngOn()}<span class="prev-chip eng">Engine on</span>{/if}
+		{#if anyEngOn()}<span class="prev-chip eng">{engineCount() === 2 ? `P:${liveEngOn()?'on':'off'} S:${liveEngSbOn()?'on':'off'}` : 'Engine on'}</span>{/if}
 	</div>
 	<label class="modal-label">Sails set
 		<input class="modal-input" bind:value={entrySails} placeholder="e.g. Full main + genoa" />
