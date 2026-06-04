@@ -1,7 +1,20 @@
 <script lang="ts">
 	import type { Telemetry, VRMData } from '$lib/types.js';
-	import { fmtSOC, fmtV, fmtA, fmtW, socColor } from '$lib/utils/units.js';
+	import { fmtV, fmtA, fmtW } from '$lib/utils/units.js';
 	import ValueCell from '$lib/components/ui/ValueCell.svelte';
+
+	// VRM SOC is 0–100 (percent). Telemetry fallback SOC is 0–1 (fraction).
+	// This card normalises everything to 0–100 for display.
+	function socPct(soc: number | null, fromVRM: boolean): number | null {
+		if (soc == null) return null;
+		return fromVRM ? soc : soc * 100;
+	}
+	function socColor(pct: number | null): string {
+		if (pct == null) return 'var(--muted)';
+		if (pct > 50) return 'var(--green)';
+		if (pct > 20) return 'var(--amber)';
+		return 'var(--red)';
+	}
 
 	interface Props { vrm: VRMData | null; t: Telemetry | null; }
 	let { vrm, t }: Props = $props();
@@ -22,18 +35,19 @@
 	));
 	const secondary = $derived(vrm?.batteries.slice(1) ?? []);
 
-	const soc   = $derived(primary?.soc ?? null);
+	const isVRM    = $derived(vrm != null);
 	const v     = $derived(primary?.v   ?? null);
 	const a     = $derived(primary?.a   ?? null);
 	const w     = $derived(primary?.w   ?? null);
 	const ttg   = $derived(primary?.time_to_go_s ?? null);
 
-	const hasSoc   = $derived(soc != null);
-	const color    = $derived(socColor(soc));
-	const pctNum   = $derived(soc != null ? Math.round(soc * 100) : 0);
+	// Normalise to 0–100 for display
+	const pctNum   = $derived(socPct(primary?.soc ?? null, isVRM));
+	const hasSoc   = $derived(pctNum != null);
+	const color    = $derived(socColor(pctNum));
 
 	const bigVal   = $derived(
-		hasSoc      ? Math.round(soc! * 100) + '%'
+		hasSoc      ? Math.round(pctNum!) + '%'
 		: v != null ? v.toFixed(1) + ' V'
 		: '—'
 	);
@@ -97,13 +111,13 @@
 		{#if secondary.length > 0}
 			<div class="divider"></div>
 			{#each secondary as batt}
-				{@const bsoc = batt.soc != null ? Math.round(batt.soc * 100) : null}
-				{@const bcol = socColor(batt.soc)}
+				{@const bsoc = socPct(batt.soc, true)}
+				{@const bcol = socColor(bsoc)}
 				<div class="sec-row">
 					<span class="sec-name">{batt.name}</span>
 					<div class="sec-right">
 						{#if bsoc != null}
-							<span class="sec-soc" style="color:{bcol}">{bsoc}%</span>
+							<span class="sec-soc" style="color:{bcol}">{Math.round(bsoc!)}%</span>
 							<div class="sec-bar-wrap">
 								<div class="sec-bar" style="width:{bsoc}%; background:{bcol}"></div>
 							</div>
