@@ -254,7 +254,13 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 			const k = `${r.Device}__${r.instance}`;
 			if (tanksSeen.has(k)) return false;
 			tanksSeen.add(k);
-			return num(r.rawValue) != null;
+			if (num(r.rawValue) == null) return false;
+			// Skip ghost tanks: must have a CustomName OR a /Capacity record.
+			// VRM instance 0 is a phantom entry with no sensor — no CustomName, no Capacity.
+			const key = `${r.Device}__${r.instance}`;
+			const hasName     = customNames.has(key);
+			const hasCapacity = rows.some(x => x.Device === r.Device && x.instance === r.instance && x.dbusPath === '/Capacity');
+			return hasName || hasCapacity;
 		})
 		.map(r => {
 			const key = `${r.Device}__${r.instance}`;
