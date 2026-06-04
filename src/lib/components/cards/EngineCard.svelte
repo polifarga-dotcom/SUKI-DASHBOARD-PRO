@@ -40,13 +40,14 @@
 		}
 	});
 
-	// Check if motors have current data (besides runtime)
-	const portHasLiveData = $derived(
-		t?.eng_rpm != null || t?.eng_temp_k != null || t?.eng_alt_v != null
-	);
-	const sbHasLiveData = $derived(
-		t?.eng_sb_rpm != null || t?.eng_sb_temp_k != null || t?.eng_sb_alt_v != null
-	);
+	// Engine is running only when RPM > 0.
+	// If RPM = 0 or null, the engine is off — temp/voltage values are stale, hide them.
+	const portRunning = $derived((t?.eng_rpm ?? 0) > 0);
+	const sbRunning   = $derived((t?.eng_sb_rpm ?? 0) > 0);
+
+	// Show live values only when engine is running
+	const portHasLiveData = $derived(portRunning);
+	const sbHasLiveData   = $derived(sbRunning);
 
 	// Runtime display (prefer live, fallback to stored)
 	const portRuntime = $derived(t?.eng_run_sec ?? portRuntimeStored);
@@ -81,7 +82,7 @@
 				<div class="motor-section">
 					<div class="motor-header">
 						<span>Port</span>
-						{#if portHasLiveData}
+						{#if portRunning}
 							<span class="live-dot">●</span>
 						{/if}
 					</div>
@@ -99,7 +100,7 @@
 				<div class="motor-section">
 					<div class="motor-header">
 						<span>Starboard</span>
-						{#if sbHasLiveData}
+						{#if sbRunning}
 							<span class="live-dot">●</span>
 						{/if}
 					</div>
