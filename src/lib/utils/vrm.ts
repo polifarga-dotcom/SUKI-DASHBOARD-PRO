@@ -86,7 +86,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		else if (r.dbusPath === '/Dc/0/Current')       entry.a   = v;
 		else if (r.dbusPath === '/Dc/0/Power')         entry.w   = v;
 		else if (r.dbusPath === '/Dc/0/Temperature')   entry.temp_c = v;
-		else if (r.dbusPath === '/TimeToGo')           entry.time_to_go_s = v;
+		else if (r.dbusPath === '/TimeToGo')           entry.time_to_go_s = v != null ? v * 3600 : null;
 		else if (r.dbusPath === '/ConsumedAmphours')   entry.consumed_ah  = v;
 
 		battMap.set(key, entry);

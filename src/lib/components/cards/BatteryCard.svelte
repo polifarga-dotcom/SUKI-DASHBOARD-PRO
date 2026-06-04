@@ -65,6 +65,12 @@
 
 	const isCharging    = $derived((a ?? 0) > 0.5);
 	const isDischarging = $derived((a ?? 0) < -0.5);
+
+	const battStatus = $derived(
+		isCharging    ? 'Charging' :
+		isDischarging ? 'Discharging' :
+		'Idle'
+	);
 </script>
 
 <div class="card">
@@ -78,9 +84,16 @@
 	{#if primary == null}
 		<div class="no-data">No battery data</div>
 	{:else}
-		<!-- SOC bar + big value -->
+		<!-- SOC bar + big value + status -->
 		<div class="soc-row">
-			<div class="soc-val" style="color:{bigColor}">{bigVal}</div>
+			<div class="soc-head">
+				<div class="soc-val" style="color:{bigColor}">{bigVal}</div>
+				{#if hasSoc}
+					<div class="batt-status" style="color:{battStatus === 'Charging' ? 'var(--green)' : battStatus === 'Discharging' ? 'var(--amber)' : 'var(--muted)'}">
+						{battStatus}
+					</div>
+				{/if}
+			</div>
 			{#if hasSoc}
 				<div class="soc-bar-wrap">
 					<div class="soc-bar" style="width:{pctNum}%; background:{color}"></div>
@@ -153,11 +166,21 @@
 	}
 
 	.soc-row { margin-bottom: 12px; }
+	.soc-head {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		margin-bottom: 8px;
+	}
 	.soc-val {
 		font-size: 36px;
 		font-weight: 800;
 		line-height: 1;
-		margin-bottom: 8px;
+	}
+	.batt-status {
+		font-size: 12px;
+		font-weight: 600;
+		letter-spacing: 0.3px;
 	}
 	.soc-bar-wrap {
 		height: 8px;
