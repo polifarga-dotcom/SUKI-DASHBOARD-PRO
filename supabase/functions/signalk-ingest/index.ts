@@ -50,6 +50,14 @@ const ALLOWED_COLUMNS = new Set([
   'solar_total_w',
   // Rudder
   'rudder_rad',
+  // Wakespeed alternator regulators (up to 2 units, electrical.alternator.{0,1}.*)
+  'ws_0_alt_v', 'ws_0_alt_temp_k', 'ws_0_field_pct',
+  'ws_1_alt_v', 'ws_1_alt_temp_k', 'ws_1_field_pct',
+]);
+
+// Whitelist for string-valued telemetry columns (chargingMode from Wakespeed)
+const ALLOWED_STRING_COLUMNS = new Set([
+  'ws_0_mode', 'ws_1_mode',
 ]);
 
 // ── VRM GPS fallback ──────────────────────────────────────────────────────────
@@ -137,11 +145,19 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'Unauthorized' }, 401);
   }
 
-  // ── Sanitize payload: only known numeric columns ──────────────────────────
+  // ── Sanitize payload: numeric columns ────────────────────────────────────
   const safe: Record<string, number> = {};
   for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
     if (ALLOWED_COLUMNS.has(k) && typeof v === 'number' && isFinite(v)) {
       safe[k] = v;
+    }
+  }
+
+  // ── Sanitize payload: string columns (Wakespeed chargingMode) ─────────────
+  const safeStr: Record<string, string> = {};
+  for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+    if (ALLOWED_STRING_COLUMNS.has(k) && typeof v === 'string' && v.length > 0 && v.length < 64) {
+      safeStr[k] = v;
     }
   }
 
@@ -162,7 +178,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // Nothing to write is valid (plugin may have just sent an empty batch)
-  if (Object.keys(safe).length === 0) {
+  if (Object.keys(safe).length === 0 && Object.keys(safeStr).length === 0) {
     return json({ ok: true, fields: 0 });
   }
 
@@ -172,7 +188,7 @@ Deno.serve(async (req: Request) => {
   const { error } = await supabase
     .from('telemetry')
     .upsert(
-      { boat_id: cfg.boat_id, ...safe, updated_at: new Date().toISOString() },
+      { boat_id: cfg.boat_id, ...safe, ...safeStr, updated_at: new Date().toISOString() },
       { onConflict: 'boat_id' }
     );
 

@@ -31,6 +31,7 @@
 module.exports = function (app) {
   let sendTimer        = null;
   let pending          = {};
+  let pendingStr       = {};   // string-valued fields (ws_*_mode)
   let unsubscribes     = [];
   let discoveryTimer   = null;
   let rediscoveryTimer = null;
@@ -139,6 +140,13 @@ module.exports = function (app) {
     // Solar — instance 0 fast path. Additional MPPT instances (electrical.solar.N.*)
     // and charger instances are discovered and summed dynamically.
     'electrical.chargers.0.panelPower':                      'solar_total_w',
+
+    // Wakespeed alternator regulators — instance 0 fast path
+    // (Victron Cerbo CAN-Bus integration: electrical.alternator.{n}.*)
+    // Instance 1 discovered dynamically in discoverDynamicPaths().
+    'electrical.alternator.0.voltage':                       'ws_0_alt_v',
+    'electrical.alternator.0.temperature':                   'ws_0_alt_temp_k',
+    'electrical.alternator.0.fieldDrive':                    'ws_0_field_pct',
 
     // Rudder
     'steering.rudderAngle':                                  'rudder_rad',
@@ -340,6 +348,53 @@ module.exports = function (app) {
       }
     }
 
+    // ── Wakespeed: electrical.alternator instance ≥ 1 ─────────────────────────
+    // Instance 0 is handled by static PATH_MAP + a dedicated chargingMode sub.
+    // Any additional instances (second Wakespeed unit) are discovered here.
+    const wsInsts = available
+      .map(p => { const m = p.match(/^electrical\.alternator\.(\d+)\.voltage$/); return m; })
+      .filter(m => m && Number(m[1]) >= 1)
+      .map(m => m[1])
+      .filter(inst => !_discoveredPaths.has(`electrical.alternator.${inst}.voltage`))
+      .sort((a, b) => Number(a) - Number(b))
+      .slice(0, 1);   // max one additional unit → ws_1
+
+    for (const inst of wsInsts) {
+      const numMap = {
+        [`electrical.alternator.${inst}.voltage`]:     'ws_1_alt_v',
+        [`electrical.alternator.${inst}.temperature`]: 'ws_1_alt_temp_k',
+        [`electrical.alternator.${inst}.fieldDrive`]:  'ws_1_field_pct',
+      };
+      for (const [path, col] of Object.entries(numMap)) {
+        if (!available.includes(path)) continue;
+        try {
+          const unsub = app.streambundle.getSelfBus(path).onValue(({ value }) => {
+            if (typeof value === 'number' && isFinite(value)) pending[col] = value;
+          });
+          unsubscribes.push(unsub);
+          _discoveredPaths.add(path);
+          newCount++;
+        } catch (e) {
+          app.debug(`Discovery: could not subscribe to ${path}: ${e.message}`);
+        }
+      }
+      // chargingMode string for ws_1
+      const modePath = `electrical.alternator.${inst}.chargingMode`;
+      if (available.includes(modePath) && !_discoveredPaths.has(modePath)) {
+        try {
+          const unsub = app.streambundle.getSelfBus(modePath).onValue(({ value }) => {
+            if (typeof value === 'string' && value.length > 0) pendingStr['ws_1_mode'] = value;
+          });
+          unsubscribes.push(unsub);
+          _discoveredPaths.add(modePath);
+          newCount++;
+        } catch (e) {
+          app.debug(`Discovery: could not subscribe to ${modePath}: ${e.message}`);
+        }
+      }
+      app.debug(`Wakespeed discovery: instance ${inst} → ws_1`);
+    }
+
     if (newCount > 0) {
       app.debug(`Dynamic discovery: subscribed to ${newCount} new paths`);
     }
@@ -448,6 +503,19 @@ module.exports = function (app) {
         app.debug(`Could not subscribe to navigation.position compound: ${e.message}`);
       }
 
+      // ── Wakespeed chargingMode (string) — instance 0 static subscription ────────
+      // PATH_MAP only handles numeric values; chargingMode ("float","bulk","absorption"…)
+      // is a string and needs its own subscription into pendingStr.
+      try {
+        const wsMode0Unsub = app.streambundle.getSelfBus('electrical.alternator.0.chargingMode')
+          .onValue(({ value }) => {
+            if (typeof value === 'string' && value.length > 0) pendingStr['ws_0_mode'] = value;
+          });
+        unsubscribes.push(wsMode0Unsub);
+      } catch (e) {
+        app.debug(`Could not subscribe to electrical.alternator.0.chargingMode: ${e.message}`);
+      }
+
       // ── Dynamic path discovery ───────────────────────────────────────────────
       // Wait 5 s for SignalK data to start flowing (devices take time to connect),
       // then scan for solar MPPT and tank paths with non-standard instance IDs.
@@ -457,9 +525,10 @@ module.exports = function (app) {
 
       // ── Batch sender ─────────────────────────────────────────────────────────
       sendTimer = setInterval(async () => {
-        // Copy pending (from static subscriptions) and reset for next cycle
-        const payload = { ...pending };
-        pending = {};
+        // Copy pending (numeric + string) and reset for next cycle
+        const payload = { ...pending, ...pendingStr };
+        pending    = {};
+        pendingStr = {};
         // _battSocVenusSeen / _battSocVenusLast are NOT reset here — they persist
         // across cycles so that once a Venus source is seen, N2K is always suppressed.
 
@@ -541,6 +610,7 @@ module.exports = function (app) {
       unsubscribes.forEach(u => { try { u(); } catch (_) {} });
       unsubscribes = [];
       pending      = {};
+      pendingStr   = {};
 
       // Clear dynamic accumulators so they don't bleed into the next start() call
       _solarPowerByInst      = {};

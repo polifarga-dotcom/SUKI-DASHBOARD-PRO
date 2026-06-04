@@ -8,6 +8,7 @@
 	import RigCard from '$lib/components/cards/RigCard.svelte';
 	import ShellyCard from '$lib/components/cards/ShellyCard.svelte';
 	import VRMCard from '$lib/components/cards/VRMCard.svelte';
+	import WakespeedCard from '$lib/components/cards/WakespeedCard.svelte';
 </script>
 
 <svelte:head><title>Vessel · SUKI PRO</title></svelte:head>
@@ -21,6 +22,7 @@
 	<SolarCard t={$telemetry} />
 	<EnvironmentCard t={$telemetry} />
 	<EngineCard t={$telemetry} boatId={$currentBoat?.id} engineCount={($currentBoat?.engine_count ?? 1) as 1|2} />
+	<WakespeedCard t={$telemetry} />
 	<RigCard t={$telemetry} />
 	<ShellyCard />
 	<VRMCard />

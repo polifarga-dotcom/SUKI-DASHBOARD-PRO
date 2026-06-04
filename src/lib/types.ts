@@ -62,6 +62,15 @@ export type Telemetry = {
 	eng_sb_temp_k: number | null;
 	eng_sb_alt_v: number | null;
 	rudder_rad: number | null;
+	// Wakespeed alternator regulators (electrical.alternator.{0,1}.*, via Victron Cerbo CAN)
+	ws_0_alt_v:      number | null;
+	ws_0_alt_temp_k: number | null;
+	ws_0_field_pct:  number | null;   // field drive ratio 0–1
+	ws_0_mode:       string | null;   // "float" | "bulk" | "absorption" | "off" | …
+	ws_1_alt_v:      number | null;
+	ws_1_alt_temp_k: number | null;
+	ws_1_field_pct:  number | null;
+	ws_1_mode:       string | null;
 	shelly_108: 0 | 1 | null;
 	shelly_102: 0 | 1 | null;
 	shelly_118: 0 | 1 | null;
