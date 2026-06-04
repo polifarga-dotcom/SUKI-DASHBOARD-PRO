@@ -313,10 +313,15 @@
 			// Wind marker: positioned at AWA direction on the alarm radius ring
 			// Uses left/top positioning like the old app (NOT Leaflet markers)
 			if (awaDeg != null && awsKn != null) {
-				const windPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius);
+				// Geographic bearing: AWA is relative to boat heading, so add hdgDeg for true north
+				// Wind comes FROM this direction → marker placed there, arrow points inward
+				const windBearing = ((hdgDeg + awaDeg) % 360 + 360) % 360;
+				const windPos = destinationPoint(liveAncLat, liveAncLon, windBearing, localRadius);
 
-				// Arrow marker (rotates with wind direction)
-				const arrowHtml = `<svg viewBox="0 0 24 24" width="27" height="27" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(${awaDeg ?? 0}deg); display:block;">
+				// Arrow rotation: inside map-wrap (rotated -hdgDeg), so compensate:
+				// visual = -hdgDeg + svgRot → we want visual = awaDeg+180 (inward) → svgRot = hdgDeg+awaDeg+180
+				const arrowRot = ((hdgDeg + awaDeg + 180) % 360 + 360) % 360;
+				const arrowHtml = `<svg viewBox="0 0 24 24" width="27" height="27" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(${arrowRot}deg); display:block;">
 					<path d="M12 3 L19 19 L12 16 L5 19 Z"/>
 				</svg>`;
 				const arrowIcon = L.divIcon({ className: '', iconSize: [27, 27], iconAnchor: [13, 13], html: arrowHtml });
@@ -330,7 +335,7 @@
 				// Text overlay — positioned 15m BEYOND the arrow (outward from anchor)
 				// so it doesn't cover the arrow itself.
 				// Same rotation correction as arrow position.
-				const windTextPos = destinationPoint(liveAncLat, liveAncLon, (awaDeg + 180) % 360, localRadius + 25);
+				const windTextPos = destinationPoint(liveAncLat, liveAncLon, windBearing, localRadius + 25);
 				const pt = map.latLngToContainerPoint(windTextPos);
 				const θ = hdgDeg * Math.PI / 180;
 				const dx = pt.x - 0.75 * mapBoxW;  // relative to map-wrap center
