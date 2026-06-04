@@ -238,6 +238,8 @@ export type LogTrip = {
 	total_nm:         number | null;
 	sail_nm:          number | null;
 	motor_nm:         number | null;
+	sail_time_s:      number | null;   // seconds under sail
+	motor_time_s:     number | null;   // seconds under motor
 	avg_sog_kn:       number | null;
 	max_sog_kn:       number | null;
 	engine_hours:       number | null;
@@ -275,6 +277,8 @@ export type LogEntry = {
 	baro_hpa:       number | null;
 	air_temp_c:     number | null;
 	water_temp_c:   number | null;
+	depth_m:        number | null;   // water depth at log time
+	batt_soc:       number | null;   // battery SOC % (0–100) at log time
 	wave_height_m:  number | null;
 	wave_period_s:  number | null;
 	notes:          string | null;

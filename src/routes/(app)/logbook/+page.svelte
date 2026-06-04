@@ -654,7 +654,8 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	const liveWaterT = $derived(() => t?.temp_water   != null ? +(t.temp_water - 273.15).toFixed(1) : null);
 	// Port / primary engine
 	const liveEngOn  = $derived(() => {
-		if (t?.eng_rpm    != null) return t.eng_rpm    > 200;
+		// RPM=0 means engine is off; use > 0 consistent with EngineCard
+		if (t?.eng_rpm    != null) return t.eng_rpm    > 0;
 		if (t?.eng_alt_v  != null) return t.eng_alt_v  > 13.6;
 		if (t?.eng_temp_k != null) return t.eng_temp_k > 323.15;
 		return false;
@@ -662,7 +663,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	const liveEngH   = $derived(() => t?.eng_run_sec    != null ? +(t.eng_run_sec    / 3600).toFixed(2) : null);
 	// Starboard / secondary engine (only relevant when engine_count === 2)
 	const liveEngSbOn = $derived(() => {
-		if (t?.eng_sb_rpm    != null) return t.eng_sb_rpm    > 200;
+		if (t?.eng_sb_rpm    != null) return t.eng_sb_rpm    > 0;
 		if (t?.eng_sb_alt_v  != null) return t.eng_sb_alt_v  > 13.6;
 		if (t?.eng_sb_temp_k != null) return t.eng_sb_temp_k > 323.15;
 		return false;
@@ -689,6 +690,11 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	}
 	function fmtNm(nm: number | null): string {
 		return nm != null ? nm.toFixed(1) + ' nm' : '—';
+	}
+	function fmtSecs(s: number): string {
+		const h = Math.floor(s / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		return h > 0 ? `${h}h ${m}m` : `${m}m`;
 	}
 	function dirAbbr(deg: number | null): string {
 		if (deg == null) return '—';
@@ -788,16 +794,38 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		const engHours = withEng.length >= 2
 			? +Math.max(0, (withEng.at(-1)!.engine_hours as number) - (withEng[0].engine_hours as number)).toFixed(2)
 			: null;
-		return { totalNm, sailNm, motorNm, avgSog, engHours };
+		// Time under motor/sail: sum intervals between consecutive entries
+		let motorTimeSec = 0, sailTimeSec = 0;
+		for (let i = 1; i < data.length; i++) {
+			const intervalSec = Math.min(
+				Math.round((new Date(data[i].logged_at).getTime() - new Date(data[i-1].logged_at).getTime()) / 1000),
+				7200 // cap at 2h
+			);
+			if (data[i].engine_on) motorTimeSec += intervalSec;
+			else sailTimeSec += intervalSec;
+		}
+		return { totalNm, sailNm, motorNm, avgSog, engHours, motorTimeSec, sailTimeSec };
 	}
 
-	async function updateTripTotals(tripId: string, distNm: number, engineOn: boolean) {
+	async function updateTripTotals(tripId: string, distNm: number, engineOn: boolean, prevLoggedAt: string | null) {
 		const current = $activeTrip;
 		if (!current) return;
+
+		// Time elapsed since last entry (capped at 2h to avoid gaps)
+		let intervalSec = 0;
+		if (prevLoggedAt) {
+			intervalSec = Math.min(
+				Math.round((Date.now() - new Date(prevLoggedAt).getTime()) / 1000),
+				7200
+			);
+		}
+
 		const patch: Partial<LogTrip> = {
-			total_nm: +(((current.total_nm ?? 0) + distNm).toFixed(3)),
-			sail_nm:  +(((current.sail_nm  ?? 0) + (engineOn ? 0 : distNm)).toFixed(3)),
-			motor_nm: +(((current.motor_nm ?? 0) + (engineOn ? distNm : 0)).toFixed(3)),
+			total_nm:     +(((current.total_nm     ?? 0) + distNm).toFixed(3)),
+			sail_nm:      +(((current.sail_nm      ?? 0) + (engineOn ? 0 : distNm)).toFixed(3)),
+			motor_nm:     +(((current.motor_nm     ?? 0) + (engineOn ? distNm : 0)).toFixed(3)),
+			sail_time_s:  ((current.sail_time_s  ?? 0) + (!engineOn ? intervalSec : 0)),
+			motor_time_s: ((current.motor_time_s ?? 0) + (engineOn  ? intervalSec : 0)),
 		};
 		const sog = liveSog();
 		if (sog != null && sog > (current.max_sog_kn ?? 0)) patch.max_sog_kn = sog;
@@ -819,6 +847,10 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		const engOn   = anyEngOn();   // true if ANY engine running
 		const engSbOn = engineCount() === 2 && liveEngSbOn();
 		const distNm = (lat != null && lon != null) ? calcDistanceSinceLast(lat, lon) : 0;
+		// Get previous entry's logged_at for time interval calculation
+		// tripEntries is sorted newest-first, so index 0 = most recent
+		const prevLoggedAt = $tripEntries.length > 0 ? $tripEntries[0].logged_at : null;
+
 		const entry: Omit<LogEntry, 'id' | 'created_at'> = {
 			trip_id: at?.id ?? null, boat_id: boat.id,
 			logged_at: new Date().toISOString(), lat, lon,
@@ -834,6 +866,8 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			apparent_wind_speed_kn: t?.env_aws_ms != null ? +(t.env_aws_ms * 1.94384).toFixed(2) : null,
 			apparent_wind_angle_deg: t?.env_awa_rad != null ? +((t.env_awa_rad * 180 / Math.PI) % 360).toFixed(1) : null,
 			baro_hpa: liveBaro(), air_temp_c: liveAirT(), water_temp_c: liveWaterT(),
+			depth_m: t?.env_depth_m != null ? +t.env_depth_m.toFixed(1) : null,
+			batt_soc: t?.batt_main_soc != null ? +(t.batt_main_soc * 100).toFixed(0) : null,
 			wave_height_m: wave.wave_height_m, wave_period_s: wave.wave_period_s,
 			notes: opts.notes?.trim() || null, source: opts.source,
 		};
@@ -842,7 +876,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			if (data) {
 				tripEntries.update(es => [data as LogEntry, ...es]);
 				if (lat != null && lon != null) lastEntryPos = { lat, lon };
-				if (at && distNm > 0) await updateTripTotals(at.id, distNm, engOn);
+				if (at) await updateTripTotals(at.id, distNm, engOn, prevLoggedAt);
 				const engTag = engineCount() === 2
 					? `[P:${liveEngOn() ? 'on' : 'off'} S:${liveEngSbOn() ? 'on' : 'off'}]`
 					: (engOn ? '[eng]' : '[sail]');
@@ -901,9 +935,11 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			: (stats?.engHours ?? null);
 		const patch: Partial<LogTrip> = {
 			ended_at: new Date().toISOString(),
-			total_nm: stats?.totalNm ?? at.total_nm,
-			sail_nm:  stats?.sailNm  ?? at.sail_nm,
-			motor_nm: stats?.motorNm ?? at.motor_nm,
+			total_nm:     stats?.totalNm   ?? at.total_nm,
+			sail_nm:      stats?.sailNm    ?? at.sail_nm,
+			motor_nm:     stats?.motorNm   ?? at.motor_nm,
+			sail_time_s:  stats?.sailTimeSec  ?? at.sail_time_s  ?? 0,
+			motor_time_s: stats?.motorTimeSec ?? at.motor_time_s ?? 0,
 			avg_sog_kn:   stats?.avgSog ?? null,
 			engine_hours: engDelta,
 		};
@@ -1242,8 +1278,8 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 				</div>
 			</div>
 			<div class="ratio-labels">
-				<span class="ratio-label sail">Sail {fmtNm(at.sail_nm)} ({pct}%)</span>
-				<span class="ratio-label motor">Motor {fmtNm(at.motor_nm)} ({100-pct}%)</span>
+				<span class="ratio-label sail">Sail {fmtNm(at.sail_nm)} ({pct}%){#if (at.sail_time_s ?? 0) > 0} · {fmtSecs(at.sail_time_s ?? 0)}{/if}</span>
+				<span class="ratio-label motor">Motor {fmtNm(at.motor_nm)} ({100-pct}%){#if (at.motor_time_s ?? 0) > 0} · {fmtSecs(at.motor_time_s ?? 0)}{/if}</span>
 				<span class="ratio-label total">{fmtNm(at.total_nm)}</span>
 			</div>
 		</div>
@@ -1810,7 +1846,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 
 <!-- ── Env data snippet (reused in entry lists) ───────────────────────────── -->
 {#snippet entryEnv(e: LogEntry)}
-{#if e.wind_speed_kn != null || e.wave_height_m != null || e.baro_hpa != null || e.air_temp_c != null}
+{#if e.wind_speed_kn != null || e.wave_height_m != null || e.baro_hpa != null || e.air_temp_c != null || e.depth_m != null || e.batt_soc != null}
 <div class="entry-env">
 	{#if e.wind_speed_kn != null}
 	<span class="entry-env-item">
@@ -1849,6 +1885,22 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			<line x1="7" y1="6.5" x2="9" y2="6.5"/>
 		</svg>
 		{e.air_temp_c.toFixed(0)}°C
+	</span>
+	{/if}
+	{#if e.depth_m != null}
+	<span class="entry-env-item">
+		<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
+			<line x1="7" y1="1" x2="7" y2="13"/><path d="M4 10 L7 13 L10 10"/>
+		</svg>
+		{e.depth_m.toFixed(1)} m
+	</span>
+	{/if}
+	{#if e.batt_soc != null}
+	<span class="entry-env-item">
+		<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+			<rect x="1" y="3.5" width="10" height="7" rx="1.5"/><line x1="11" y1="6" x2="13" y2="6"/><line x1="11" y1="8" x2="13" y2="8"/>
+		</svg>
+		{e.batt_soc.toFixed(0)}%
 	</span>
 	{/if}
 </div>
