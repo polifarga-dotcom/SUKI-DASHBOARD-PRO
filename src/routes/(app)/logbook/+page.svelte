@@ -150,7 +150,15 @@
 	let allEntriesLoading  = $state(false);
 
 	// ── Wind chart data (loaded with expanded trip) ───────────────────────────
-	type WindPoint = { t: number; w: number | null; d: number | null; b: number | null };
+	type WindPoint = {
+		t:   number;
+		w:   number | null;   // TWS kn
+		d:   number | null;   // TWD deg
+		b:   number | null;   // baro hPa
+		sog: number | null;   // SOG kn
+		aws: number | null;   // AWS kn
+		awa: number | null;   // AWA deg (0–360)
+	};
 	let expandedWindData = $state<WindPoint[]>([]);
 
 	// ── Monthly grouping ──────────────────────────────────────────────────────
@@ -266,6 +274,108 @@
   <text x="${pad.l-3}" y="${pad.t+4}" font-size="8" fill="rgba(255,255,255,.3)" text-anchor="end">${fmtB(maxB)}</text>
   <text x="${pad.l-3}" y="${pad.t+H+1}" font-size="8" fill="rgba(255,255,255,.3)" text-anchor="end">${fmtB(minB)}</text>
   <path d="${line}" fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+	}
+
+	// Generic area/line chart — reusable for SOG and AWS
+	function svgAreaChart(
+		vals: (number | null)[],
+		times: number[],
+		color: string,
+		label: string,
+		unit: string,
+		width = 320, height = 56,
+	): string {
+		const nums = vals.filter((v): v is number => v != null);
+		if (nums.length < 2) return '';
+		const maxV = Math.max(...nums, 1);
+		const n = vals.length;
+		const pad = { l: 24, r: 4, t: 6, b: 18 };
+		const W = width - pad.l - pad.r;
+		const H = height - pad.t - pad.b;
+		const xs = vals.map((_, i) => pad.l + (i / (n - 1)) * W);
+		const ys = vals.map(v => v != null ? pad.t + H - (v / maxV) * H : null);
+
+		let area = `M${xs[0]},${pad.t + H}`;
+		for (let i = 0; i < n; i++) if (ys[i] != null) area += ` L${xs[i]},${ys[i]}`;
+		area += ` L${xs[n-1]},${pad.t + H} Z`;
+
+		let line = ''; let gap = true;
+		for (let i = 0; i < n; i++) {
+			if (ys[i] != null) { line += `${gap ? 'M' : 'L'}${xs[i]},${ys[i]}`; gap = false; }
+			else gap = true;
+		}
+
+		const gridY = [0, 0.5, 1].map(f => ({ y: pad.t + H - f * H, val: (f * maxV).toFixed(f === 0 ? 0 : 1) }));
+		const fmtT  = (ms: number) => new Date(ms).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false });
+		const id    = `ag-${color.replace('#','')}`;
+
+		return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:${height}px;display:block">
+  <defs>
+    <linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+  ${gridY.map(g => `<line x1="${pad.l}" y1="${g.y}" x2="${pad.l+W}" y2="${g.y}" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
+  <text x="${pad.l-3}" y="${g.y+3.5}" font-size="8" fill="rgba(255,255,255,.3)" text-anchor="end">${g.val}</text>`).join('')}
+  <path d="${area}" fill="url(#${id})"/>
+  <path d="${line}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  ${times[0]       ? `<text x="${pad.l}" y="${height-3}" font-size="8" fill="rgba(255,255,255,.3)">${fmtT(times[0])}</text>` : ''}
+  ${times[n-1]     ? `<text x="${pad.l+W}" y="${height-3}" font-size="8" fill="rgba(255,255,255,.3)" text-anchor="end">${fmtT(times[n-1])}</text>` : ''}
+</svg>`;
+	}
+
+	// AWA polar scatter — points on a 180° half-circle (port=left, stbd=right)
+	function svgAwaChart(pts: WindPoint[], width = 320, height = 110): string {
+		// Normalise AWA to –180…+180 (negative = port, positive = stbd)
+		const valid = pts
+			.filter(p => p.awa != null)
+			.map(p => {
+				let a = p.awa!;
+				if (a > 180) a -= 360;   // 270° → –90°
+				return { a, aws: p.aws ?? p.w ?? 0 };
+			});
+		if (valid.length < 2) return '';
+
+		const cx = width / 2, cy = height - 8;
+		const R  = Math.min(cx - 20, cy - 10);
+		// Arc path (semicircle top)
+		const arcPath = `M${cx - R},${cy} A${R},${R} 0 0 1 ${cx + R},${cy}`;
+		// Tick marks every 30°
+		const ticks = [-150,-120,-90,-60,-30,0,30,60,90,120,150].map(deg => {
+			const rad = (deg - 90) * Math.PI / 180;
+			const x1 = cx + (R-4) * Math.cos(rad), y1 = cy + (R-4) * Math.sin(rad);
+			const x2 = cx + R     * Math.cos(rad), y2 = cy + R     * Math.sin(rad);
+			const xl = cx + (R+9) * Math.cos(rad), yl = cy + (R+9) * Math.sin(rad);
+			const lbl = Math.abs(deg) === 90 ? '90' : Math.abs(deg) === 30 ? (deg<0?'P':'S') : '';
+			return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="rgba(255,255,255,.15)" stroke-width="1"/>
+${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill="rgba(255,255,255,.3)" text-anchor="middle">${lbl}</text>` : ''}`;
+		}).join('');
+
+		// Scatter dots — radius encodes AWS, color encodes tack
+		const maxAws = Math.max(...valid.map(v => v.aws), 5);
+		const dots = valid.map(v => {
+			const rad = (v.a - 90) * Math.PI / 180;
+			const r2  = R * 0.85;
+			const x   = cx + r2 * Math.cos(rad);
+			const y   = cy + r2 * Math.sin(rad);
+			const col = v.a < 0 ? '#34d399' : '#f97316';   // port green / stbd orange
+			const sz  = 1.5 + (v.aws / maxAws) * 2.5;
+			return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${sz.toFixed(1)}" fill="${col}" fill-opacity="0.6"/>`;
+		}).join('');
+
+		// Forward direction line
+		const fwdPath = `M${cx},${cy} L${cx},${cy - R * 0.92}`;
+
+		return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:${height}px;display:block">
+  <path d="${arcPath}" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
+  <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy-R}" stroke="rgba(255,255,255,.1)" stroke-width="1" stroke-dasharray="3,3"/>
+  ${ticks}
+  ${dots}
+  <path d="${fwdPath}" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="${cx-R-2}" y="${cy+10}" font-size="8" fill="rgba(52,211,153,.7)" text-anchor="start">Port</text>
+  <text x="${cx+R+2}" y="${cy+10}" font-size="8" fill="rgba(249,115,22,.7)" text-anchor="end">Stbd</text>
 </svg>`;
 	}
 
@@ -391,7 +501,8 @@
 				.not('lon', 'is', null)
 				.order('logged_at', { ascending: true })
 				.limit(1000),
-			supabase.from('log_entries').select('logged_at, wind_speed_kn, wind_dir_deg, baro_hpa')
+			supabase.from('log_entries')
+				.select('logged_at, wind_speed_kn, wind_dir_deg, baro_hpa, sog_kn, apparent_wind_speed_kn, apparent_wind_angle_deg')
 				.eq('trip_id', tripId)
 				.order('logged_at', { ascending: true })
 				.limit(600),
@@ -411,10 +522,13 @@
 			(p): p is { lat: number; lon: number } => p.lat != null && p.lon != null
 		);
 		expandedWindData = (windRes.data ?? []).map(r => ({
-			t: new Date(r.logged_at as string).getTime(),
-			w: r.wind_speed_kn as number | null,
-			d: r.wind_dir_deg  as number | null,
-			b: r.baro_hpa      as number | null,
+			t:   new Date(r.logged_at as string).getTime(),
+			w:   r.wind_speed_kn           as number | null,
+			d:   r.wind_dir_deg            as number | null,
+			b:   r.baro_hpa                as number | null,
+			sog: r.sog_kn                  as number | null,
+			aws: r.apparent_wind_speed_kn  as number | null,
+			awa: r.apparent_wind_angle_deg as number | null,
 		}));
 		expandedLoading = false;
 
@@ -1418,26 +1532,67 @@
 					</div>
 				</div>
 
-				<!-- Wind & baro charts -->
+				<!-- Performance & weather charts -->
 				{#if expandedWindData.length >= 2}
-				{@const hasWind = expandedWindData.some(p => p.w != null)}
-				{@const hasBaro = expandedWindData.some(p => p.b != null)}
-				{#if hasWind || hasBaro}
+				{@const hasWind = expandedWindData.some(p => p.w   != null)}
+				{@const hasBaro = expandedWindData.some(p => p.b   != null)}
+				{@const hasSog  = expandedWindData.some(p => p.sog != null)}
+				{@const hasAws  = expandedWindData.some(p => p.aws != null)}
+				{@const hasAwa  = expandedWindData.some(p => p.awa != null)}
+				{#if hasWind || hasBaro || hasSog || hasAws || hasAwa}
 				<div class="chart-section">
-					{#if hasWind}
+
+					{#if hasSog}
 					<div class="chart-block">
+						<div class="chart-label" style="color:#22d3ee">
+							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="flex-shrink:0">
+								<circle cx="7" cy="7" r="5"/><polyline points="7,4.5 7,7 9,8.5"/>
+							</svg>
+							SOG (kn)
+						</div>
+						{@html svgAreaChart(expandedWindData.map(p=>p.sog), expandedWindData.map(p=>p.t), '#22d3ee', 'SOG', 'kn')}
+					</div>
+					{/if}
+
+					{#if hasWind}
+					<div class="chart-block" style={hasSog ? 'margin-top:10px' : ''}>
 						<div class="chart-label">
 							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
-								<path d="M1 4.5h6.5a2 2 0 0 0 0-3"/><path d="M1 7.5h8.5a2 2 0 0 0 0-3"/>
-								<path d="M1 10.5h5a2 2 0 0 0 0-3"/>
+								<path d="M1 4.5h6.5a2 2 0 0 0 0-3"/><path d="M1 7.5h8.5a2 2 0 0 0 0-3"/><path d="M1 10.5h5a2 2 0 0 0 0-3"/>
 							</svg>
-							Wind speed (kn)
+							TWS (kn)
 						</div>
 						{@html svgWindChart(expandedWindData)}
 					</div>
 					{/if}
+
+					{#if hasAws}
+					<div class="chart-block" style="margin-top:10px">
+						<div class="chart-label" style="color:#fb923c">
+							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
+								<path d="M1 4.5h6.5a2 2 0 0 0 0-3"/><path d="M1 7.5h8.5a2 2 0 0 0 0-3"/><path d="M1 10.5h5a2 2 0 0 0 0-3"/>
+							</svg>
+							AWS (kn)
+						</div>
+						{@html svgAreaChart(expandedWindData.map(p=>p.aws), expandedWindData.map(p=>p.t), '#fb923c', 'AWS', 'kn')}
+					</div>
+					{/if}
+
+					{#if hasAwa}
+					<div class="chart-block" style="margin-top:10px">
+						<div class="chart-label" style="color:#a3e635">
+							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
+								<circle cx="7" cy="9" r="1.5"/><line x1="7" y1="7.5" x2="7" y2="3"/>
+								<line x1="5" y1="5" x2="7" y2="3"/><line x1="9" y1="5" x2="7" y2="3"/>
+							</svg>
+							AWA — apparent wind angle
+						</div>
+						{@html svgAwaChart(expandedWindData)}
+					</div>
+					{/if}
+
 					{#if hasBaro}
-					<div class="chart-block" style="margin-top:6px">
+					<div class="chart-block" style="margin-top:10px">
 						<div class="chart-label" style="color:#a78bfa">
 							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
 								<circle cx="7" cy="8" r="4.5"/><path d="M7 8 L9 5.5"/>
@@ -1447,6 +1602,7 @@
 						{@html svgBaroChart(expandedWindData)}
 					</div>
 					{/if}
+
 				</div>
 				{/if}
 				{/if}
