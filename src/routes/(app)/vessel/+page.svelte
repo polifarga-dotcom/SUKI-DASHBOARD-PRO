@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { telemetry, dataStale } from '$lib/stores/telemetry.js';
+	import { vrmData } from '$lib/stores/vrm.js';
 	import { currentBoat } from '$lib/stores/boat.js';
 	import BatteryCard from '$lib/components/cards/BatteryCard.svelte';
 	import SolarCard from '$lib/components/cards/SolarCard.svelte';
@@ -18,7 +19,7 @@
 {/if}
 
 <div class="grid">
-	<BatteryCard t={$telemetry} />
+	<BatteryCard vrm={$vrmData} />
 	<SolarCard t={$telemetry} />
 	<EnvironmentCard t={$telemetry} />
 	<EngineCard t={$telemetry} boatId={$currentBoat?.id} engineCount={($currentBoat?.engine_count ?? 1) as 1|2} />

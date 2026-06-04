@@ -196,15 +196,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	const load_w = acL.some(v => v > 0) ? acL.reduce((s, v) => s + v, 0) : (acOutP ?? null);
 
 	// ── Temperature & Humidity Sensors ───────────────────────────────────────
-	// Map instance IDs to human-readable sensor names (SUKI-specific)
-	const TEMP_SENSOR_NAMES: Record<number, string> = {
-		20: 'Salon',
-		21: 'Fridge',
-		22: 'Tech Room',
-		23: 'AMA SB',
-		29: 'AMA Aft',
-	};
-
+	// Names come directly from VRM CustomName — no hardcoded mapping needed.
 	const tempMap = new Map<string, VRMTempSensor>();
 
 	rows.forEach(r => {
@@ -214,9 +206,8 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 
 		const key = `${r.Device}__${r.instance}`;
 		const entry: VRMTempSensor = tempMap.get(key) ?? {
-			// Priority: SUKI-specific mapping > CustomName > description > fallback
-			name: TEMP_SENSOR_NAMES[r.instance] ??
-				  customNames.get(key) ??
+			// Priority: CustomName > description > fallback
+			name: customNames.get(key) ??
 				  (r.description && r.description !== 'Temperature' && r.description !== 'Humidity' ? r.description : null) ??
 				  `Sensor ${r.instance}`,
 			instance: r.instance,

@@ -1,96 +1,107 @@
 <script lang="ts">
-	import type { Telemetry } from '$lib/types.js';
+	import type { VRMData } from '$lib/types.js';
 	import { fmtSOC, fmtV, fmtA, fmtW, socColor } from '$lib/utils/units.js';
 	import ValueCell from '$lib/components/ui/ValueCell.svelte';
 
-	interface Props { t: Telemetry | null; }
-	let { t }: Props = $props();
+	interface Props { vrm: VRMData | null; }
+	let { vrm }: Props = $props();
 
-	// ── House bank (SignalK instance 0) ──────────────────────────────────────────
-	const soc = $derived(t?.batt_main_soc ?? null);
-	const v   = $derived(t?.batt_main_v   ?? null);
-	const a   = $derived(t?.batt_main_a   ?? null);
-	const w   = $derived(t?.batt_main_w   ?? null);
+	const primary = $derived(vrm?.batteries[0] ?? null);
+	const secondary = $derived(vrm?.batteries.slice(1) ?? []);
 
-	const hasSoc  = $derived(soc != null);
-	const pctNum  = $derived(soc != null ? soc * 100 : 0);
-	const color   = $derived(socColor(soc));
+	const soc   = $derived(primary?.soc ?? null);
+	const v     = $derived(primary?.v   ?? null);
+	const a     = $derived(primary?.a   ?? null);
+	const w     = $derived(primary?.w   ?? null);
+	const ttg   = $derived(primary?.time_to_go_s ?? null);
 
-	// Primary display: SOC when available, voltage otherwise (common when no
-	// battery monitor is configured in SignalK — e.g. engine-only alternator).
+	const hasSoc   = $derived(soc != null);
+	const color    = $derived(socColor(soc));
+	const pctNum   = $derived(soc != null ? Math.round(soc * 100) : 0);
+
 	const bigVal   = $derived(
-		hasSoc          ? fmtSOC(soc)
-		: v != null     ? v.toFixed(1) + ' V'
+		hasSoc      ? Math.round(soc! * 100) + '%'
+		: v != null ? v.toFixed(1) + ' V'
 		: '—'
 	);
 	const bigColor = $derived(hasSoc ? color : 'var(--amber)');
 
-	// Metrics row: show V/A/W when SOC is the big value;
-	// show only A/W when voltage is already the big value.
-	const hasMetrics = $derived(hasSoc || a != null || w != null);
-
 	const fmtSigned = (x: number | null) =>
 		x == null ? null : (x >= 0 ? '+' : '') + x.toFixed(1);
 
-	// ── Second battery (SignalK instance 1) ───────────────────────────────────────
-	// Filter out ghost/disconnected readings (< 1 V — occasional noise from
-	// Victron when no sensor is attached to instance 1).
-	const engV    = $derived(t?.batt_eng_v   ?? null);
-	const engSoc  = $derived(t?.batt_eng_soc ?? null);
-	const engA    = $derived(t?.batt_eng_a   ?? null);
-	const showEng = $derived(engV != null && engV > 1);
+	function ttgStr(s: number | null): string | null {
+		if (s == null || s <= 0) return null;
+		const h = Math.floor(s / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		return h > 0 ? `${h}h ${m}m` : `${m}m`;
+	}
+
+	const isCharging    = $derived((a ?? 0) > 0.5);
+	const isDischarging = $derived((a ?? 0) < -0.5);
 </script>
 
 <div class="card">
 	<div class="card-head">
 		<span class="title">Battery</span>
-		{#if !hasSoc && v != null}
-			<span class="hint">voltage only</span>
+		{#if primary?.name}
+			<span class="hint">{primary.name}</span>
 		{/if}
 	</div>
 
-	<!-- Primary value: SOC or voltage -->
-	<div class="soc-row">
-		<div class="soc-val" style="color:{bigColor}">{bigVal}</div>
-		{#if hasSoc}
-			<div class="soc-bar-wrap">
-				<div class="soc-bar" style="width:{pctNum}%; background:{color}"></div>
-			</div>
-		{/if}
-	</div>
+	{#if primary == null}
+		<div class="no-data">No battery data</div>
+	{:else}
+		<!-- SOC bar + big value -->
+		<div class="soc-row">
+			<div class="soc-val" style="color:{bigColor}">{bigVal}</div>
+			{#if hasSoc}
+				<div class="soc-bar-wrap">
+					<div class="soc-bar" style="width:{pctNum}%; background:{color}"></div>
+				</div>
+			{/if}
+		</div>
 
-	<!-- Metrics grid (adapts to available data) -->
-	{#if hasMetrics}
+		<!-- V / A / W -->
 		{#if hasSoc}
-			<!-- Full row: V / A / W -->
 			<div class="metrics cols3">
-				<ValueCell label="Voltage" value={v != null ? v.toFixed(1) : null} unit="V" />
+				<ValueCell label="Voltage" value={v != null ? v.toFixed(2) : null} unit="V" />
 				<ValueCell label="Current" value={fmtSigned(a)} unit="A" />
 				<ValueCell label="Power"   value={w != null ? w.toFixed(0) : null} unit="W" />
 			</div>
-		{:else}
-			<!-- Voltage is the big value; show only A / W if present -->
+		{:else if a != null || w != null}
 			<div class="metrics cols2">
 				<ValueCell label="Current" value={fmtSigned(a)} unit="A" />
 				<ValueCell label="Power"   value={w != null ? w.toFixed(0) : null} unit="W" />
 			</div>
 		{/if}
-	{/if}
 
-	<!-- Second battery row (starter / engine bank) -->
-	{#if showEng}
-		<div class="divider"></div>
-		<div class="eng-row">
-			<span class="eng-label">Starter / Engine</span>
-			<span class="eng-vals">
-				{fmtV(engV)}{#if engSoc != null}&nbsp;·&nbsp;{fmtSOC(engSoc)}{/if}{#if engA != null}&nbsp;·&nbsp;{fmtSigned(engA)} A{/if}
-			</span>
-		</div>
-	{/if}
+		<!-- Time to go -->
+		{#if ttgStr(ttg)}
+			<div class="ttg">⏱ {ttgStr(ttg)} remaining</div>
+		{/if}
 
-	<!-- No data at all -->
-	{#if v == null && soc == null}
-		<div class="no-data">No battery data</div>
+		<!-- Secondary batteries -->
+		{#if secondary.length > 0}
+			<div class="divider"></div>
+			{#each secondary as batt}
+				{@const bsoc = batt.soc != null ? Math.round(batt.soc * 100) : null}
+				{@const bcol = socColor(batt.soc)}
+				<div class="sec-row">
+					<span class="sec-name">{batt.name}</span>
+					<div class="sec-right">
+						{#if bsoc != null}
+							<span class="sec-soc" style="color:{bcol}">{bsoc}%</span>
+							<div class="sec-bar-wrap">
+								<div class="sec-bar" style="width:{bsoc}%; background:{bcol}"></div>
+							</div>
+						{/if}
+						{#if batt.v != null}
+							<span class="sec-v">{batt.v.toFixed(2)} V</span>
+						{/if}
+					</div>
+				</div>
+			{/each}
+		{/if}
 	{/if}
 </div>
 
@@ -133,20 +144,65 @@
 		transition: width 0.5s ease, background 0.3s;
 	}
 
-	.metrics { display: grid; gap: 8px; }
+	.metrics { display: grid; gap: 8px; margin-top: 4px; }
 	.cols3   { grid-template-columns: repeat(3, 1fr); }
 	.cols2   { grid-template-columns: repeat(2, 1fr); }
 
+	.ttg {
+		font-size: 11px;
+		color: var(--muted);
+		margin-top: 8px;
+	}
+
 	.divider { height: 1px; background: var(--border); margin: 12px 0; }
 
-	.eng-row {
+	/* Secondary batteries */
+	.sec-row {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		font-size: 12px;
+		gap: 8px;
+		margin-bottom: 7px;
 	}
-	.eng-label { color: var(--muted); }
-	.eng-vals  { color: var(--text); }
+	.sec-name {
+		font-size: 12px;
+		color: var(--muted);
+		min-width: 90px;
+		flex-shrink: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.sec-right {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex: 1;
+		min-width: 0;
+	}
+	.sec-soc {
+		font-size: 12px;
+		font-weight: 700;
+		min-width: 34px;
+		text-align: right;
+		flex-shrink: 0;
+	}
+	.sec-bar-wrap {
+		flex: 1;
+		height: 5px;
+		background: var(--card2);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+	.sec-bar {
+		height: 100%;
+		border-radius: 3px;
+		transition: width 0.5s ease;
+	}
+	.sec-v {
+		font-size: 11px;
+		color: var(--muted);
+		flex-shrink: 0;
+	}
 
 	.no-data {
 		font-size: 13px;

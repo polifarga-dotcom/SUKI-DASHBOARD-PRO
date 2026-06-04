@@ -501,78 +501,6 @@
 		setTimeout(() => set('idle'), 3000);
 	}
 
-	// ── Temperature Sensor Names ─────────────────────────────────────────────
-	let sensorNames = $state<Record<number, string>>({});  // instance → custom_name
-	let sensorsLoading = $state(false);
-	let sensorsSaving = $state(false);
-	let sensorsSaveSuccess = $state(false);
-	let sensorsError = $state('');
-
-	// Default sensor names (fallback if DB is empty)
-	const TEMP_SENSOR_DEFAULTS: Record<number, string> = {
-		20: 'Salon',
-		21: 'Fridge',
-		22: 'Tech Room',
-		23: 'AMA Starboard',
-		29: 'AMA Aft',
-	};
-
-	async function loadSensorNames() {
-		const boatId = $currentBoat?.id;
-		if (!boatId) return;
-		sensorsLoading = true;
-		sensorsError = '';
-		const { data, error } = await supabase
-			.from('temperature_sensors')
-			.select('instance, custom_name')
-			.eq('boat_id', boatId);
-		sensorsLoading = false;
-		if (error) {
-			sensorsError = error.message;
-			return;
-		}
-		// Load from DB or use defaults
-		sensorNames = {};
-		for (const [inst, name] of Object.entries(TEMP_SENSOR_DEFAULTS)) {
-			const instNum = Number(inst);
-			const found = data?.find(r => r.instance === instNum);
-			sensorNames[instNum] = found?.custom_name ?? name;
-		}
-	}
-
-	async function saveSensorNames() {
-		const boatId = $currentBoat?.id;
-		if (!boatId) return;
-		sensorsSaving = true;
-		sensorsError = '';
-		sensorsSaveSuccess = false;
-
-		// Upsert each sensor name
-		const rows = Object.entries(sensorNames).map(([inst, name]) => ({
-			boat_id: boatId,
-			instance: Number(inst),
-			custom_name: name,
-		}));
-
-		const { error } = await supabase
-			.from('temperature_sensors')
-			.upsert(rows, { onConflict: 'boat_id,instance' });
-
-		sensorsSaving = false;
-		if (error) {
-			sensorsError = error.message;
-			return;
-		}
-		sensorsSaveSuccess = true;
-		setTimeout(() => { sensorsSaveSuccess = false; }, 3000);
-	}
-
-	// Load sensor names on mount
-	$effect(() => {
-		if ($currentBoat?.id) {
-			loadSensorNames();
-		}
-	});
 
 	// ── Password change ───────────────────────────────────────────────────────
 	let pw = $state(''); let pw2 = $state('');
@@ -1079,40 +1007,6 @@
 		{/if}
 	</section>
 
-	<!-- ── Temperature Sensor Names ── -->
-	<section class="card">
-		<h2>Temperature Sensor Names</h2>
-		{#if sensorsLoading}
-		<p class="loading-hint">Loading sensor configuration…</p>
-		{:else if sensorsError}
-		<div class="alert alert-error">{sensorsError}</div>
-		{:else}
-		<div class="sensors-grid">
-			{#each Object.entries(TEMP_SENSOR_DEFAULTS) as [instance, defaultName]}
-			<div class="sensor-row">
-				<label for="sensor-{instance}" class="sensor-label">Instance {instance}</label>
-				<input
-					id="sensor-{instance}"
-					type="text"
-					bind:value={sensorNames[Number(instance)]}
-					placeholder={defaultName}
-					class="sensor-input"
-				/>
-			</div>
-			{/each}
-		</div>
-		{#if sensorsError}<div class="alert alert-error">{sensorsError}</div>{/if}
-		{#if sensorsSaveSuccess}<div class="alert alert-info">✓ Sensor names saved</div>{/if}
-		<button
-			class="btn btn-ghost mt"
-			onclick={saveSensorNames}
-			disabled={sensorsSaving || sensorsLoading}
-		>
-			{sensorsSaving ? 'Saving…' : 'Save sensor names'}
-		</button>
-		{/if}
-	</section>
-
 	<!-- ── Account ── -->
 	<section class="card">
 		<h2>Account</h2>
@@ -1341,14 +1235,4 @@
 	}
 	.setup-hint em { font-style: normal; color: var(--accent); }
 
-	/* ── Temperature Sensor Names ── */
-	.sensors-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 12px; }
-	.sensor-row { display: flex; flex-direction: column; gap: 4px; }
-	.sensor-label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
-	.sensor-input {
-		background: var(--card2); border: 1px solid var(--border); border-radius: 6px;
-		color: var(--text); font-size: 14px; padding: 10px 12px; outline: none;
-		font-family: inherit; transition: border-color 0.2s;
-	}
-	.sensor-input:focus { border-color: var(--accent); }
 </style>
