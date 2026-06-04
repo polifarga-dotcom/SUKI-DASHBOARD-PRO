@@ -74,7 +74,7 @@
 				{#if portHasLiveData}
 					<ValueCell label="Speed" value={t?.eng_rpm != null ? t.eng_rpm.toFixed(0) : null} unit="RPM" />
 					<ValueCell label="Coolant" value={fmtTemp(k2cNum(t?.eng_temp_k ?? null), $unitSystem)} />
-					<ValueCell label="Alternator" value={t?.eng_alt_v != null ? t.eng_alt_v.toFixed(1) : null} unit="V" />
+					<ValueCell label="Alternator" value={t?.eng_alt_v != null ? t.eng_alt_v.toFixed(2) : null} unit="V" />
 				{/if}
 				<ValueCell label="Runtime" value={fmtRuntime(portRuntime ?? null)} />
 			</div>
@@ -93,7 +93,7 @@
 						{#if portHasLiveData}
 							<ValueCell label="Speed" value={t?.eng_rpm != null ? t.eng_rpm.toFixed(0) : null} unit="RPM" />
 							<ValueCell label="Coolant" value={fmtTemp(k2cNum(t?.eng_temp_k ?? null), $unitSystem)} />
-							<ValueCell label="Alt" value={t?.eng_alt_v != null ? t.eng_alt_v.toFixed(1) : null} unit="V" />
+							<ValueCell label="Alt" value={t?.eng_alt_v != null ? t.eng_alt_v.toFixed(2) : null} unit="V" />
 						{/if}
 						<ValueCell label="Runtime" value={fmtRuntime(portRuntime ?? null)} />
 					</div>
@@ -111,7 +111,7 @@
 						{#if sbHasLiveData}
 							<ValueCell label="Speed" value={t?.eng_sb_rpm != null ? t.eng_sb_rpm.toFixed(0) : null} unit="RPM" />
 							<ValueCell label="Coolant" value={fmtTemp(k2cNum(t?.eng_sb_temp_k ?? null), $unitSystem)} />
-							<ValueCell label="Alt" value={t?.eng_sb_alt_v != null ? t.eng_sb_alt_v.toFixed(1) : null} unit="V" />
+							<ValueCell label="Alt" value={t?.eng_sb_alt_v != null ? t.eng_sb_alt_v.toFixed(2) : null} unit="V" />
 						{/if}
 						<ValueCell label="Runtime" value={fmtRuntime(sbRuntime ?? null)} />
 					</div>
