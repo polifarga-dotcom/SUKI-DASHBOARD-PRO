@@ -92,6 +92,13 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		battMap.set(key, entry);
 	});
 
+	// Calculate power = V × I for battery monitors that don't expose /Dc/0/Power
+	for (const entry of battMap.values()) {
+		if (entry.w == null && entry.v != null && entry.a != null) {
+			entry.w = Math.round(entry.v * entry.a);
+		}
+	}
+
 	// ── Individual MPPTs ──────────────────────────────────────────────────────
 	// Built BEFORE filtering batteries so we can cross-reference and exclude
 	// MPPT charger devices from the battery list (they share /Dc/0/* paths).
