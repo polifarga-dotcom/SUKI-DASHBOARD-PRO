@@ -19,7 +19,7 @@
 {/if}
 
 <div class="grid">
-	<BatteryCard vrm={$vrmData} />
+	<BatteryCard vrm={$vrmData} t={$telemetry} />
 	<SolarCard t={$telemetry} />
 	<EnvironmentCard t={$telemetry} />
 	<EngineCard t={$telemetry} boatId={$currentBoat?.id} engineCount={($currentBoat?.engine_count ?? 1) as 1|2} />

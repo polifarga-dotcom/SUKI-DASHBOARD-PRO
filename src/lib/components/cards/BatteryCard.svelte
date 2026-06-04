@@ -1,12 +1,25 @@
 <script lang="ts">
-	import type { VRMData } from '$lib/types.js';
+	import type { Telemetry, VRMData } from '$lib/types.js';
 	import { fmtSOC, fmtV, fmtA, fmtW, socColor } from '$lib/utils/units.js';
 	import ValueCell from '$lib/components/ui/ValueCell.svelte';
 
-	interface Props { vrm: VRMData | null; }
-	let { vrm }: Props = $props();
+	interface Props { vrm: VRMData | null; t: Telemetry | null; }
+	let { vrm, t }: Props = $props();
 
-	const primary = $derived(vrm?.batteries[0] ?? null);
+	// Use VRM batteries when available; fall back to SignalK telemetry immediately
+	const primary = $derived(vrm?.batteries[0] ?? (
+		t?.batt_main_v != null || t?.batt_main_soc != null ? {
+			name: 'Main Battery',
+			soc: t?.batt_main_soc ?? null,
+			v:   t?.batt_main_v   ?? null,
+			a:   t?.batt_main_a   ?? null,
+			w:   t?.batt_main_w   ?? null,
+			time_to_go_s: null,
+			consumed_ah: null,
+			temp_c: null,
+			instance: 0,
+		} : null
+	));
 	const secondary = $derived(vrm?.batteries.slice(1) ?? []);
 
 	const soc   = $derived(primary?.soc ?? null);
