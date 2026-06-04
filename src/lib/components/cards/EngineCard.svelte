@@ -52,13 +52,9 @@
 	const portRuntime = $derived(t?.eng_run_sec ?? portRuntimeStored);
 	const sbRuntime = $derived(t?.eng_sb_run_sec ?? sbRuntimeStored);
 
-	// Motor count: configured engine_count is authoritative;
-	// fall back to auto-detection from live data / stored runtime.
-	const motorCount = $derived(
-		engineCount === 2 ? 2 :
-		(portHasLiveData || portRuntime != null ? 1 : 0) +
-		(sbHasLiveData || sbRuntime != null ? 1 : 0)
-	);
+	// Motor count: engineCount from boat settings is always authoritative.
+	// Never auto-detect — stale localStorage from another boat could show wrong count.
+	const motorCount = $derived(engineCount ?? 1);
 
 	// Hide card if no motors at all
 	const hasAnyMotor = $derived(motorCount > 0);
