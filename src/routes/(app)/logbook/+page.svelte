@@ -149,6 +149,126 @@
 	let expandedAllEntries = $state<LogEntry[]>([]);
 	let allEntriesLoading  = $state(false);
 
+	// ── Wind chart data (loaded with expanded trip) ───────────────────────────
+	type WindPoint = { t: number; w: number | null; d: number | null; b: number | null };
+	let expandedWindData = $state<WindPoint[]>([]);
+
+	// ── Monthly grouping ──────────────────────────────────────────────────────
+	type MonthGroup = { year: number; month: number; label: string; trips: LogTrip[]; totalNm: number; tripCount: number };
+	type YearGroup  = { year: number; months: MonthGroup[]; totalNm: number; tripCount: number };
+
+	let collapsedYears  = $state<Set<number>>(new Set());
+	let collapsedMonths = $state<Set<string>>(new Set());
+
+	const groupedTrips = $derived(() => {
+		const ts = filteredPastTrips();
+		const byYear = new Map<number, Map<number, LogTrip[]>>();
+		for (const tr of ts) {
+			const d = new Date(tr.started_at);
+			const y = d.getFullYear(), m = d.getMonth();
+			if (!byYear.has(y)) byYear.set(y, new Map());
+			const byM = byYear.get(y)!;
+			if (!byM.has(m)) byM.set(m, []);
+			byM.get(m)!.push(tr);
+		}
+		const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+		const years: YearGroup[] = [];
+		for (const [year, byM] of [...byYear.entries()].sort((a,b) => b[0]-a[0])) {
+			const months: MonthGroup[] = [];
+			for (const [month, trips] of [...byM.entries()].sort((a,b) => b[0]-a[0])) {
+				const totalNm = trips.reduce((s, t) => s + (t.total_nm ?? 0), 0);
+				months.push({ year, month, label: MONTHS[month], trips, totalNm, tripCount: trips.length });
+			}
+			const totalNm = months.reduce((s, m) => s + m.totalNm, 0);
+			years.push({ year, months, totalNm, tripCount: months.reduce((s,m) => s + m.tripCount, 0) });
+		}
+		return years;
+	});
+
+	function toggleYear(year: number) {
+		const s = new Set(collapsedYears);
+		if (s.has(year)) s.delete(year); else s.add(year);
+		collapsedYears = s;
+	}
+	function toggleMonth(key: string) {
+		const s = new Set(collapsedMonths);
+		if (s.has(key)) s.delete(key); else s.add(key);
+		collapsedMonths = s;
+	}
+
+	// ── SVG mini wind chart ───────────────────────────────────────────────────
+	function svgWindChart(pts: WindPoint[], width = 320, height = 56): string {
+		const speeds = pts.map(p => p.w).filter((v): v is number => v != null);
+		if (speeds.length < 2) return '';
+		const maxW = Math.max(...speeds, 5);
+		const n = pts.length;
+		const pad = { l: 24, r: 4, t: 6, b: 18 };
+		const W = width - pad.l - pad.r;
+		const H = height - pad.t - pad.b;
+		const xs = pts.map((_, i) => pad.l + (i / (n - 1)) * W);
+		const ys = pts.map(p => p.w != null ? pad.t + H - (p.w / maxW) * H : null);
+
+		// Area fill path
+		let area = `M${xs[0]},${pad.t + H}`;
+		for (let i = 0; i < n; i++) if (ys[i] != null) area += ` L${xs[i]},${ys[i]}`;
+		area += ` L${xs[n-1]},${pad.t + H} Z`;
+
+		// Line path
+		let line = ''; let inGap = true;
+		for (let i = 0; i < n; i++) {
+			if (ys[i] != null) { line += `${inGap ? 'M' : 'L'}${xs[i]},${ys[i]}`; inGap = false; }
+			else inGap = true;
+		}
+
+		// Y-axis labels (0 and max)
+		const gridY = [0, 0.5, 1].map(f => ({ y: pad.t + H - f * H, val: Math.round(f * maxW) }));
+
+		// X-axis time labels (first and last)
+		const t0 = pts[0]?.t, t1 = pts[n-1]?.t;
+		const fmtT = (ms: number) => new Date(ms).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+		return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:${height}px;display:block">
+  <defs>
+    <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00c8ff" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#00c8ff" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+  ${gridY.map(g => `<line x1="${pad.l}" y1="${g.y}" x2="${pad.l+W}" y2="${g.y}" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
+  <text x="${pad.l-3}" y="${g.y+3.5}" font-size="8" fill="rgba(255,255,255,.3)" text-anchor="end">${g.val}</text>`).join('')}
+  <path d="${area}" fill="url(#wg)"/>
+  <path d="${line}" fill="none" stroke="#00c8ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  ${t0 ? `<text x="${pad.l}" y="${height-3}" font-size="8" fill="rgba(255,255,255,.3)">${fmtT(t0)}</text>` : ''}
+  ${t1 ? `<text x="${pad.l+W}" y="${height-3}" font-size="8" fill="rgba(255,255,255,.3)" text-anchor="end">${fmtT(t1)}</text>` : ''}
+</svg>`;
+	}
+
+	// ── SVG mini baro chart ───────────────────────────────────────────────────
+	function svgBaroChart(pts: WindPoint[], width = 320, height = 40): string {
+		const baros = pts.map(p => p.b).filter((v): v is number => v != null);
+		if (baros.length < 2) return '';
+		const minB = Math.min(...baros) - 1;
+		const maxB = Math.max(...baros) + 1;
+		const n = pts.length;
+		const pad = { l: 32, r: 4, t: 4, b: 14 };
+		const W = width - pad.l - pad.r;
+		const H = height - pad.t - pad.b;
+		const xs = pts.map((_, i) => pad.l + (i / (n-1)) * W);
+		const ys = pts.map(p => p.b != null ? pad.t + H - ((p.b - minB) / (maxB - minB)) * H : null);
+		let line = ''; let inGap = true;
+		for (let i = 0; i < n; i++) {
+			if (ys[i] != null) { line += `${inGap ? 'M' : 'L'}${xs[i]},${ys[i]}`; inGap = false; }
+			else inGap = true;
+		}
+		const fmtB = (v: number) => v.toFixed(0);
+		return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:${height}px;display:block">
+  <line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t+H}" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
+  <text x="${pad.l-3}" y="${pad.t+4}" font-size="8" fill="rgba(255,255,255,.3)" text-anchor="end">${fmtB(maxB)}</text>
+  <text x="${pad.l-3}" y="${pad.t+H+1}" font-size="8" fill="rgba(255,255,255,.3)" text-anchor="end">${fmtB(minB)}</text>
+  <path d="${line}" fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+	}
+
 	// ── Trip map (lazy Leaflet, built when trip is expanded) ──────────────────
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let L_ref: any = null;
@@ -239,6 +359,7 @@
 			expandedEntries   = [];
 			expandedAllEntries = [];
 			expandedMapPositions = [];
+			expandedWindData  = [];
 			expandedEntryCount = 0;
 			showAllEntries    = false;
 			return;
@@ -256,8 +377,8 @@
 		expandedMapPositions = [];
 		expandedEntryCount = 0;
 
-		// Parallel: first entry, last entry, count, all positions for map
-		const [firstRes, lastRes, countRes, posRes] = await Promise.all([
+		// Parallel: first entry, last entry, count, all positions for map, wind/baro data
+		const [firstRes, lastRes, countRes, posRes, windRes] = await Promise.all([
 			supabase.from('log_entries').select('*')
 				.eq('trip_id', tripId).order('logged_at', { ascending: true }).limit(1),
 			supabase.from('log_entries').select('*')
@@ -270,6 +391,10 @@
 				.not('lon', 'is', null)
 				.order('logged_at', { ascending: true })
 				.limit(1000),
+			supabase.from('log_entries').select('logged_at, wind_speed_kn, wind_dir_deg, baro_hpa')
+				.eq('trip_id', tripId)
+				.order('logged_at', { ascending: true })
+				.limit(600),
 		]);
 
 		const first = firstRes.data?.[0] as LogEntry | undefined;
@@ -285,6 +410,12 @@
 		expandedMapPositions = (posRes.data ?? []).filter(
 			(p): p is { lat: number; lon: number } => p.lat != null && p.lon != null
 		);
+		expandedWindData = (windRes.data ?? []).map(r => ({
+			t: new Date(r.logged_at as string).getTime(),
+			w: r.wind_speed_kn as number | null,
+			d: r.wind_dir_deg  as number | null,
+			b: r.baro_hpa      as number | null,
+		}));
 		expandedLoading = false;
 
 		await tick();   // DOM renders map container + entry list
@@ -407,7 +538,15 @@
 	const liveBaro   = $derived(() => t?.env_pressure_pa != null ? +(t.env_pressure_pa / 100).toFixed(1) : null);
 	const liveAirT   = $derived(() => t?.temp_salon   != null ? +(t.temp_salon - 273.15).toFixed(1) : null);
 	const liveWaterT = $derived(() => t?.temp_water   != null ? +(t.temp_water - 273.15).toFixed(1) : null);
-	const liveEngOn  = $derived(() => (t?.eng_rpm ?? 0) > 200);
+	const liveEngOn  = $derived(() => {
+		// Primary: RPM signal
+		if (t?.eng_rpm != null) return t.eng_rpm > 200;
+		// Fallback 1: alternator voltage > 13.6 V → engine charging
+		if (t?.eng_alt_v != null) return t.eng_alt_v > 13.6;
+		// Fallback 2: engine temp > 50 °C → engine warm/running
+		if (t?.eng_temp_k != null) return t.eng_temp_k > 323.15;
+		return false;
+	});
 	const liveEngH   = $derived(() => t?.eng_run_sec  != null ? +(t.eng_run_sec / 3600).toFixed(2) : null);
 	const liveEngT   = $derived(() => t?.eng_temp_k   != null ? +(t.eng_temp_k - 273.15).toFixed(1) : null);
 
@@ -1162,7 +1301,30 @@
 	{/if}
 
 	<div class="past-trips">
-		{#each filteredPastTrips() as trip (trip.id)}
+		{#each groupedTrips() as yg (yg.year)}
+		{@const yearCollapsed = collapsedYears.has(yg.year)}
+		<div class="year-group">
+			<button class="year-header" onclick={() => toggleYear(yg.year)}>
+				<span class="year-label">{yg.year}</span>
+				<span class="year-stats">{yg.tripCount} trip{yg.tripCount === 1 ? '' : 's'} · {yg.totalNm.toFixed(0)} nm</span>
+				<svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-left:auto">
+					{#if yearCollapsed}<polyline points="2,4 6,8 10,4"/>{:else}<polyline points="2,8 6,4 10,8"/>{/if}
+				</svg>
+			</button>
+			{#if !yearCollapsed}
+			{#each yg.months as mg (`${mg.year}-${mg.month}`)}
+			{@const monthKey = `${mg.year}-${mg.month}`}
+			{@const monthCollapsed = collapsedMonths.has(monthKey)}
+			<div class="month-group">
+				<button class="month-header" onclick={() => toggleMonth(monthKey)}>
+					<span class="month-label">{mg.label}</span>
+					<span class="month-stats">{mg.tripCount} trip{mg.tripCount === 1 ? '' : 's'} · {mg.totalNm.toFixed(0)} nm</span>
+					<svg viewBox="0 0 12 12" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-left:auto">
+						{#if monthCollapsed}<polyline points="2,4 6,8 10,4"/>{:else}<polyline points="2,8 6,4 10,8"/>{/if}
+					</svg>
+				</button>
+				{#if !monthCollapsed}
+				{#each mg.trips as trip (trip.id)}
 		{@const pct = sailRatio(trip)}
 		{@const isExpanded = expandedTripId === trip.id}
 		{@const isSelected = selectedTripIds.has(trip.id)}
@@ -1255,6 +1417,39 @@
 						</button>
 					</div>
 				</div>
+
+				<!-- Wind & baro charts -->
+				{#if expandedWindData.length >= 2}
+				{@const hasWind = expandedWindData.some(p => p.w != null)}
+				{@const hasBaro = expandedWindData.some(p => p.b != null)}
+				{#if hasWind || hasBaro}
+				<div class="chart-section">
+					{#if hasWind}
+					<div class="chart-block">
+						<div class="chart-label">
+							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
+								<path d="M1 4.5h6.5a2 2 0 0 0 0-3"/><path d="M1 7.5h8.5a2 2 0 0 0 0-3"/>
+								<path d="M1 10.5h5a2 2 0 0 0 0-3"/>
+							</svg>
+							Wind speed (kn)
+						</div>
+						{@html svgWindChart(expandedWindData)}
+					</div>
+					{/if}
+					{#if hasBaro}
+					<div class="chart-block" style="margin-top:6px">
+						<div class="chart-label" style="color:#a78bfa">
+							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
+								<circle cx="7" cy="8" r="4.5"/><path d="M7 8 L9 5.5"/>
+							</svg>
+							Barometer (hPa)
+						</div>
+						{@html svgBaroChart(expandedWindData)}
+					</div>
+					{/if}
+				</div>
+				{/if}
+				{/if}
 
 				<!-- First + last entries -->
 				{#if expandedLoading}
@@ -1349,8 +1544,14 @@
 			{/if}
 		</div>
 		{/each}
+			{/if}
+			</div>
+			{/each}
+			{/if}
+		</div>
+		{/each}
 
-		{#if filteredPastTrips().length === 0}
+		{#if groupedTrips().length === 0}
 		<div class="no-trips">No trips in this period.</div>
 		{/if}
 	</div>
@@ -1862,6 +2063,43 @@
 		cursor: pointer; margin-top: 4px;
 	}
 	.show-all-btn:hover { color: var(--text); }
+
+	/* ── Year / Month grouping ────────────────────────────────────────────── */
+	.year-group { display: flex; flex-direction: column; gap: 0; }
+	.year-header {
+		display: flex; align-items: center; gap: 8px;
+		padding: 10px 4px; width: 100%;
+		background: none; border: none; border-bottom: 1px solid var(--border);
+		color: var(--text); cursor: pointer; font-size: 15px; font-weight: 700;
+		text-align: left;
+	}
+	.year-header:hover { color: var(--accent); }
+	.year-stats { font-size: 12px; color: var(--muted); font-weight: 400; }
+
+	.month-group { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
+	.month-header {
+		display: flex; align-items: center; gap: 8px;
+		padding: 5px 6px; width: 100%;
+		background: none; border: none; border-radius: 5px;
+		color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 600;
+		text-align: left;
+	}
+	.month-header:hover { background: var(--card2); color: var(--text); }
+	.month-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+	.month-stats { font-size: 11px; color: var(--muted); font-weight: 400; }
+
+	/* ── Wind & baro charts ───────────────────────────────────────────────── */
+	.chart-section {
+		background: var(--card2); border: 1px solid var(--border);
+		border-radius: 7px; padding: 10px 10px 6px;
+		margin-bottom: 10px;
+	}
+	.chart-block { min-height: 0; }
+	.chart-label {
+		display: flex; align-items: center; gap: 5px;
+		font-size: 10px; font-weight: 600; text-transform: uppercase;
+		letter-spacing: 0.5px; color: var(--accent); margin-bottom: 4px;
+	}
 
 	/* ── Auto-log terminal ────────────────────────────────────────────────── */
 	.terminal {
