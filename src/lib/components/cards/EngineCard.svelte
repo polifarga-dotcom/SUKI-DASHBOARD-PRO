@@ -41,13 +41,25 @@
 	});
 
 	// Engine is running only when RPM > 0.
-	// If RPM = 0 or null, the engine is off — temp/voltage values are stale, hide them.
 	const portRunning = $derived((t?.eng_rpm ?? 0) > 0);
 	const sbRunning   = $derived((t?.eng_sb_rpm ?? 0) > 0);
 
-	// Show live values only when engine is running
-	const portHasLiveData = $derived(portRunning);
-	const sbHasLiveData   = $derived(sbRunning);
+	// Always show the metrics block when we have any telemetry.
+	// When engine is off (RPM=0), values are zeroed out so stale data isn't shown.
+	const portHasLiveData = $derived(
+		t?.eng_rpm != null || t?.eng_temp_k != null || t?.eng_alt_v != null
+	);
+	const sbHasLiveData = $derived(
+		t?.eng_sb_rpm != null || t?.eng_sb_temp_k != null || t?.eng_sb_alt_v != null
+	);
+
+	// Display values: zero out when engine is off
+	const portRpm  = $derived(portRunning ? (t?.eng_rpm ?? 0)      : 0);
+	const portTemp = $derived(portRunning ? (t?.eng_temp_k ?? null) : null);
+	const portAlt  = $derived(portRunning ? (t?.eng_alt_v ?? null)  : null);
+	const sbRpm    = $derived(sbRunning   ? (t?.eng_sb_rpm ?? 0)    : 0);
+	const sbTemp   = $derived(sbRunning   ? (t?.eng_sb_temp_k ?? null) : null);
+	const sbAlt    = $derived(sbRunning   ? (t?.eng_sb_alt_v ?? null)  : null);
 
 	// Runtime display (prefer live, fallback to stored)
 	const portRuntime = $derived(t?.eng_run_sec ?? portRuntimeStored);
@@ -69,9 +81,9 @@
 			<!-- Single Motor -->
 			<div class="grid">
 				{#if portHasLiveData}
-					<ValueCell label="Speed" value={t?.eng_rpm != null ? t.eng_rpm.toFixed(0) : null} unit="RPM" />
-					<ValueCell label="Coolant" value={fmtTemp(k2cNum(t?.eng_temp_k ?? null), $unitSystem)} />
-					<ValueCell label="Alternator" value={t?.eng_alt_v != null ? t.eng_alt_v.toFixed(2) : null} unit="V" />
+					<ValueCell label="Speed" value={portRpm.toFixed(0)} unit="RPM" />
+					<ValueCell label="Coolant" value={fmtTemp(k2cNum(portTemp), $unitSystem)} />
+					<ValueCell label="Alternator" value={portAlt != null ? portAlt.toFixed(2) : '0.00'} unit="V" />
 				{/if}
 				<ValueCell label="Runtime" value={fmtRuntime(portRuntime ?? null)} />
 			</div>
@@ -88,9 +100,9 @@
 					</div>
 					<div class="grid-compact">
 						{#if portHasLiveData}
-							<ValueCell label="Speed" value={t?.eng_rpm != null ? t.eng_rpm.toFixed(0) : null} unit="RPM" />
-							<ValueCell label="Coolant" value={fmtTemp(k2cNum(t?.eng_temp_k ?? null), $unitSystem)} />
-							<ValueCell label="Alt" value={t?.eng_alt_v != null ? t.eng_alt_v.toFixed(2) : null} unit="V" />
+							<ValueCell label="Speed" value={portRpm.toFixed(0)} unit="RPM" />
+							<ValueCell label="Coolant" value={fmtTemp(k2cNum(portTemp), $unitSystem)} />
+							<ValueCell label="Alt" value={portAlt != null ? portAlt.toFixed(2) : '0.00'} unit="V" />
 						{/if}
 						<ValueCell label="Runtime" value={fmtRuntime(portRuntime ?? null)} />
 					</div>
@@ -106,9 +118,9 @@
 					</div>
 					<div class="grid-compact">
 						{#if sbHasLiveData}
-							<ValueCell label="Speed" value={t?.eng_sb_rpm != null ? t.eng_sb_rpm.toFixed(0) : null} unit="RPM" />
-							<ValueCell label="Coolant" value={fmtTemp(k2cNum(t?.eng_sb_temp_k ?? null), $unitSystem)} />
-							<ValueCell label="Alt" value={t?.eng_sb_alt_v != null ? t.eng_sb_alt_v.toFixed(2) : null} unit="V" />
+							<ValueCell label="Speed" value={sbRpm.toFixed(0)} unit="RPM" />
+							<ValueCell label="Coolant" value={fmtTemp(k2cNum(sbTemp), $unitSystem)} />
+							<ValueCell label="Alt" value={sbAlt != null ? sbAlt.toFixed(2) : '0.00'} unit="V" />
 						{/if}
 						<ValueCell label="Runtime" value={fmtRuntime(sbRuntime ?? null)} />
 					</div>
