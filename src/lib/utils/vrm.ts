@@ -158,12 +158,10 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		.sort((a, b) => b.power_w - a.power_w);
 
 	// ── Battery monitors — exclude MPPT chargers ──────────────────────────────
-	// MPPTs appear in battMap because they share /Dc/0/Voltage & /Dc/0/Current
-	// with battery monitors, but they never provide SOC.
-	const mpptKeys = new Set(mpptMap.keys());
-	const batteries = Array.from(battMap.entries())
-		.filter(([key, b]) => !mpptKeys.has(key) && (b.v != null || b.soc != null))
-		.map(([, b]) => b)
+	// MPPTs share /Dc/0/Voltage & /Dc/0/Current with battery monitors,
+	// but MPPTs NEVER expose /Soc. So SOC presence = real battery monitor.
+	const batteries = Array.from(battMap.values())
+		.filter(b => b.soc != null)
 		.sort((a, b) => a.instance - b.instance);
 
 	// Primary battery (first / instance 0)
