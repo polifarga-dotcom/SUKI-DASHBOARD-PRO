@@ -220,9 +220,17 @@
 	}
 	.total.active { color: var(--amber); }
 	.expand-btn {
-		font-size: 11px; color: rgba(255,255,255,.45);
-		background: var(--card2); border-radius: 4px;
-		padding: 1px 6px;
+		font-size: 11px; font-weight: 700;
+		color: var(--amber);
+		background: rgba(245,200,66,0.12);
+		border: 1px solid rgba(245,200,66,0.3);
+		border-radius: 6px;
+		padding: 3px 9px;
+		letter-spacing: 0.5px;
+		transition: background 0.15s;
+	}
+	.card-head:hover .expand-btn {
+		background: rgba(245,200,66,0.22);
 	}
 	.yield-row.compact {
 		display: flex; gap: 24px;
