@@ -82,6 +82,9 @@
 		clockStr = `${h}:${m} UTC`;
 	}
 
+	// Counter to throttle anchor_config refresh (every ~30s, not every 3s)
+	let _anchorPollCount = 0;
+
 	async function fetchTelemetry() {
 		const boat = $currentBoat;
 		const gen  = fetchGen;                          // snapshot at call time
@@ -97,6 +100,14 @@
 			dataStale.set(dataAge(row.updated_at));
 		} else {
 			dataStale.set(true);
+		}
+
+		// Refresh anchor_config every ~30 s (every 10th telemetry poll at 3s interval).
+		// This ensures the logbook's checkAutoTrip() always sees a fresh `active` flag,
+		// even when the user sets the anchor from a different device or tab.
+		_anchorPollCount++;
+		if (_anchorPollCount % 10 === 0) {
+			fetchAnchorConfig(boat.id).catch(() => {});
 		}
 	}
 
