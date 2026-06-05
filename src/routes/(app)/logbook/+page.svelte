@@ -682,6 +682,47 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	let quickNoteText    = $state('');
 	let quickNoteSaving  = $state(false);
 	let showAllActiveEntries = $state(false);
+	// ID of the entry the current note was saved to.
+	// While this equals $tripEntries[0]?.id → note is "pending" (locked).
+	// When a new entry is created the IDs diverge → automatically unlocked.
+	let savedNoteEntryId = $state<string | null>(null);
+	let editingNote      = $state(false);
+
+	// Locked = note already saved to last entry; user must wait for next auto-log
+	const noteIsLocked = $derived(
+		savedNoteEntryId != null &&
+		savedNoteEntryId === $tripEntries[0]?.id &&
+		!editingNote
+	);
+
+	// Text of the note currently saved in the last entry (shown while locked)
+	const lockedNoteText = $derived(
+		savedNoteEntryId === $tripEntries[0]?.id
+			? ($tripEntries[0]?.notes ?? '')
+			: ''
+	);
+
+	// Auto-unlock when a new log entry is created (IDs diverge)
+	$effect(() => {
+		const latestId = $tripEntries[0]?.id;
+		if (latestId && savedNoteEntryId && latestId !== savedNoteEntryId) {
+			savedNoteEntryId = null;
+			quickNoteText    = '';
+			editingNote      = false;
+		}
+	});
+
+	function startEditNote() {
+		// Strip the auto-appended [env context] block so user sees only their text
+		const raw = $tripEntries[0]?.notes ?? '';
+		quickNoteText = raw.replace(/\n\[.*\]$/s, '').trim();
+		editingNote = true;
+	}
+
+	function cancelEditNote() {
+		quickNoteText = '';
+		editingNote   = false;
+	}
 
 	// Build environmental context string to append to notes
 	function buildEnvContext(): string {
@@ -705,7 +746,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	async function saveQuickNote() {
 		const note = quickNoteText.trim();
 		if (!note || !$activeTrip) return;
-		const ctx = buildEnvContext();
+		const ctx = editingNote ? '' : buildEnvContext(); // don't re-append ctx on edit
 		const fullNote = ctx ? `${note}\n${ctx}` : note;
 		const lastEntry = $tripEntries[0];
 		if (!lastEntry) return;
@@ -716,7 +757,9 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			.eq('id', lastEntry.id);
 		if (!error) {
 			tripEntries.update(es => es.map(e => e.id === lastEntry.id ? { ...e, notes: fullNote } : e));
-			quickNoteText = '';
+			savedNoteEntryId = lastEntry.id; // lock until next entry is created
+			quickNoteText    = '';
+			editingNote      = false;
 		}
 		quickNoteSaving = false;
 	}
@@ -1499,13 +1542,30 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	<!-- ── Quick note field (active trip) ─────────────────────────────────── -->
 	{#if $activeTrip && $tripEntries.length > 0}
 	<div class="quick-note-area">
-		<textarea class="quick-note-input" bind:value={quickNoteText}
-			placeholder="Write a note… (current conditions will be appended automatically)"
-			rows="2"></textarea>
-		<button class="quick-note-btn" onclick={saveQuickNote}
-			disabled={quickNoteSaving || !quickNoteText.trim()}>
-			{quickNoteSaving ? 'Saving…' : '+ Add note to last entry'}
-		</button>
+		{#if noteIsLocked}
+			<!-- Note saved — locked until next log entry is created -->
+			<div class="note-locked">
+				<p class="note-locked-text">{lockedNoteText}</p>
+				<div class="note-locked-actions">
+					<button class="quick-note-btn" onclick={startEditNote}>✏ Edit note</button>
+					<span class="note-locked-hint">New note available after next log entry (~2 min)</span>
+				</div>
+			</div>
+		{:else}
+			<!-- Free to write a new note (or editing existing) -->
+			<textarea class="quick-note-input" bind:value={quickNoteText}
+				placeholder={editingNote ? 'Edit your note…' : 'Write a note… (current conditions will be appended)'}
+				rows="2"></textarea>
+			<div class="note-btn-row">
+				<button class="quick-note-btn" onclick={saveQuickNote}
+					disabled={quickNoteSaving || !quickNoteText.trim()}>
+					{quickNoteSaving ? 'Saving…' : editingNote ? '✓ Save changes' : '+ Add note'}
+				</button>
+				{#if editingNote}
+				<button class="note-cancel-btn" onclick={cancelEditNote}>Cancel</button>
+				{/if}
+			</div>
+		{/if}
 	</div>
 	{/if}
 
@@ -2213,7 +2273,6 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	.quick-note-input:focus { border-color: var(--accent); }
 	.quick-note-input::placeholder { color: var(--muted); font-size: 12px; }
 	.quick-note-btn {
-		align-self: flex-end;
 		padding: 6px 14px;
 		background: rgba(0,200,255,0.1);
 		border: 1px solid rgba(0,200,255,0.3);
@@ -2223,9 +2282,56 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		font-weight: 600;
 		cursor: pointer;
 		transition: background 0.15s;
+		white-space: nowrap;
 	}
 	.quick-note-btn:disabled { opacity: 0.4; cursor: default; }
 	.quick-note-btn:not(:disabled):hover { background: rgba(0,200,255,0.2); }
+
+	.note-btn-row {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		justify-content: flex-end;
+	}
+	.note-cancel-btn {
+		padding: 6px 12px;
+		background: transparent;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		color: var(--muted);
+		font-size: 12px;
+		cursor: pointer;
+	}
+	.note-cancel-btn:hover { color: var(--text); }
+
+	/* Locked state (note saved, waiting for next entry) */
+	.note-locked {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.note-locked-text {
+		font-size: 13px;
+		color: var(--text);
+		line-height: 1.4;
+		margin: 0;
+		white-space: pre-line;
+		padding: 8px 10px;
+		background: rgba(0,200,255,0.05);
+		border: 1px solid rgba(0,200,255,0.15);
+		border-radius: 6px;
+	}
+	.note-locked-actions {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+	}
+	.note-locked-hint {
+		font-size: 11px;
+		color: var(--muted);
+		font-style: italic;
+	}
 
 	/* ── Past trip notes list ── */
 	.trip-notes-section {
