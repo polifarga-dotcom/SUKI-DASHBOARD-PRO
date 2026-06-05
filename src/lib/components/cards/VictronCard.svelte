@@ -269,38 +269,20 @@
 
 	/* Mobile connector areas are removed from desktop layout (display:none via class) */
 
-	/* ── Mobile grid ─────────────────────────────────────────────────────── */
+	/* ── Mobile grid (single definition, no duplicates) ─────────────────── */
 	@media (max-width: 540px) {
 		.vic-grid {
 			grid-template-columns: 1fr 28px 1fr;
 			grid-template-rows: auto 20px auto 20px auto;
 			grid-template-areas:
-				"shore  mv1  solar"
-				"mv1b   mh   mv2"
+				"shore  .    solar"
+				"mv1    mh   mv2"
 				"inv    mh   batt"
 				"mv3    .    mv4"
 				"acload .    dcload";
 		}
-		/* Fix: mv1 is both the arrow area and needs to be in row 2, col 1 */
-		/* Correct grid-template-areas for mobile: */
-	}
-
-	/* Override the mobile grid with correct named areas */
-	@media (max-width: 540px) {
-		.vic-grid {
-			grid-template-areas:
-				"shore  .   solar"
-				"mv1    mh  mv2"
-				"inv    mh  batt"
-				"mv3    .   mv4"
-				"acload .   dcload";
-		}
-		/* Reassign connector grid-areas for mobile */
-		[style*="grid-area:ch1"] { display: none; }
-		[style*="grid-area:ch2"] { display: none; }
-		[style*="grid-area:cv"]  { display: none; }
-		[style*="grid-area:ch3"] { display: none; }
-		[style*="grid-area:ch4"] { display: none; }
+		/* Hide all desktop-only connectors */
+		.d-only { display: none !important; }
 	}
 
 	/* ── Show/hide desktop vs mobile connectors ── */
@@ -405,13 +387,7 @@
 	}
 	.conn-h.on::before { background:rgba(100,170,255,.75); }
 
-	/* Right-pointing arrow (inactive: dim, static at right end) */
-	.conn-h.arr-r::after {
-		content:''; position:absolute;
-		right:0; top:50%; transform:translateY(-50%);
-		border:5px solid transparent; border-left:8px solid rgba(140,200,255,.2);
-	}
-	/* Active: travels left → right */
+	/* Right arrow — only visible when active (arr-fade starts at opacity:0) */
 	.conn-h.arr-r.on::after {
 		right:auto;                          /* unset static position */
 		top:50%; transform:translateY(-50%);
@@ -419,12 +395,7 @@
 		animation: arr-pos-r 1.1s linear infinite, arr-fade 1.1s ease-in-out infinite;
 	}
 
-	/* Left-pointing arrow */
-	.conn-h.arr-l::after {
-		content:''; position:absolute;
-		left:0; top:50%; transform:translateY(-50%);
-		border:5px solid transparent; border-right:8px solid rgba(140,200,255,.2);
-	}
+	/* Left arrow — only visible when active */
 	.conn-h.arr-l.on::after {
 		left:auto;
 		top:50%; transform:translateY(-50%);
@@ -440,12 +411,7 @@
 	}
 	.conn-v.on::before { background:rgba(100,170,255,.75); }
 
-	/* Up arrow (inactive: dim at top) */
-	.conn-v.arr-u::after {
-		content:''; position:absolute;
-		top:0; left:50%; transform:translateX(-50%);
-		border:5px solid transparent; border-bottom:8px solid rgba(140,200,255,.2);
-	}
+	/* Up arrow — only visible when active */
 	/* Active: travels bottom → top */
 	.conn-v.arr-u.on::after {
 		top:auto;
@@ -454,12 +420,7 @@
 		animation: arr-pos-u 1.1s linear infinite, arr-fade 1.1s ease-in-out infinite;
 	}
 
-	/* Down arrow (inactive: dim at bottom) */
-	.conn-v.arr-d::after {
-		content:''; position:absolute;
-		bottom:0; left:50%; transform:translateX(-50%);
-		border:5px solid transparent; border-top:8px solid rgba(140,200,255,.2);
-	}
+	/* Down arrow (no inactive state — only visible when active/animated) */
 	/* Active: travels top → bottom */
 	.conn-v.arr-d.on::after {
 		bottom:auto;
