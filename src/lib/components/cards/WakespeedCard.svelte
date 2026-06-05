@@ -7,8 +7,20 @@
 	interface Props { t: Telemetry | null; }
 	let { t }: Props = $props();
 
-	const hasPort = $derived(t?.ws_0_alt_v != null || t?.ws_0_mode != null);
-	const hasSb   = $derived(t?.ws_1_alt_v != null || t?.ws_1_mode != null);
+	// Engine running = RPM > 0. If engine is off, the alternator isn't charging —
+	// zero out displayed values so stale data doesn't linger.
+	// Falls back to alt_v > 13.5 V when RPM is unavailable (no RPM sensor).
+	const portEngineOn = $derived(
+		t?.eng_rpm    != null ? t.eng_rpm    > 0 :
+		t?.eng_alt_v  != null ? t.eng_alt_v  > 13.5 : false
+	);
+	const sbEngineOn = $derived(
+		t?.eng_sb_rpm   != null ? t.eng_sb_rpm   > 0 :
+		t?.eng_sb_alt_v != null ? t.eng_sb_alt_v > 13.5 : false
+	);
+
+	const hasPort = $derived((t?.ws_0_alt_v != null || t?.ws_0_mode != null));
+	const hasSb   = $derived((t?.ws_1_alt_v != null || t?.ws_1_mode != null));
 
 	function modeColor(mode: string | null): string {
 		if (!mode) return 'var(--muted)';
@@ -53,10 +65,22 @@
 	{/snippet}
 
 	{#if hasPort}
-		{@render altUnit('Port', t?.ws_0_alt_v ?? null, t?.ws_0_alt_temp_k ?? null, t?.ws_0_field_pct ?? null, t?.ws_0_mode ?? null)}
+		{@render altUnit(
+			'Port',
+			portEngineOn ? (t?.ws_0_alt_v ?? null)      : null,
+			portEngineOn ? (t?.ws_0_alt_temp_k ?? null) : null,
+			portEngineOn ? (t?.ws_0_field_pct ?? null)  : null,
+			portEngineOn ? (t?.ws_0_mode ?? null)       : 'Off',
+		)}
 	{/if}
 	{#if hasSb}
-		{@render altUnit('Starboard', t?.ws_1_alt_v ?? null, t?.ws_1_alt_temp_k ?? null, t?.ws_1_field_pct ?? null, t?.ws_1_mode ?? null)}
+		{@render altUnit(
+			'Starboard',
+			sbEngineOn ? (t?.ws_1_alt_v ?? null)      : null,
+			sbEngineOn ? (t?.ws_1_alt_temp_k ?? null) : null,
+			sbEngineOn ? (t?.ws_1_field_pct ?? null)  : null,
+			sbEngineOn ? (t?.ws_1_mode ?? null)       : 'Off',
+		)}
 	{/if}
 </div>
 {/if}
