@@ -118,10 +118,15 @@
 	function areaPath(m: ChartMeta): string {
 		const line = smoothPath(m);
 		if (!line) return '';
-		// Find first/last valid for baseline closure
-		let fx = tx(points.find((p, i) => m.vals[i] != null)!.t);
-		let lx = tx([...points].reverse().find((p, i) => m.vals[points.length - 1 - i] != null)!.t);
 		const base = PT + IH;
+		// Find first and last index that have a valid value — no non-null assertions
+		let firstIdx = -1, lastIdx = -1;
+		for (let i = 0; i < points.length; i++) {
+			if (m.vals[i] != null) { if (firstIdx < 0) firstIdx = i; lastIdx = i; }
+		}
+		if (firstIdx < 0) return '';
+		const fx = tx(points[firstIdx].t);
+		const lx = tx(points[lastIdx].t);
 		return `${line} L${lx} ${base} L${fx} ${base} Z`;
 	}
 
