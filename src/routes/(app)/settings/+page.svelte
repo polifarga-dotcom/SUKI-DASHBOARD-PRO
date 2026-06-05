@@ -9,6 +9,7 @@
 	import { telemetry } from '$lib/stores/telemetry.js';
 	import { unitSystem, timeFormat, updateBoatSettings } from '$lib/stores/userSettings.js';
 	import type { TemperatureSensor } from '$lib/types.js';
+	import { boatIconSettingsSvg, BOAT_ICON_LABELS } from '$lib/utils/boatIcons.js';
 
 	// ── Auth ──────────────────────────────────────────────────────────────────
 	const userEmail    = $derived($authStore.session?.user?.email ?? '—');
@@ -716,18 +717,13 @@
 			</div>
 		</div>
 		<div class="boat-icon-grid">
-			{#each ([
-				{ key:'monohull',  label:'Monohull',  svg:`<svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20 2C16 2 13 8 12 20L11 38C11 43 15 46 20 46C25 46 29 43 29 38L28 20C27 8 24 2 20 2Z" fill="currentColor" stroke="rgba(255,255,255,0.2)" stroke-width="0.8"/><line x1="20" y1="8" x2="20" y2="38" stroke="rgba(0,0,0,0.3)" stroke-width="1.2" stroke-linecap="round"/><circle cx="20" cy="3" r="2.2" fill="white" opacity="0.85"/></svg>` },
-				{ key:'catamaran', label:'Catamaran',  svg:`<svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 6C6 6 4 10 4 24C4 36 6 42 8 42L14 42C16 42 17 36 17 24C17 10 16 6 14 6Z" fill="currentColor" stroke="rgba(255,255,255,0.2)" stroke-width="0.8"/><path d="M32 6C30 6 23 10 23 24C23 36 24 42 26 42L32 42C34 42 36 36 36 24C36 10 34 6 32 6Z" fill="currentColor" stroke="rgba(255,255,255,0.2)" stroke-width="0.8"/><rect x="14" y="14" width="12" height="3" rx="1.5" fill="currentColor"/><rect x="14" y="30" width="12" height="3" rx="1.5" fill="currentColor"/><circle cx="20" cy="10" r="2" fill="white" opacity="0.8"/></svg>` },
-				{ key:'trimaran',  label:'Trimaran',   svg:`<svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20 2C17 2 14 8 14 24C14 38 17 46 20 46C23 46 26 38 26 24C26 8 23 2 20 2Z" fill="currentColor" stroke="rgba(255,255,255,0.2)" stroke-width="0.8"/><path d="M5 16C4 16 3 20 3 26C3 32 4 35 5 35L9 35C10 35 11 32 11 26C11 20 10 16 9 16Z" fill="currentColor" opacity="0.8"/><path d="M35 16C34 16 29 20 29 26C29 32 30 35 31 35L35 35C36 35 37 32 37 26C37 20 36 16 35 16Z" fill="currentColor" opacity="0.8"/><line x1="11" y1="22" x2="14" y2="22" stroke="currentColor" stroke-width="2.5"/><line x1="26" y1="22" x2="29" y2="22" stroke="currentColor" stroke-width="2.5"/><circle cx="20" cy="8" r="2" fill="white" opacity="0.8"/></svg>` },
-				{ key:'motorboat', label:'Motorboat',  svg:`<svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20 4C14 4 8 10 7 20L6 36C6 40 10 44 20 44C30 44 34 40 34 36L33 20C32 10 26 4 20 4Z" fill="currentColor" stroke="rgba(255,255,255,0.2)" stroke-width="0.8"/><path d="M14 16L26 16L27 24L13 24Z" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.4)" stroke-width="0.8"/><circle cx="20" cy="7" r="2" fill="white" opacity="0.7"/></svg>` },
-			] as const) as item}
-			<button class="boat-icon-btn" class:selected={($currentBoat as any)?.boat_icon === item.key || (!($currentBoat as any)?.boat_icon && item.key === 'monohull')}
-				onclick={() => saveUnitSettings({ boat_icon: item.key } as any)}
+			{#each Object.keys(BOAT_ICON_LABELS) as key}
+			<button class="boat-icon-btn" class:selected={($currentBoat as any)?.boat_icon === key || (!($currentBoat as any)?.boat_icon && key === 'monohull')}
+				onclick={() => saveUnitSettings({ boat_icon: key } as any)}
 				disabled={unitSaving}
-				title={item.label}>
-				<span class="boat-icon-svg">{@html item.svg}</span>
-				<span class="boat-icon-lbl">{item.label}</span>
+				title={BOAT_ICON_LABELS[key]}>
+				<span class="boat-icon-svg">{@html boatIconSettingsSvg(key)}</span>
+				<span class="boat-icon-lbl">{BOAT_ICON_LABELS[key]}</span>
 			</button>
 			{/each}
 		</div>
