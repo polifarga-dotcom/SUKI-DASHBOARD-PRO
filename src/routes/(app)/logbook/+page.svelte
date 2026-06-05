@@ -699,7 +699,14 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	function dirAbbr(deg: number | null): string {
 		if (deg == null) return '—';
 		const d = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-		return d[Math.round(deg / 22.5) % 16];
+		return d[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+	}
+	// AWA is signed: positive = starboard, negative = port
+	function fmtAWA(deg: number | null): string {
+		if (deg == null) return '';
+		const abs = Math.abs(deg);
+		const side = deg < 0 ? 'P' : 'S';
+		return `${abs.toFixed(0)}° ${side}`;
 	}
 	function sailRatio(trip: LogTrip | null): number {
 		if (!trip?.total_nm || trip.total_nm === 0) return 0;
@@ -864,7 +871,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			sails: opts.sails?.trim() || null,
 			wind_speed_kn: liveWind(), wind_dir_deg: liveWindDir(),
 			apparent_wind_speed_kn: t?.env_aws_ms != null ? +(t.env_aws_ms * 1.94384).toFixed(2) : null,
-			apparent_wind_angle_deg: t?.env_awa_rad != null ? +((t.env_awa_rad * 180 / Math.PI) % 360).toFixed(1) : null,
+			apparent_wind_angle_deg: t?.env_awa_rad != null ? +(t.env_awa_rad * 180 / Math.PI).toFixed(1) : null,
 			baro_hpa: liveBaro(), air_temp_c: liveAirT(), water_temp_c: liveWaterT(),
 			depth_m: t?.env_depth_m != null ? +t.env_depth_m.toFixed(1) : null,
 			batt_soc: t?.batt_main_soc != null ? +(t.batt_main_soc * 100).toFixed(0) : null,
@@ -1868,7 +1875,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			<path d="M1 4.5h6.5a2 2 0 0 0 0-3"/><path d="M1 7.5h8.5a2 2 0 0 0 0-3"/>
 			<path d="M1 10.5h5a2 2 0 0 0 0-3"/>
 		</svg>
-		AWS {e.apparent_wind_speed_kn.toFixed(0)} kn{e.apparent_wind_angle_deg != null ? ` · ${e.apparent_wind_angle_deg.toFixed(0)}°` : ''}
+		AWS {e.apparent_wind_speed_kn.toFixed(0)} kn{e.apparent_wind_angle_deg != null ? ` · ${fmtAWA(e.apparent_wind_angle_deg)}` : ''}
 	</span>
 	{/if}
 	{#if e.wave_height_m != null}
