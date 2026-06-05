@@ -387,19 +387,17 @@
 	}
 	.conn-h.on::before { background:rgba(100,170,255,.75); }
 
-	/* Right arrow — only visible when active (arr-fade starts at opacity:0) */
+	/* Arrows — content:'' is required to create the ::after pseudo-element */
 	.conn-h.arr-r.on::after {
-		right:auto;                          /* unset static position */
+		content:''; position:absolute;
 		top:50%; transform:translateY(-50%);
-		border-left-color: rgba(140,200,255,.95);
+		border:5px solid transparent; border-left:8px solid rgba(140,200,255,.95);
 		animation: arr-pos-r 1.1s linear infinite, arr-fade 1.1s ease-in-out infinite;
 	}
-
-	/* Left arrow — only visible when active */
 	.conn-h.arr-l.on::after {
-		left:auto;
+		content:''; position:absolute;
 		top:50%; transform:translateY(-50%);
-		border-right-color: rgba(140,200,255,.95);
+		border:5px solid transparent; border-right:8px solid rgba(140,200,255,.95);
 		animation: arr-pos-l 1.1s linear infinite, arr-fade 1.1s ease-in-out infinite;
 	}
 
@@ -411,21 +409,16 @@
 	}
 	.conn-v.on::before { background:rgba(100,170,255,.75); }
 
-	/* Up arrow — only visible when active */
-	/* Active: travels bottom → top */
 	.conn-v.arr-u.on::after {
-		top:auto;
+		content:''; position:absolute;
 		left:50%; transform:translateX(-50%);
-		border-bottom-color: rgba(140,200,255,.95);
+		border:5px solid transparent; border-bottom:8px solid rgba(140,200,255,.95);
 		animation: arr-pos-u 1.1s linear infinite, arr-fade 1.1s ease-in-out infinite;
 	}
-
-	/* Down arrow (no inactive state — only visible when active/animated) */
-	/* Active: travels top → bottom */
 	.conn-v.arr-d.on::after {
-		bottom:auto;
+		content:''; position:absolute;
 		left:50%; transform:translateX(-50%);
-		border-top-color: rgba(140,200,255,.95);
+		border:5px solid transparent; border-top:8px solid rgba(140,200,255,.95);
 		animation: arr-pos-d 1.1s linear infinite, arr-fade 1.1s ease-in-out infinite;
 	}
 
