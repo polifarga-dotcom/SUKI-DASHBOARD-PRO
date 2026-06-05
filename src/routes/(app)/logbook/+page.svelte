@@ -13,6 +13,7 @@
 	import { haversine } from '$lib/utils/geo.js';
 	import { queueLogEntry, getPendingCount, syncPendingEntries, subscribeToOnline } from '$lib/offline.js';
 	import type { LogEntry, LogTrip } from '$lib/types.js';
+	import TripCharts, { type ChartPoint } from '$lib/components/charts/TripCharts.svelte';
 
 	// ── Reactive store snapshots ──────────────────────────────────────────────
 	const t    = $derived($telemetry);
@@ -150,6 +151,7 @@
 	let allEntriesLoading  = $state(false);
 
 	// ── Wind chart data (loaded with expanded trip) ───────────────────────────
+	// Legacy type kept for baro mini-charts; chartPoints is the full dataset
 	type WindPoint = {
 		t:   number;
 		w:   number | null;   // TWS kn
@@ -160,6 +162,7 @@
 		awa: number | null;   // AWA deg (0–360)
 	};
 	let expandedWindData = $state<WindPoint[]>([]);
+	let chartPoints      = $state<ChartPoint[]>([]);
 
 	// ── Monthly grouping ──────────────────────────────────────────────────────
 	type MonthGroup = { year: number; month: number; label: string; trips: LogTrip[]; totalNm: number; tripCount: number };
@@ -469,7 +472,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			expandedEntries   = [];
 			expandedAllEntries = [];
 			expandedMapPositions = [];
-			expandedWindData  = [];
+			expandedWindData  = []; chartPoints = [];
 			expandedEntryCount = 0;
 			showAllEntries    = false;
 			return;
@@ -502,7 +505,12 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 				.order('logged_at', { ascending: true })
 				.limit(1000),
 			supabase.from('log_entries')
-				.select('logged_at, wind_speed_kn, wind_dir_deg, baro_hpa, sog_kn, apparent_wind_speed_kn, apparent_wind_angle_deg')
+				.select([
+					'logged_at', 'sog_kn', 'wind_speed_kn', 'wind_dir_deg',
+					'apparent_wind_speed_kn', 'apparent_wind_angle_deg',
+					'baro_hpa', 'depth_m', 'batt_soc', 'air_temp_c', 'water_temp_c',
+					'engine_on', 'engine_rpm', 'engine_sb_rpm', 'wave_height_m', 'wave_period_s',
+				].join(', '))
 				.eq('trip_id', tripId)
 				.order('logged_at', { ascending: true })
 				.limit(600),
@@ -521,7 +529,9 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		expandedMapPositions = (posRes.data ?? []).filter(
 			(p): p is { lat: number; lon: number } => p.lat != null && p.lon != null
 		);
-		expandedWindData = (windRes.data ?? []).map(r => ({
+
+		// Legacy WindPoint (for existing mini SVG charts)
+		expandedWindData = (windRes.data ?? []).map((r: Record<string, unknown>) => ({
 			t:   new Date(r.logged_at as string).getTime(),
 			w:   r.wind_speed_kn           as number | null,
 			d:   r.wind_dir_deg            as number | null,
@@ -529,6 +539,26 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			sog: r.sog_kn                  as number | null,
 			aws: r.apparent_wind_speed_kn  as number | null,
 			awa: r.apparent_wind_angle_deg as number | null,
+		}));
+
+		// Full ChartPoint dataset for interactive TripCharts
+		chartPoints = (windRes.data ?? []).map((r: Record<string, unknown>) => ({
+			t:          new Date(r.logged_at as string).getTime(),
+			sog:        r.sog_kn                  as number | null,
+			tws:        r.wind_speed_kn            as number | null,
+			twd:        r.wind_dir_deg             as number | null,
+			aws:        r.apparent_wind_speed_kn   as number | null,
+			awa:        r.apparent_wind_angle_deg  as number | null,
+			baro:       r.baro_hpa                 as number | null,
+			depth:      r.depth_m                  as number | null,
+			batt_soc:   r.batt_soc                 as number | null,
+			air_temp:   r.air_temp_c               as number | null,
+			water_temp: r.water_temp_c             as number | null,
+			eng_on:     !!(r.engine_on),
+			eng_rpm:    r.engine_rpm               as number | null,
+			eng_sb_rpm: r.engine_sb_rpm            as number | null,
+			wave_h:     r.wave_height_m            as number | null,
+			wave_period_s: r.wave_period_s         as number | null,
 		}));
 		expandedLoading = false;
 
@@ -1622,79 +1652,9 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 					</div>
 				</div>
 
-				<!-- Performance & weather charts -->
-				{#if expandedWindData.length >= 2}
-				{@const hasWind = expandedWindData.some(p => p.w   != null)}
-				{@const hasBaro = expandedWindData.some(p => p.b   != null)}
-				{@const hasSog  = expandedWindData.some(p => p.sog != null)}
-				{@const hasAws  = expandedWindData.some(p => p.aws != null)}
-				{@const hasAwa  = expandedWindData.some(p => p.awa != null)}
-				{#if hasWind || hasBaro || hasSog || hasAws || hasAwa}
-				<div class="chart-section">
-
-					{#if hasSog}
-					<div class="chart-block">
-						<div class="chart-label" style="color:#22d3ee">
-							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="flex-shrink:0">
-								<circle cx="7" cy="7" r="5"/><polyline points="7,4.5 7,7 9,8.5"/>
-							</svg>
-							SOG (kn)
-						</div>
-						{@html svgAreaChart(expandedWindData.map(p=>p.sog), expandedWindData.map(p=>p.t), '#22d3ee', 'SOG', 'kn')}
-					</div>
-					{/if}
-
-					{#if hasWind}
-					<div class="chart-block" style={hasSog ? 'margin-top:10px' : ''}>
-						<div class="chart-label">
-							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
-								<path d="M1 4.5h6.5a2 2 0 0 0 0-3"/><path d="M1 7.5h8.5a2 2 0 0 0 0-3"/><path d="M1 10.5h5a2 2 0 0 0 0-3"/>
-							</svg>
-							TWS (kn)
-						</div>
-						{@html svgWindChart(expandedWindData)}
-					</div>
-					{/if}
-
-					{#if hasAws}
-					<div class="chart-block" style="margin-top:10px">
-						<div class="chart-label" style="color:#fb923c">
-							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
-								<path d="M1 4.5h6.5a2 2 0 0 0 0-3"/><path d="M1 7.5h8.5a2 2 0 0 0 0-3"/><path d="M1 10.5h5a2 2 0 0 0 0-3"/>
-							</svg>
-							AWS (kn)
-						</div>
-						{@html svgAreaChart(expandedWindData.map(p=>p.aws), expandedWindData.map(p=>p.t), '#fb923c', 'AWS', 'kn')}
-					</div>
-					{/if}
-
-					{#if hasAwa}
-					<div class="chart-block" style="margin-top:10px">
-						<div class="chart-label" style="color:#a3e635">
-							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
-								<circle cx="7" cy="9" r="1.5"/><line x1="7" y1="7.5" x2="7" y2="3"/>
-								<line x1="5" y1="5" x2="7" y2="3"/><line x1="9" y1="5" x2="7" y2="3"/>
-							</svg>
-							AWA — apparent wind angle
-						</div>
-						{@html svgAwaChart(expandedWindData)}
-					</div>
-					{/if}
-
-					{#if hasBaro}
-					<div class="chart-block" style="margin-top:10px">
-						<div class="chart-label" style="color:#a78bfa">
-							<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
-								<circle cx="7" cy="8" r="4.5"/><path d="M7 8 L9 5.5"/>
-							</svg>
-							Barometer (hPa)
-						</div>
-						{@html svgBaroChart(expandedWindData)}
-					</div>
-					{/if}
-
-				</div>
-				{/if}
+				<!-- Interactive trip charts with shared time slider -->
+				{#if chartPoints.length >= 2}
+				<TripCharts points={chartPoints} />
 				{/if}
 
 				<!-- First + last entries -->
