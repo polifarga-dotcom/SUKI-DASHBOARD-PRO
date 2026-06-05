@@ -178,7 +178,7 @@
 				<div class="mppt-row">
 					<span class="mppt-name">{m.name}</span>
 					<span class="mppt-pw">{r0(m.power_w)} W</span>
-					<span class="mppt-yld">{kw(m.yield_today_wh / 1000 > 0 ? m.yield_today_wh : null)}</span>
+					<span class="mppt-yld">{m.yield_today_wh > 0 ? (m.yield_today_wh / 1000).toFixed(2) + ' kWh' : '—'}</span>
 				</div>
 				{/each}
 			</div>
@@ -347,8 +347,18 @@
 		background:none; border:none; padding:0; cursor:pointer; width:100%;
 		text-align:left; color:inherit; font:inherit;
 		display:flex; align-items:center; gap:5px;
+		-webkit-tap-highlight-color: transparent;
 	}
-	.expand-icon { margin-left:auto; font-size:8px; color:rgba(255,255,255,.4); }
+	.solar-hdr:hover .expand-icon { color:rgba(255,255,255,.7); }
+	.expand-icon {
+		margin-left:auto;
+		font-size:11px;
+		color:rgba(255,255,255,.5);
+		background:rgba(255,255,255,.08);
+		border-radius:4px;
+		padding:1px 5px;
+		transition:color .15s, background .15s;
+	}
 	.sol-compact { display:flex; flex-direction:column; gap:2px; }
 	.sol-a       { font-size:13px; color:rgba(255,255,255,.6); }
 	.sol-yields  { display:flex; gap:10px; flex-wrap:wrap; font-size:10px; color:rgba(255,255,255,.55); margin-top:2px; }
