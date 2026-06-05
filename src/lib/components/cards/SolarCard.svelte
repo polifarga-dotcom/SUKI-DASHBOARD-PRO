@@ -64,10 +64,12 @@
 	const totalA = $derived(t?.solar_total_a ?? null);
 
 	const hasAnyData = $derived(total != null || hasMppts || hasYield);
+
+	let expanded = $state(false);
 </script>
 
 <div class="card">
-	<div class="card-head">
+	<button class="card-head" onclick={() => expanded = !expanded}>
 		<span class="title">Solar</span>
 		<div class="head-right">
 			{#if totalA != null}
@@ -76,8 +78,23 @@
 			<span class="total" class:active={total != null && total > 0}>
 				{fmtW(total)}
 			</span>
+			<span class="expand-btn">{expanded ? '▲' : '▼'}</span>
 		</div>
-	</div>
+	</button>
+
+	<!-- Compact summary: yield today + yesterday always visible -->
+	{#if hasYield}
+		<div class="yield-row compact">
+			{#if yieldToday != null}
+				<div><div class="label">Today</div><div class="val">{joule2kwh(yieldToday)}</div></div>
+			{/if}
+			{#if yieldYest != null}
+				<div><div class="label">Yesterday</div><div class="val">{joule2kwh(yieldYest)}</div></div>
+			{/if}
+		</div>
+	{/if}
+
+	{#if expanded}
 
 	{#if $vrmData?.mpptsArr.length}
 		<!-- VRM Solar Chargers: Horizontal List Layout -->
@@ -167,31 +184,18 @@
 		<div class="no-data">No solar data</div>
 	{/if}
 
-	{#if hasYield}
-		<div class="divider"></div>
-		<div class="yield-row">
-			{#if yieldToday != null}
-				<div>
-					<div class="label">Today</div>
-					<div class="val">{joule2kwh(yieldToday)}</div>
-				</div>
-			{/if}
-			{#if yieldYest != null}
-				<div>
-					<div class="label">Yesterday</div>
-					<div class="val">{joule2kwh(yieldYest)}</div>
-				</div>
-			{/if}
-		</div>
-	{/if}
+	{/if}<!-- /expanded -->
 </div>
 
 <style>
 	.card-head {
-		display: flex;
+		display: flex; width: 100%;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 12px;
+		margin-bottom: 8px;
+		background: none; border: none; padding: 0; cursor: pointer;
+		text-align: left; color: inherit; font: inherit;
+		-webkit-tap-highlight-color: transparent;
 	}
 	.title {
 		font-size: 13px;
@@ -215,6 +219,15 @@
 		color: var(--muted);
 	}
 	.total.active { color: var(--amber); }
+	.expand-btn {
+		font-size: 11px; color: rgba(255,255,255,.45);
+		background: var(--card2); border-radius: 4px;
+		padding: 1px 6px;
+	}
+	.yield-row.compact {
+		display: flex; gap: 24px;
+		margin-bottom: 4px;
+	}
 
 	.panels {
 		display: flex;
