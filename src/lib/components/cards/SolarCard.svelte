@@ -31,13 +31,26 @@
 
 	const mpptMaxW = $derived($vrmData ? Math.max(100, ...$vrmData.mpptsArr.map(m => m.power_w)) : 100);
 
-	// ── Total power (from plugin or server.py) ────────────────────────────────────
-	const total = $derived(t?.solar_total_w ?? null);
+	// ── VRM data (accurate, direct from Victron API) ────────────────────────────
+	// Prefer VRM over telemetry — telemetry yield values from server.py are often
+	// stale or use different timeframes. VRM mpptsArr sums match exactly.
+	const vrm = $derived($vrmData);
 
-	// ── Named MPPT columns (Victron VRM device IDs — SUKI-specific) ─────────────
-	// These are only populated when server.py is running on the Cerbo and the
-	// VRM installation uses these specific device IDs. Other boats will have all
-	// nulls here and will see just the total + yield instead.
+	// Total current power: VRM solar_w first, telemetry fallback
+	const total = $derived(vrm?.solar_w ?? t?.solar_total_w ?? null);
+
+	// Current amps: VRM solar_a (sum of mppt.batt_i), telemetry fallback
+	const totalA = $derived(vrm?.solar_a ?? t?.solar_total_a ?? null);
+
+	// Yield today/yesterday: VRM values (accurate) with telemetry fallback (in J)
+	// VRM returns Wh; convert to same display unit as joule2kwh (which expects J)
+	const yieldTodayWh   = $derived(vrm?.solar_yield_today_wh     ?? null);
+	const yieldYestWh    = $derived(vrm?.solar_yield_yesterday_wh ?? null);
+	const yieldTodayFb   = $derived(t?.solar_yield_today_j     ?? null);  // joules fallback
+	const yieldYestFb    = $derived(t?.solar_yield_yesterday_j ?? null);  // joules fallback
+	const hasYield       = $derived(yieldTodayWh != null || yieldTodayFb != null);
+
+	// ── Named MPPT columns (server.py per-instance, SUKI-specific) ──────────────
 	const panels = $derived([
 		{ label: '277', w: t?.solar_p277 ?? null },
 		{ label: '279', w: t?.solar_p279 ?? null },
@@ -45,23 +58,12 @@
 		{ label: '290', w: t?.solar_p290 ?? null },
 		{ label: '292', w: t?.solar_p292 ?? null },
 	]);
-
-	// Show bar chart only when at least one named MPPT column has data
 	const hasMppts = $derived(panels.some(p => p.w != null));
-
 	const maxW = $derived(() => {
 		if (!hasMppts) return 1;
 		const vals = panels.filter(p => p.w != null).map(p => p.w!);
 		return vals.length ? Math.max(...vals, 1) : 1;
 	});
-
-	// ── Yield (server.py Cerbo-exclusive columns) ─────────────────────────────────
-	const yieldToday = $derived(t?.solar_yield_today_j     ?? null);
-	const yieldYest  = $derived(t?.solar_yield_yesterday_j ?? null);
-	const hasYield   = $derived(yieldToday != null || yieldYest != null);
-
-	// ── Current (amps from server.py) ─────────────────────────────────────────────
-	const totalA = $derived(t?.solar_total_a ?? null);
 
 	const hasAnyData = $derived(total != null || hasMppts || hasYield);
 
@@ -95,16 +97,16 @@
 
 		<!-- Key stats row -->
 		<div class="compact-stats">
-			{#if yieldToday != null}
+			{#if yieldTodayWh != null || yieldTodayFb != null}
 			<div class="cstat">
 				<div class="cstat-lbl">Today</div>
-				<div class="cstat-val">{joule2kwh(yieldToday)}</div>
+				<div class="cstat-val">{yieldTodayWh != null ? (yieldTodayWh/1000).toFixed(2)+' kWh' : joule2kwh(yieldTodayFb)}</div>
 			</div>
 			{/if}
-			{#if yieldYest != null}
+			{#if yieldYestWh != null || yieldYestFb != null}
 			<div class="cstat">
 				<div class="cstat-lbl">Yesterday</div>
-				<div class="cstat-val">{joule2kwh(yieldYest)}</div>
+				<div class="cstat-val">{yieldYestWh != null ? (yieldYestWh/1000).toFixed(2)+' kWh' : joule2kwh(yieldYestFb)}</div>
 			</div>
 			{/if}
 			{#if peakToday != null && peakToday > 0}
