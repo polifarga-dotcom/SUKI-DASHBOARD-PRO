@@ -35,7 +35,10 @@
 	));
 	const secondary = $derived(vrm?.batteries.slice(1) ?? []);
 
-	const isVRM    = $derived(vrm != null);
+	// isVRM is true only when primary actually came from vrm.batteries
+	// (not from the telemetry fallback). This ensures correct SOC unit handling:
+	// VRM SOC = 0–100, telemetry SOC = 0–1 fraction.
+	const isVRM = $derived(vrm != null && (vrm.batteries.length > 0));
 	const v     = $derived(primary?.v   ?? null);
 	const a     = $derived(primary?.a   ?? null);
 	const w     = $derived(primary?.w   ?? null);
