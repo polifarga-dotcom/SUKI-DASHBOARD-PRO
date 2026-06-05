@@ -9,6 +9,7 @@
 	import { rad2deg, fmtDepth, ms2kn, bearingCardinal, m2ft, scopeStatus } from '$lib/utils/units.js';
 	import { unitSystem } from '$lib/stores/userSettings.js';
 	import type { AnchorHistoryEntry } from '$lib/types.js';
+	import { boatIconSvg } from '$lib/utils/boatIcons.js';
 
 	// ── DOM refs ──────────────────────────────────────────────────────────────
 	let mapBoxEl:   HTMLDivElement;
@@ -195,13 +196,9 @@
 
 	// ── Icon helpers ─────────────────────────────────────────────────────────
 	function boatIconHtml(rot: number) {
-		return `<div style="width:30px;height:34px;transform:rotate(${rot}deg);transform-origin:50% 50%;transition:transform .25s linear;">
-			<svg viewBox="0 0 32 36" width="30" height="34" style="overflow:visible;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7));">
-				<path d="M16 2 L26 16 L26 32 L6 32 L6 16 Z" fill="#00c8ff" stroke="#0a1929" stroke-width="1.5" stroke-linejoin="round"/>
-				<line x1="16" y1="6" x2="16" y2="22" stroke="#0a1929" stroke-width="1.5" stroke-linecap="round"/>
-				<circle cx="16" cy="2" r="1.6" fill="#ffffff" stroke="#0a1929" stroke-width="1"/>
-			</svg>
-		</div>`;
+		const iconType = ($currentBoat as any)?.boat_icon ?? 'monohull';
+		const svg = boatIconSvg(iconType, '#00c8ff');
+		return `<div style="width:30px;height:45px;transform:rotate(${rot}deg);transform-origin:50% 50%;transition:transform .25s linear;filter:drop-shadow(0 1px 4px rgba(0,0,0,.8));">${svg.replace('width="40" height="60"', 'width="30" height="45"')}</div>`;
 	}
 
 	function anchorIconHtml(rot: number) {
@@ -234,7 +231,7 @@
 
 		// ── Boat marker ──
 		if (boatLat != null && boatLon != null) {
-			const icon = L.divIcon({ className: '', iconSize: [30, 34], iconAnchor: [15, 17], html: boatIconHtml(rot) });
+			const icon = L.divIcon({ className: '', iconSize: [30, 45], iconAnchor: [15, 22], html: boatIconHtml(rot) });
 			if (!boatMarker) {
 				boatMarker = L.marker([boatLat, boatLon], { icon, zIndexOffset: 100 }).addTo(map);
 			} else {
