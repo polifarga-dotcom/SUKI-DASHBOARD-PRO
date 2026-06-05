@@ -27,6 +27,8 @@
  */
 
 'use strict';
+const fs   = require('fs');
+const path = require('path');
 
 module.exports = function (app) {
   let sendTimer        = null;
@@ -607,22 +609,44 @@ module.exports = function (app) {
             }
           }
         } catch (e) {
-          app.debug(`Network error: ${e.message}`);
-          _online = false;
+          // Only true network errors (no route, connection refused, timeout) trigger
+          // offline mode. Server errors (4xx/5xx) are handled above.
+          const msg = e.message ?? '';
+          const isNetworkError = (
+            e.code === 'ECONNREFUSED' || e.code === 'ENOTFOUND' ||
+            e.code === 'ETIMEDOUT'    || e.code === 'ECONNRESET' ||
+            msg.includes('fetch failed') || msg.includes('network') ||
+            e.name === 'TypeError'    || e.name === 'AbortError'
+          );
+          if (isNetworkError) {
+            _online = false;
+            app.debug(`Offline (network error): ${msg}`);
+          } else {
+            app.debug(`Push error: ${msg}`);
+          }
         }
       }, interval_ms);
 
       // ── Offline log snapshot timer (every 120 s) ──────────────────────────
       // Captures current telemetry as a log entry snapshot. When offline,
-      // snapshots are written to a local JSONL file. When online, the buffer
-      // is flushed to Supabase via ingest-log-entries to fill logbook gaps.
-      const LOG_INTERVAL_MS = 120_000;
-      const LOG_BUFFER_FILE = '/tmp/suki-log-buffer.jsonl';
+      // snapshots are written to a persistent JSONL file in the SignalK plugin
+      // data directory (app.getDataDirPath()) — survives reboots on all platforms.
+      const LOG_INTERVAL_MS   = 120_000;
       const MAX_BUFFER_ENTRIES = 1440; // 48 hours at 120s intervals
-      const fs = require('fs');
 
-      let _online = true;           // tracks connectivity state
-      let _lastLogPos = null;       // [lat, lon] of last logged position
+      // app.getDataDirPath() is the SignalK-standard persistent plugin directory.
+      // Victron Cerbo: /data/home/root/.signalk/plugin-config-data/suki-bridge/
+      // Raspberry Pi: ~/.signalk/plugin-config-data/suki-bridge/
+      // All platforms: survives reboots, unlike /tmp/
+      const DATA_DIR        = app.getDataDirPath();
+      const LOG_BUFFER_FILE = path.join(DATA_DIR, 'log-buffer.jsonl');
+
+      // Ensure the data directory exists (SignalK usually creates it, but be safe)
+      try { if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (_) {}
+
+      let _online         = true;   // tracks connectivity state
+      let _flushInProgress = false; // prevent concurrent flush calls
+      let _lastLogPos     = null;   // [lat, lon] of last logged position
 
       // Calculate distance in nm between two [lat,lon] pairs
       function _distNm (a, b) {
@@ -687,7 +711,9 @@ module.exports = function (app) {
       }
 
       async function flushLogBuffer () {
+        if (_flushInProgress) return;  // prevent concurrent calls
         if (!fs.existsSync(LOG_BUFFER_FILE)) return;
+        _flushInProgress = true;
         const lines = fs.readFileSync(LOG_BUFFER_FILE, 'utf8').split('\n').filter(Boolean);
         if (!lines.length) return;
         app.debug(`Flushing ${lines.length} buffered log snapshots`);
@@ -707,6 +733,8 @@ module.exports = function (app) {
           }
         } catch (e) {
           app.debug(`Buffer flush network error: ${e.message}`);
+        } finally {
+          _flushInProgress = false;
         }
       }
 
@@ -733,6 +761,12 @@ module.exports = function (app) {
           }
         }
       }, LOG_INTERVAL_MS);
+
+      // Flush any buffer left over from a previous offline period.
+      // Wait 10s for SignalK to fully connect before attempting.
+      setTimeout(() => {
+        flushLogBuffer().catch(e => app.debug(`Startup flush: ${e.message}`));
+      }, 10_000);
 
       app.setPluginStatus(`Connected — sending every ${interval_ms / 1000}s`);
     },
