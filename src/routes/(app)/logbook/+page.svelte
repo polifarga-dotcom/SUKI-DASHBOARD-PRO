@@ -1674,11 +1674,16 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 						</span>
 						<div class="endpoint-body">
 							<div class="endpoint-time">{fmtDate(e.logged_at)} {fmtTime(e.logged_at)}</div>
-							<div class="entry-nav" style="margin-bottom:0">
+							<div class="entry-nav" style="margin-bottom:4px">
 								{#if e.sog_kn != null}<span class="entry-chip">{e.sog_kn.toFixed(1)} kn</span>{/if}
 								{#if e.cog_deg != null}<span class="entry-chip">{dirAbbr(e.cog_deg)}</span>{/if}
+								{#if e.engine_rpm != null}<span class="entry-chip eng">P {e.engine_rpm} rpm{e.engine_temp_c != null ? ` · ${e.engine_temp_c.toFixed(0)}°C` : ''}</span>{/if}
+								{#if e.engine_sb_rpm != null}<span class="entry-chip eng">S {e.engine_sb_rpm} rpm{e.engine_sb_temp_c != null ? ` · ${e.engine_sb_temp_c.toFixed(0)}°C` : ''}</span>{/if}
+								{#if e.engine_on && e.engine_rpm == null && e.engine_sb_rpm == null}<span class="entry-chip eng">engine on</span>{/if}
+								{#if e.sails}<span class="entry-chip sail">{e.sails}</span>{/if}
 								{#if e.distance_nm != null && e.distance_nm > 0}<span class="entry-chip dist">+{e.distance_nm.toFixed(1)} nm</span>{/if}
 							</div>
+							{@render entryEnv(e)}
 							{#if e.notes}<p class="entry-notes" style="margin:4px 0 0">{e.notes}</p>{/if}
 						</div>
 					</div>
@@ -1846,7 +1851,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 
 <!-- ── Env data snippet (reused in entry lists) ───────────────────────────── -->
 {#snippet entryEnv(e: LogEntry)}
-{#if e.wind_speed_kn != null || e.wave_height_m != null || e.baro_hpa != null || e.air_temp_c != null || e.depth_m != null || e.batt_soc != null}
+{#if e.wind_speed_kn != null || e.apparent_wind_speed_kn != null || e.wave_height_m != null || e.baro_hpa != null || e.air_temp_c != null || e.water_temp_c != null || e.depth_m != null || e.batt_soc != null}
 <div class="entry-env">
 	{#if e.wind_speed_kn != null}
 	<span class="entry-env-item">
@@ -1854,7 +1859,16 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			<path d="M1 4.5h6.5a2 2 0 0 0 0-3"/><path d="M1 7.5h8.5a2 2 0 0 0 0-3"/>
 			<path d="M1 10.5h5a2 2 0 0 0 0-3"/>
 		</svg>
-		{e.wind_speed_kn.toFixed(0)} kn {dirAbbr(e.wind_dir_deg)}
+		TWS {e.wind_speed_kn.toFixed(0)} kn {dirAbbr(e.wind_dir_deg)}
+	</span>
+	{/if}
+	{#if e.apparent_wind_speed_kn != null}
+	<span class="entry-env-item">
+		<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
+			<path d="M1 4.5h6.5a2 2 0 0 0 0-3"/><path d="M1 7.5h8.5a2 2 0 0 0 0-3"/>
+			<path d="M1 10.5h5a2 2 0 0 0 0-3"/>
+		</svg>
+		AWS {e.apparent_wind_speed_kn.toFixed(0)} kn{e.apparent_wind_angle_deg != null ? ` · ${e.apparent_wind_angle_deg.toFixed(0)}°` : ''}
 	</span>
 	{/if}
 	{#if e.wave_height_m != null}
@@ -1863,7 +1877,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			<path d="M1 7 C2.5 5 4 9 5.5 7 C7 5 8.5 9 10 7 C11 6 12 6.5 13 6.5"/>
 			<path d="M1 10.5 C2.5 8.5 4 12.5 5.5 10.5 C7 8.5 8.5 12.5 10 10.5 C11 9.5 12 10 13 10"/>
 		</svg>
-		{e.wave_height_m} m
+		{e.wave_height_m.toFixed(1)} m{e.wave_period_s != null ? ` · ${e.wave_period_s.toFixed(0)}s` : ''}
 	</span>
 	{/if}
 	{#if e.baro_hpa != null}
@@ -1884,7 +1898,16 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			<line x1="7" y1="4.5" x2="9" y2="4.5"/>
 			<line x1="7" y1="6.5" x2="9" y2="6.5"/>
 		</svg>
-		{e.air_temp_c.toFixed(0)}°C
+		{e.air_temp_c.toFixed(0)}°C air{e.water_temp_c != null ? ` · ${e.water_temp_c.toFixed(0)}°C water` : ''}
+	</span>
+	{:else if e.water_temp_c != null}
+	<span class="entry-env-item">
+		<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex-shrink:0">
+			<circle cx="7" cy="10.5" r="2"/><line x1="7" y1="8.5" x2="7" y2="3"/>
+			<line x1="7" y1="4.5" x2="9" y2="4.5"/>
+			<line x1="7" y1="6.5" x2="9" y2="6.5"/>
+		</svg>
+		{e.water_temp_c.toFixed(0)}°C water
 	</span>
 	{/if}
 	{#if e.depth_m != null}
