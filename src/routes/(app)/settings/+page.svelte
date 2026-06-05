@@ -207,6 +207,39 @@
 	let inreachTest     = $state<TestState>('idle');
 	let inreachTestMsg  = $state('');
 
+	// ── Public Tracking ───────────────────────────────────────────────────────
+	let trackingEnabled  = $state(false);
+	let trackingSlug     = $state('');
+	let trackingSaving   = $state(false);
+	let trackingSaved    = $state(false);
+	let trackingLinkCopied = $state(false);
+
+	$effect(() => {
+		const b = $currentBoat;
+		if (b) {
+			trackingEnabled = (b as any).tracking_enabled ?? false;
+			trackingSlug    = (b as any).tracking_slug    ?? b.name.toLowerCase().replace(/\s+/g, '-');
+		}
+	});
+
+	async function saveTracking() {
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
+		trackingSaving = true;
+		const { data } = await supabase.from('boats')
+			.update({ tracking_enabled: trackingEnabled, tracking_slug: trackingSlug.trim() || null })
+			.eq('id', boatId).select().single();
+		if (data) currentBoat.update(b => b ? { ...b, ...(data as any) } : b);
+		trackingSaving = false; trackingSaved = true;
+		setTimeout(() => { trackingSaved = false; }, 2000);
+	}
+
+	function copyTrackingLink() {
+		const url = `${window.location.origin}/track/${trackingSlug}`;
+		navigator.clipboard.writeText(url).catch(() => {});
+		trackingLinkCopied = true; setTimeout(() => { trackingLinkCopied = false; }, 2000);
+	}
+
 	// ── SignalK Bridge ────────────────────────────────────────────────────────
 	const SIGNALK_INGEST_URL = 'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/signalk-ingest';
 	let skKeyVisible   = $state(false);
@@ -1009,6 +1042,49 @@
 		{/if}
 	</section>
 
+	<!-- ── Public Tracking ── -->
+	<section class="card">
+		<h2>Public Tracking Page</h2>
+		<p class="setting-desc">Share a live tracking link with friends and family. Anyone with the link can see your position, wind, and trip data — no login required.</p>
+
+		<div class="setting-row">
+			<div class="setting-label">
+				<h3>Enable public tracking</h3>
+				<p>Makes your boat visible at the share URL below</p>
+			</div>
+			<label class="toggle-sw">
+				<input type="checkbox" bind:checked={trackingEnabled}/>
+				<span class="toggle-knob"></span>
+			</label>
+		</div>
+
+		{#if trackingEnabled}
+		<div class="setting-row" style="margin-top:12px">
+			<div class="setting-label">
+				<h3>URL slug</h3>
+				<p>Customise the link (lowercase, hyphens only)</p>
+			</div>
+			<input class="setting-input"
+				bind:value={trackingSlug}
+				placeholder="sv-my-boat"
+				pattern="[a-z0-9\-]+"
+				style="max-width:160px"/>
+		</div>
+
+		<div class="share-link-box">
+			<span class="share-link-text">{typeof window !== 'undefined' ? window.location.origin : 'https://…'}/track/{trackingSlug}</span>
+			<button class="btn btn-ghost" onclick={copyTrackingLink}>
+				{trackingLinkCopied ? '✓ Copied!' : '🔗 Copy link'}
+			</button>
+		</div>
+		{/if}
+
+		{#if trackingSaved}<div class="alert alert-info">✓ Saved</div>{/if}
+		<button class="btn btn-primary mt" onclick={saveTracking} disabled={trackingSaving}>
+			{trackingSaving ? 'Saving…' : 'Save tracking settings'}
+		</button>
+	</section>
+
 	<!-- ── Account ── -->
 	<section class="card">
 		<h2>Account</h2>
@@ -1236,5 +1312,23 @@
 		background: rgba(0,200,255,.08); border-radius: 3px; padding: 0 4px;
 	}
 	.setup-hint em { font-style: normal; color: var(--accent); }
+
+	/* ── Public tracking ── */
+	.setting-desc { font-size: 12px; color: var(--muted); margin: 0 0 12px; line-height: 1.5; }
+	.setting-input {
+		padding: 8px 12px; background: var(--card2); border: 1px solid var(--border);
+		border-radius: 6px; color: var(--text); font-size: 14px; font-family: monospace;
+		outline: none; transition: border-color 0.2s; width: 100%;
+	}
+	.setting-input:focus { border-color: var(--accent); }
+	.share-link-box {
+		display: flex; align-items: center; gap: 8px;
+		background: var(--card2); border: 1px solid var(--border);
+		border-radius: 8px; padding: 10px 12px; margin-top: 10px; flex-wrap: wrap;
+	}
+	.share-link-text {
+		font-size: 12px; font-family: monospace; color: var(--accent);
+		flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+	}
 
 </style>
