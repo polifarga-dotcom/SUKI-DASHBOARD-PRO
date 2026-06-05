@@ -26,6 +26,7 @@ export type Telemetry = {
 	nav_lat: number | null;
 	nav_lon: number | null;
 	nav_hdg_rad: number | null;
+	nav_cog_rad: number | null;   // course over ground (true), radians
 	nav_sog_ms: number | null;
 	nav_stw_ms: number | null;
 	env_depth_m: number | null;

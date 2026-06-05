@@ -34,7 +34,7 @@ function json(body: unknown, status = 200) {
 // Prevents injection of arbitrary columns (e.g. shelly states, server health flags).
 const ALLOWED_COLUMNS = new Set([
   // Navigation
-  'nav_lat', 'nav_lon', 'nav_hdg_rad', 'nav_sog_ms', 'nav_stw_ms',
+  'nav_lat', 'nav_lon', 'nav_hdg_rad', 'nav_cog_rad', 'nav_sog_ms', 'nav_stw_ms',
   // Environment
   'env_depth_m', 'env_aws_ms', 'env_awa_rad', 'env_tws_ms', 'env_twa_rad', 'env_pressure_pa',
   // Battery

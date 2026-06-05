@@ -89,6 +89,7 @@ module.exports = function (app) {
     'navigation.headingTrue':                                'nav_hdg_rad',
     'navigation.headingMagnetic':                            'nav_hdg_rad',   // fallback if True unavailable
     'navigation.speedOverGround':                            'nav_sog_ms',
+    'navigation.courseOverGroundTrue':                       'nav_cog_rad',
     'navigation.speedThroughWater':                          'nav_stw_ms',
 
     // Environment (standard)

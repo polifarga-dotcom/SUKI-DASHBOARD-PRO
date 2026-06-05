@@ -644,36 +644,38 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	const liveLon   = $derived(() => pts?.[0]?.lon ?? t?.nav_lon ?? null);
 	const liveSog   = $derived(() => t?.nav_sog_ms != null ? +(t.nav_sog_ms * 1.94384).toFixed(2) : null);
 	const liveCog   = $derived(() => t?.nav_hdg_rad != null ? +(t.nav_hdg_rad * 180 / Math.PI).toFixed(1) : null);
-	// True wind speed: prefer direct TWS signal; fall back to vector calculation from AWS/AWA/SOG
-	// TWS vector: V_tw = V_aw - V_boat  (all in m/s, boat speed along heading)
+	// True wind calculation via polar vector math.
+	// AWA is relative to the bow (heading). The boat's velocity vector is along COG
+	// (not heading) — using COG correctly accounts for leeway and current.
+	// Leeway angle = COG - HDG.
+	// Fallback chain: direct TWS/TWA > calculated from AWS/AWA/SOG+COG > SOG+HDG only
+	function calcTrueWind(tel: typeof t): { tws_ms: number; twaRad: number } | null {
+		if (!tel) return null;
+		if (tel.env_tws_ms != null && tel.env_twa_rad != null)
+			return { tws_ms: tel.env_tws_ms, twaRad: tel.env_twa_rad };
+		if (tel.env_aws_ms == null || tel.env_awa_rad == null || tel.nav_sog_ms == null) return null;
+		// Use COG if available; otherwise fall back to heading (assumes no leeway/current)
+		const hdgRad = tel.nav_hdg_rad ?? 0;
+		const cogRad = tel.nav_cog_rad ?? hdgRad;
+		const leeway = cogRad - hdgRad;   // angle between direction of travel and bow
+		// Boat velocity components in the bow-reference frame
+		const boatX = tel.nav_sog_ms * Math.cos(leeway);   // along bow
+		const boatY = tel.nav_sog_ms * Math.sin(leeway);   // to port/starboard
+		// True wind = apparent wind − boat velocity (all in bow frame)
+		const twX = tel.env_aws_ms * Math.cos(tel.env_awa_rad) - boatX;
+		const twY = tel.env_aws_ms * Math.sin(tel.env_awa_rad) - boatY;
+		return { tws_ms: Math.sqrt(twX * twX + twY * twY), twaRad: Math.atan2(twY, twX) };
+	}
 	const liveWind = $derived((): number | null => {
-		if (t?.env_tws_ms != null) return +(t.env_tws_ms * 1.94384).toFixed(1);
-		if (t?.env_aws_ms != null && t?.env_awa_rad != null && t?.nav_sog_ms != null) {
-			// Decompose: aws along boat axis = aws*cos(awa), sog subtracted
-			const awsX = t.env_aws_ms * Math.cos(t.env_awa_rad);  // forward component
-			const awsY = t.env_aws_ms * Math.sin(t.env_awa_rad);  // lateral component
-			const twsX = awsX - t.nav_sog_ms;
-			const tws  = Math.sqrt(twsX * twsX + awsY * awsY);
-			return +(tws * 1.94384).toFixed(1);
-		}
-		return null;
+		const tw = calcTrueWind(t);
+		return tw ? +(tw.tws_ms * 1.94384).toFixed(1) : null;
 	});
-	// True wind direction: prefer TWA signal; fall back to calculation from AWA/SOG
 	const liveWindDir = $derived((): number | null => {
 		if (t?.nav_hdg_rad == null) return null;
-		if (t?.env_twa_rad != null) {
-			// TWD = heading + TWA (both in radians, then convert)
-			return +((((t.nav_hdg_rad + t.env_twa_rad) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1);
-		}
-		if (t?.env_aws_ms != null && t?.env_awa_rad != null && t?.nav_sog_ms != null) {
-			// Calculate TWA from AWS/AWA/SOG, then add heading
-			const awsX = t.env_aws_ms * Math.cos(t.env_awa_rad);
-			const awsY = t.env_aws_ms * Math.sin(t.env_awa_rad);
-			const twsX = awsX - t.nav_sog_ms;
-			const twaRad = Math.atan2(awsY, twsX);
-			return +((((t.nav_hdg_rad + twaRad) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1);
-		}
-		return null;
+		const tw = calcTrueWind(t);
+		if (!tw) return null;
+		// TWD = heading + TWA, normalised 0–360°
+		return +((((t.nav_hdg_rad + tw.twaRad) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1);
 	});
 	const liveBaro   = $derived(() => t?.env_pressure_pa != null ? +(t.env_pressure_pa / 100).toFixed(1) : null);
 	const liveAirT   = $derived(() => t?.temp_salon   != null ? +(t.temp_salon - 273.15).toFixed(1) : null);
