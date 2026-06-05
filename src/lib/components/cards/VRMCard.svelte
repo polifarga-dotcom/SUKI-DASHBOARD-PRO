@@ -539,9 +539,9 @@
 .tank-pct   { font-size: 12px; min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ── Temperatures ────────────────────────────────────────── */
-.temp-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
-.temp-cell { background: var(--card2); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
-.temp-header { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.temp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.temp-cell { background: var(--card2); border-radius: 8px; padding: 7px 10px; display: flex; flex-direction: column; gap: 4px; }
+.temp-header { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
 .temp-name { font-size: 11px; color: var(--muted); flex: 1; word-break: break-word; }
 .temp-val  { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .temp-bar-track { height: 4px; background: rgba(255, 255, 255, 0.06); border-radius: 2px; overflow: hidden; }
