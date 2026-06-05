@@ -33,6 +33,118 @@
 	let trackLine: any   = null;
 	let refreshTimer: ReturnType<typeof setInterval>;
 
+	// ── Wind particle canvas ────────────────────────────────────────────────
+	let windCanvas: HTMLCanvasElement | null = null;
+	let windAnimFrame: number | null = null;
+	let meteoWind = $state<{ speed_ms: number; dir_deg: number } | null>(null);
+
+	async function fetchMeteoWind(lat: number, lon: number) {
+		try {
+			const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}&current=windspeed_10m,winddirection_10m&wind_speed_unit=ms&forecast_days=1`;
+			const res  = await fetch(url);
+			const json = await res.json();
+			const c    = json?.current;
+			if (c?.windspeed_10m != null && c?.winddirection_10m != null) {
+				meteoWind = { speed_ms: c.windspeed_10m, dir_deg: c.winddirection_10m };
+				startWindParticles();
+			}
+		} catch { /* meteo optional — no error shown */ }
+	}
+
+	interface Particle {
+		x: number; y: number; age: number; maxAge: number;
+		speed: number; width: number; alpha: number;
+	}
+
+	function startWindParticles() {
+		if (!windCanvas || !meteoWind) return;
+		if (windAnimFrame) { cancelAnimationFrame(windAnimFrame); windAnimFrame = null; }
+
+		const canvas = windCanvas;
+		const ctx    = canvas.getContext('2d')!;
+
+		const { speed_ms, dir_deg } = meteoWind;
+		// pixels/frame — scale so ~5 m/s feels like a gentle flow
+		const BASE_PX = 0.5;
+		const pxPerFrame = Math.max(0.3, speed_ms * BASE_PX);
+		const rad = dir_deg * Math.PI / 180;
+		const vx  = Math.sin(rad) * pxPerFrame;
+		const vy  = -Math.cos(rad) * pxPerFrame;
+
+		// Wind-coded colour (subtle cyan→amber→red)
+		const r = speed_ms < 8 ? 14 : speed_ms < 15 ? 250 : 244;
+		const g = speed_ms < 8 ? 165 : speed_ms < 15 ? 204 : 63;
+		const b = speed_ms < 8 ? 233 : speed_ms < 15 ? 21 : 21;
+
+		const N = Math.max(80, Math.min(200, Math.round(speed_ms * 12)));
+		const particles: Particle[] = [];
+
+		function spawnParticle(existing?: Particle): Particle {
+			const w = canvas.width, h = canvas.height;
+			// Spawn along the upwind edge so particles drift across the viewport
+			let x: number, y: number;
+			// Probability: spawn on the edge the wind blows from
+			if (Math.random() < 0.7) {
+				// Spawn on one of the four edges (weighted by wind direction)
+				if (Math.abs(vx) > Math.abs(vy)) {
+					x = vx > 0 ? 0 : w;
+					y = Math.random() * h;
+				} else {
+					x = Math.random() * w;
+					y = vy > 0 ? 0 : h;
+				}
+			} else {
+				x = Math.random() * w;
+				y = Math.random() * h;
+			}
+			const maxAge = 80 + Math.random() * 120;
+			return { x, y, age: existing ? 0 : Math.random() * maxAge, maxAge, speed: 0.6 + Math.random() * 0.8, width: 0.8 + Math.random() * 0.8, alpha: 0 };
+		}
+
+		for (let i = 0; i < N; i++) particles.push(spawnParticle());
+
+		function draw() {
+			const w = canvas.width, h = canvas.height;
+			ctx.clearRect(0, 0, w, h);
+			for (const p of particles) {
+				// Move
+				p.x   += vx * p.speed;
+				p.y   += vy * p.speed;
+				p.age += 1;
+
+				// Respawn if off-screen or expired
+				if (p.x < -10 || p.x > w + 10 || p.y < -10 || p.y > h + 10 || p.age > p.maxAge) {
+					Object.assign(p, spawnParticle(p));
+					continue;
+				}
+
+				// Fade in/out envelope (sin curve over lifetime)
+				const life = p.age / p.maxAge;
+				const alpha = Math.sin(life * Math.PI) * 0.55;
+
+				// Trail line
+				const trailLen = p.speed * 12;
+				ctx.beginPath();
+				ctx.moveTo(p.x - vx * p.speed * trailLen / pxPerFrame,
+				           p.y - vy * p.speed * trailLen / pxPerFrame);
+				ctx.lineTo(p.x, p.y);
+				ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+				ctx.lineWidth   = p.width;
+				ctx.lineCap     = 'round';
+				ctx.stroke();
+			}
+			windAnimFrame = requestAnimationFrame(draw);
+		}
+		draw();
+	}
+
+	function resizeWindCanvas() {
+		if (!windCanvas || !mapEl) return;
+		windCanvas.width  = mapEl.clientWidth;
+		windCanvas.height = mapEl.clientHeight;
+		if (meteoWind) startWindParticles();
+	}
+
 	const API = `https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/public-boat-tracker`;
 
 	const CARDS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
@@ -122,21 +234,30 @@
 		const lon = data?.telemetry?.nav_lon ?? data?.track?.at(-1)?.lon ?? 20;
 		map = L.map(mapEl, { center: [lat, lon], zoom: 11, zoomControl: false });
 
-		// CartoDB Dark Matter — monochrome, minimal, modern
+		// CartoDB Dark Matter — monochrome, minimal
 		L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
-			attribution: '© CartoDB · OSM',
-			subdomains:  'abcd',
-			maxZoom:     19,
+			attribution: '© CartoDB · OSM', subdomains: 'abcd', maxZoom: 19,
 		}).addTo(map);
 
-		// OpenSeaMap nautical marks on top (lighter opacity on dark base)
+		// OpenSeaMap nautical overlay
 		L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
-			maxZoom: 18, opacity: 0.5,
+			maxZoom: 18, opacity: 0.45,
 		}).addTo(map);
 
 		L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+		// Wind canvas — sized to match the map container
+		if (windCanvas) {
+			resizeWindCanvas();
+			window.addEventListener('resize', resizeWindCanvas);
+			map.on('resize', resizeWindCanvas);
+		}
+
 		mapReady = true;
 		updateMap();
+
+		// Fetch live wind from Open-Meteo (free, no API key)
+		if (lat && lon) fetchMeteoWind(lat, lon);
 	}
 
 	function updateMap() {
@@ -186,7 +307,12 @@
 		await initMap();
 		refreshTimer = setInterval(fetchData, 30_000);
 	});
-	onDestroy(() => { clearInterval(refreshTimer); map?.remove(); });
+	onDestroy(() => {
+		clearInterval(refreshTimer);
+		if (windAnimFrame) cancelAnimationFrame(windAnimFrame);
+		window.removeEventListener('resize', resizeWindCanvas);
+		map?.remove();
+	});
 
 	// Derived values
 	const t       = $derived(data?.telemetry ?? null);
@@ -265,6 +391,8 @@
 
 <!-- ── Map (full screen background) ────────────────────────────────────── -->
 <div bind:this={mapEl} class="map-bg"></div>
+<!-- Wind particle canvas — rendered on top of the map, pointer-events:none -->
+<canvas bind:this={windCanvas} class="wind-canvas"></canvas>
 
 <!-- ── Top pill ─────────────────────────────────────────────────────────── -->
 <header class="pill-bar">
@@ -417,6 +545,11 @@
 <style>
 	:global(html,body) { margin:0; padding:0; height:100%; background:#080c14; overflow:hidden; }
 
+	/* Slightly brighten dark tiles so labels are readable without a vignette */
+	:global(.leaflet-tile-pane) {
+		filter: brightness(1.05) contrast(0.95);
+	}
+
 	/* ── Root ── */
 	.root {
 		position: fixed; inset: 0;
@@ -469,12 +602,14 @@
 		position: absolute; inset: 0;
 		z-index: 0;
 	}
-	/* Dark vignette over map edges */
-	.map-bg::after {
-		content: '';
+	/* No vignette — the dark tiles are enough contrast */
+
+	/* ── Wind particle canvas ── */
+	.wind-canvas {
 		position: absolute; inset: 0;
-		background: radial-gradient(ellipse at center, transparent 40%, rgba(8,12,20,0.6) 100%);
-		pointer-events: none; z-index: 1;
+		z-index: 200;          /* above map tiles, below markers */
+		pointer-events: none;  /* clicks pass through to map */
+		mix-blend-mode: screen; /* additive blend makes particles glow on dark map */
 	}
 
 	/* ── Top pill bar ── */
