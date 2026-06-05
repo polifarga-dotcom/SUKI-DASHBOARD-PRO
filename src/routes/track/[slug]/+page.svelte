@@ -340,6 +340,23 @@
 	const battSoc = $derived(t?.batt_main_soc != null ? Math.round(t.batt_main_soc * 100) : null);
 	const solar   = $derived(t?.solar_total_w ?? null);
 	const engOn   = $derived((t?.eng_rpm ?? 0) > 0 || (t?.eng_sb_rpm ?? 0) > 0);
+	// Status: Anchored ≤ 1.5 kn, Motoring when engine on, Sailing otherwise
+	const boatStatus = $derived(
+		sog == null             ? null :
+		sog <= 1.5              ? 'Anchored' :
+		engOn                   ? 'Motoring' :
+		                          'Sailing'
+	);
+	const statusColor = $derived(
+		boatStatus === 'Sailing'  ? '#34d399' :
+		boatStatus === 'Motoring' ? '#fb923c' :
+		boatStatus === 'Anchored' ? '#60a5fa' : 'rgba(255,255,255,0.3)'
+	);
+	const statusIcon = $derived(
+		boatStatus === 'Sailing'  ? '⛵' :
+		boatStatus === 'Motoring' ? '🔴' :
+		boatStatus === 'Anchored' ? '⚓' : ''
+	);
 	const isStale = $derived(t?.updated_at != null && (Date.now() - new Date(t.updated_at as string).getTime()) > 300_000);
 
 	// Wind compass SVG path helpers
@@ -429,79 +446,35 @@
 	<div class="speed-block">
 		<div class="speed-num" style="color:{sogColor(sog)}">{sog ?? '—'}</div>
 		<div class="speed-unit">knots SOG</div>
-		<div class="speed-meta">
-			{hdgDeg != null ? `HDG ${hdgDeg}°` : ''}
-			{engOn ? ' · Motor' : sog != null && sog > 0.5 ? ' · Sailing' : ''}
+		{#if boatStatus}
+		<div class="status-badge" style="color:{statusColor}; border-color:{statusColor}">
+			{statusIcon} {boatStatus}
 		</div>
+		{/if}
+		<div class="speed-meta">{hdgDeg != null ? `HDG ${hdgDeg}°` : ''}</div>
 	</div>
 
 	<div class="divider"></div>
 
 	<!-- Wind block -->
 	<div class="wind-block">
-		<div class="wind-top-row">
+		<div class="wind-nums">
 			<div>
 				<div class="wind-big" style="color:{beaufortColor(tws)}">{tws ?? '—'}</div>
 				<div class="wind-unit">kn TWS</div>
-				<div class="wind-label">{beaufortLabel(tws)}</div>
 			</div>
-			<!-- Compass ring -->
-			<svg class="compass-svg" viewBox="0 0 88 88">
-				<!-- Outer ring -->
-				<circle cx="44" cy="44" r="40" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
-				<!-- Tick marks -->
-				{#each [0,45,90,135,180,225,270,315] as a}
-				<line
-					x1={44 + 36*Math.sin(a*Math.PI/180)}
-					y1={44 - 36*Math.cos(a*Math.PI/180)}
-					x2={44 + 40*Math.sin(a*Math.PI/180)}
-					y2={44 - 40*Math.cos(a*Math.PI/180)}
-					stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
-				{/each}
-				<!-- Cardinal labels -->
-				{#each [['N',0],['E',90],['S',180],['W',270]] as [lbl, ang]}
-				<text
-					x={44 + 28*Math.sin((ang as number)*Math.PI/180)}
-					y={44 - 28*Math.cos((ang as number)*Math.PI/180) + 3.5}
-					text-anchor="middle" font-size="7"
-					fill="rgba(255,255,255,0.3)" font-family="system-ui">{lbl}</text>
-				{/each}
-				<!-- Wind direction arrow -->
-				{#if twd != null}
-				<!-- Tail (where wind comes FROM) -->
-				<circle
-					cx={44 + 32*Math.sin((windAngle+180)*Math.PI/180)}
-					cy={44 - 32*Math.cos((windAngle+180)*Math.PI/180)}
-					r="2" fill={beaufortColor(tws)} opacity="0.4"/>
-				<!-- Shaft -->
-				<line
-					x1={44 + 24*Math.sin((windAngle+180)*Math.PI/180)}
-					y1={44 - 24*Math.cos((windAngle+180)*Math.PI/180)}
-					x2={wx} y2={wy}
-					stroke={beaufortColor(tws)} stroke-width="2" stroke-linecap="round"/>
-				<!-- Arrow head (points TO where wind goes) -->
-				<polygon
-					points="{wx},{wy}
-						{44+22*Math.sin((windAngle-15)*Math.PI/180)},{44-22*Math.cos((windAngle-15)*Math.PI/180)}
-						{44+22*Math.sin((windAngle+15)*Math.PI/180)},{44-22*Math.cos((windAngle+15)*Math.PI/180)}"
-					fill={beaufortColor(tws)}/>
-				<!-- Direction label in center -->
-				<text x="44" y="47.5" text-anchor="middle" font-size="9"
-					fill="rgba(255,255,255,0.6)" font-family="system-ui" font-weight="600">
-					{cardinal(twd)}
-				</text>
-				{:else}
-				<text x="44" y="47.5" text-anchor="middle" font-size="9"
-					fill="rgba(255,255,255,0.2)" font-family="system-ui">—</text>
-				{/if}
-			</svg>
+			{#if aws != null}
+			<div>
+				<div class="wind-big" style="color:{beaufortColor(aws)};opacity:0.7">{aws}</div>
+				<div class="wind-unit">kn AWS</div>
+			</div>
+			{/if}
 		</div>
-		{#if aws != null || awaRaw != null}
-		<div class="wind-apparent">
-			{#if aws != null}<span>AWS <b>{aws}</b> kn</span>{/if}
-			{#if awaRaw != null}<span>AWA <b>{Math.abs(awaRaw).toFixed(0)}°{awaRaw < 0 ? 'P':'S'}</b></span>{/if}
+		<div class="wind-meta-row">
+			{#if twd != null}<span style="color:{beaufortColor(tws)}">{cardinal(twd)} {fmt0(twd)}°</span>{/if}
+			{#if awaRaw != null}<span>AWA {Math.abs(awaRaw).toFixed(0)}°{awaRaw < 0 ? 'P':'S'}</span>{/if}
+			{#if tws != null}<span style="color:{beaufortColor(tws)}">{beaufortLabel(tws)}</span>{/if}
 		</div>
-		{/if}
 	</div>
 
 	<div class="divider"></div>
@@ -703,24 +676,33 @@
 	}
 	.speed-unit { font-size: 12px; color: rgba(255,255,255,0.35); letter-spacing: 0.5px; margin-top: 2px; }
 	.speed-meta { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+	.status-badge {
+		display: inline-flex; align-items: center; gap: 4px;
+		margin-top: 8px;
+		padding: 3px 10px;
+		border: 1px solid;
+		border-radius: 20px;
+		font-size: 11px; font-weight: 700; letter-spacing: 0.3px;
+		opacity: 0.9;
+	}
 
 	.divider { height: 1px; background: rgba(255,255,255,0.06); margin: 0 0 10px; }
 
 	/* Wind */
 	.wind-block { padding-bottom: 10px; }
-	.wind-top-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+	.wind-nums {
+		display: flex; gap: 16px; align-items: flex-end; margin-bottom: 8px;
+	}
 	.wind-big {
 		font-size: 30px; font-weight: 700; letter-spacing: -1px;
 		font-variant-numeric: tabular-nums; line-height: 1;
 	}
 	.wind-unit { font-size: 11px; color: rgba(255,255,255,0.35); letter-spacing: 0.5px; margin-top: 2px; }
-	.wind-label { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px; }
-	.compass-svg { width: 72px; height: 72px; flex-shrink: 0; }
-	.wind-apparent {
-		display: flex; gap: 10px; margin-top: 6px;
+	.wind-meta-row {
+		display: flex; flex-wrap: wrap; gap: 8px;
 		font-size: 11px; color: rgba(255,255,255,0.4);
 	}
-	.wind-apparent b { color: rgba(255,255,255,0.75); font-weight: 600; }
+	.wind-meta-row span { white-space: nowrap; }
 
 	/* Stats grid */
 	.stats-grid {
