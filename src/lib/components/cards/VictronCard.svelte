@@ -3,360 +3,372 @@
 
 	const data = $derived($vrmData);
 
-	// ── Derived values ────────────────────────────────────────────────────────
-	const batSoc    = $derived(data?.battery_soc   ?? null);   // 0–100
+	const batSoc    = $derived(data?.battery_soc   ?? null);
 	const batV      = $derived(data?.battery_v     ?? null);
 	const batA      = $derived(data?.battery_a     ?? null);
 	const batW      = $derived(data?.battery_w     ?? null);
 	const batTTG    = $derived(data?.batteries[0]?.time_to_go_s ?? null);
+	const secBatts  = $derived(data?.batteries.slice(1) ?? []);
 	const solW      = $derived(data?.solar_w       ?? null);
 	const acInW     = $derived(data?.ac_input_w    ?? null);
 	const acInV     = $derived(data?.ac_input_v    ?? null);
 	const loadW     = $derived(data?.load_w        ?? null);
 	const vebDcA    = $derived(data?.vebus_dc_a    ?? null);
-	const batName   = $derived(data?.batteries[0]?.name ?? 'Battery');
 
-	// DC Loads = |battery discharge| − solar − VE.Bus DC draw (Victron Venus OS formula)
-	const dcLoadsW  = $derived((() => {
+	// DC Loads = |battery discharge| − solar − VE.Bus DC draw
+	const dcLoadsW = $derived((() => {
 		if (!data || batW == null) return null;
-		const discharge = -Math.min(batW, 0);           // positive when discharging
+		const discharge = -Math.min(batW, 0);
 		const solar     = Math.max(0, solW ?? 0);
 		const vebDC     = vebDcA != null && batV != null
-			? Math.max(0, vebDcA) * Math.abs(batV)   // positive = inverter consuming DC
-			: 0;
+			? Math.max(0, vebDcA) * Math.abs(batV) : 0;
 		const dc = Math.round(discharge - solar - vebDC);
 		return dc > 5 ? dc : null;
 	})());
 
-	// Charging / discharging / idle
-	const isCharging    = $derived((batA ?? 0) > 0.5);
+	const isCharging    = $derived((batA ?? 0) >  0.5);
 	const isDischarging = $derived((batA ?? 0) < -0.5);
 	const isShoreOn     = $derived((acInW ?? 0) > 5 || (acInV ?? 0) > 50);
 	const isSolarOn     = $derived((solW ?? 0) > 5);
 	const hasLoad       = $derived((loadW ?? 0) > 5);
 	const hasDcLoad     = $derived(dcLoadsW != null && dcLoadsW > 5);
 
-	// Inverter/Charger state text (matching Victron labels)
 	const inverterState = $derived(
-		isShoreOn && isCharging    ? 'Charging' :
-		isShoreOn && !isCharging   ? 'Pass-through' :
-		isDischarging              ? 'Inverting' :
-		                             'Idle'
+		isShoreOn && isCharging  ? 'Charging' :
+		isShoreOn                ? 'Pass-through' :
+		isDischarging            ? 'Inverting' : 'Idle'
 	);
-
-	// Battery status
 	const battStatus = $derived(
 		data?.mpptsArr.some(m => m.state === 5) && !isDischarging ? 'Float' :
 		isCharging    ? 'Charging' :
-		isDischarging ? 'Discharging' :
-		                'Idle'
+		isDischarging ? 'Discharging' : 'Idle'
 	);
 
-	// Time-to-go formatter: "1d 7h" style
 	function fmtTTG(s: number | null): string {
-		if (!s || s <= 0) return '—';
+		if (!s || s <= 0) return '';
 		const d = Math.floor(s / 86400);
 		const h = Math.floor((s % 86400) / 3600);
 		return d > 0 ? `${d}d ${h}h` : `${h}h`;
 	}
-
-	function fmtW(w: number | null): string {
-		return w != null ? `${Math.abs(Math.round(w))} W` : '— W';
-	}
-	function fmtA(a: number | null): string {
-		return a != null ? `${a.toFixed(1)} A` : '— A';
-	}
-	function fmtV(v: number | null): string {
-		return v != null ? `${v.toFixed(2)} V` : '— V';
+	function r(n: number | null, d = 0): string {
+		return n != null ? n.toFixed(d) : '—';
 	}
 
-	// Solar bar chart: up to 5 MPPTs, normalised to max yield today
+	// Solar bar chart per MPPT
 	const solarBars = $derived((() => {
 		if (!data?.mpptsArr.length) {
-			// Fallback: single bar from total yield today
 			const wh = data?.solar_yield_today_wh ?? 0;
-			return [{ pct: wh > 0 ? 100 : 0, name: 'Solar' }];
+			return [{ pct: wh > 0 ? 100 : 2, name: 'Solar' }];
 		}
 		const maxWh = Math.max(...data.mpptsArr.map(m => m.yield_today_wh), 1);
-		return data.mpptsArr.slice(0, 5).map(m => ({
-			pct: Math.round((m.yield_today_wh / maxWh) * 100),
+		return data.mpptsArr.slice(0, 6).map(m => ({
+			pct: Math.max(2, Math.round(m.yield_today_wh / maxWh * 100)),
 			name: m.name,
 		}));
 	})());
 </script>
 
-<div class="vic-card">
-	<div class="vic-title">Victron</div>
+<div class="vic">
+	<div class="vic-header">Victron</div>
 
-	<!-- Flow diagram grid -->
+	<!--
+		Layout: 5-column grid (box · connector · box · connector · box)
+		        3-row grid   (row1 · vertical-connector · row2)
+		All connectors are grid cells with CSS-drawn lines + arrows.
+	-->
 	<div class="vic-grid">
 
-		<!-- ── Row 1 ── -->
+		<!-- ══ Row 1 ══════════════════════════════════════════════════════════ -->
 
-		<!-- Shore Power -->
-		<div class="vic-box" class:vic-box--active={isShoreOn}>
-			<div class="vic-box-header">
-				<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
-					<circle cx="8" cy="8" r="6"/>
-					<line x1="8" y1="4" x2="8" y2="12"/>
+		<!-- Shore -->
+		<div class="box" class:box-on={isShoreOn}>
+			<div class="box-hdr">
+				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+					<circle cx="8" cy="8" r="6"/><line x1="8" y1="4" x2="8" y2="12"/>
 					<line x1="5" y1="6.5" x2="11" y2="6.5"/>
 				</svg>
-				<span>Shore</span>
+				Shore
 			</div>
-			<div class="vic-box-val">{isShoreOn ? fmtV(acInV) : 'Disconnected'}</div>
-			{#if isShoreOn && acInW != null}
-				<div class="vic-box-sub">{fmtW(acInW)}</div>
+			{#if isShoreOn}
+				<div class="box-val">{r(acInV,1)} <span class="unit">V</span></div>
+				<div class="box-sub">{r(acInW,0)} W</div>
+			{:else}
+				<div class="box-state">Disconnected</div>
 			{/if}
 		</div>
 
+		<!-- Connector: Shore → Inverter -->
+		<div class="conn-h" class:conn-on={isShoreOn} class:arr-r={isShoreOn}></div>
+
 		<!-- Inverter / Charger -->
-		<div class="vic-box vic-box--center" class:vic-box--active={true}>
-			<div class="vic-box-header">
-				<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+		<div class="box box-center">
+			<div class="box-hdr">
+				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<rect x="2" y="3" width="12" height="10" rx="1.5"/>
-					<line x1="6" y1="6" x2="10" y2="6"/>
-					<line x1="6" y1="10" x2="10" y2="10"/>
-					<path d="M8 6 L5.5 8 L8 10"/>
-					<path d="M8 10 L10.5 8 L8 6"/>
+					<path d="M8 6 L5.5 8 L8 10 M8 6 L10.5 8 L8 10"/>
 				</svg>
-				<span>Inverter / Charger</span>
+				Inverter / Charger
 			</div>
-			<div class="vic-box-state">{inverterState}</div>
+			<div class="box-state">{inverterState}</div>
 		</div>
 
+		<!-- Connector: Inverter → AC Loads -->
+		<div class="conn-h" class:conn-on={hasLoad} class:arr-r={hasLoad}></div>
+
 		<!-- AC Loads -->
-		<div class="vic-box" class:vic-box--active={hasLoad}>
-			<div class="vic-box-header">
-				<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+		<div class="box" class:box-on={hasLoad}>
+			<div class="box-hdr">
+				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<circle cx="8" cy="8" r="6"/>
 					<line x1="5" y1="8" x2="11" y2="8"/>
 					<line x1="5" y1="5.5" x2="5" y2="10.5"/>
 					<line x1="11" y1="5.5" x2="11" y2="10.5"/>
 				</svg>
-				<span>AC Loads</span>
+				AC Loads
 			</div>
-			<div class="vic-box-val">
-				<span class="vic-num">{loadW != null ? Math.round(loadW) : '—'}</span><span class="vic-unit">W</span>
-			</div>
+			<div class="box-val">{r(loadW,0)} <span class="unit">W</span></div>
 		</div>
 
-		<!-- ── Row 2 ── -->
+		<!-- ══ Vertical connector row ══════════════════════════════════════════ -->
+		<div></div><!-- placeholder col 1 -->
+		<div></div><!-- placeholder col 2 -->
+		<!-- Vertical connector: Inverter ↕ Battery (col 3, center) -->
+		<div class="conn-v"
+			class:conn-on={isCharging || isDischarging}
+			class:arr-up={isDischarging}
+			class:arr-dn={isCharging}></div>
+		<div></div><!-- placeholder col 4 -->
+		<div></div><!-- placeholder col 5 -->
+
+		<!-- ══ Row 2 ══════════════════════════════════════════════════════════ -->
 
 		<!-- Solar yield -->
-		<div class="vic-box" class:vic-box--active={isSolarOn}>
-			<div class="vic-box-header">
-				<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+		<div class="box" class:box-on={isSolarOn}>
+			<div class="box-hdr">
+				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<circle cx="8" cy="8" r="3"/>
-					<line x1="8" y1="1" x2="8" y2="3"/>
-					<line x1="8" y1="13" x2="8" y2="15"/>
-					<line x1="1" y1="8" x2="3" y2="8"/>
-					<line x1="13" y1="8" x2="15" y2="8"/>
-					<line x1="3" y1="3" x2="4.5" y2="4.5"/>
-					<line x1="11.5" y1="11.5" x2="13" y2="13"/>
-					<line x1="13" y1="3" x2="11.5" y2="4.5"/>
-					<line x1="4.5" y1="11.5" x2="3" y2="13"/>
+					<line x1="8" y1="1" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="15"/>
+					<line x1="1" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="15" y2="8"/>
+					<line x1="3" y1="3" x2="4.5" y2="4.5"/><line x1="11.5" y1="11.5" x2="13" y2="13"/>
+					<line x1="13" y1="3" x2="11.5" y2="4.5"/><line x1="4.5" y1="11.5" x2="3" y2="13"/>
 				</svg>
-				<span>Solar yield</span>
+				Solar yield
 			</div>
-			<div class="vic-box-val">
-				<span class="vic-num">{solW != null ? Math.round(solW) : '—'}</span><span class="vic-unit">W</span>
-			</div>
-			<!-- Bar chart -->
+			<div class="box-val">{r(solW,0)} <span class="unit">W</span></div>
 			<div class="vic-bars">
 				{#each solarBars as bar}
-					<div class="vic-bar-wrap" title={bar.name}>
-						<div class="vic-bar" style="height:{Math.max(2, bar.pct)}%"></div>
+					<div class="vic-bar-wrap">
+						<div class="vic-bar" style="height:{bar.pct}%" title={bar.name}></div>
 					</div>
 				{/each}
 			</div>
 		</div>
 
-		<!-- Battery -->
-		<div class="vic-box vic-box--center vic-box--battery" class:vic-box--active={true}>
-			<div class="vic-box-header">
-				<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+		<!-- Connector: Solar → Battery -->
+		<div class="conn-h" class:conn-on={isSolarOn} class:arr-r={isSolarOn}></div>
+
+		<!-- Battery (main + secondary) -->
+		<div class="box box-center box-batt">
+			<div class="box-hdr">
+				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<rect x="1" y="4" width="12" height="8" rx="1.5"/>
-					<line x1="13" y1="7" x2="15" y2="7"/>
-					<line x1="13" y1="9" x2="15" y2="9"/>
+					<line x1="13" y1="7" x2="15" y2="7"/><line x1="13" y1="9" x2="15" y2="9"/>
 				</svg>
-				<span>Battery</span>
+				Battery
 			</div>
-			<div class="vic-batt-soc">
-				<span class="vic-num-lg">{batSoc != null ? Math.round(batSoc) : '—'}</span><span class="vic-unit-lg">%</span>
+			<!-- Main battery -->
+			<div class="batt-main">
+				<span class="batt-soc">{r(batSoc,0)}<span class="unit-lg">%</span></span>
+				<div class="batt-info">
+					<span class="batt-status">{battStatus}</span>
+					{#if fmtTTG(batTTG)}<span class="batt-ttg">{fmtTTG(batTTG)}</span>{/if}
+				</div>
 			</div>
-			<div class="vic-batt-status">{battStatus}</div>
-			{#if batTTG && batTTG > 0}
-				<div class="vic-batt-ttg">{fmtTTG(batTTG)}</div>
+			<div class="batt-metrics">
+				{#if batV != null}<span>{r(batV,2)} V</span>{/if}
+				{#if batA != null}<span>{r(batA,1)} A</span>{/if}
+				{#if batW != null}<span>{r(batW,0)} W</span>{/if}
+			</div>
+			<!-- Secondary batteries -->
+			{#if secBatts.length > 0}
+			<div class="batt-secondary">
+				{#each secBatts as b}
+				<div class="batt-sec-row">
+					<span class="batt-sec-name">{b.name}</span>
+					<span class="batt-sec-vals">
+						{#if b.soc != null}{Math.round(b.soc)}%{/if}
+						{#if b.v != null} · {b.v.toFixed(2)} V{/if}
+					</span>
+				</div>
+				{/each}
+			</div>
 			{/if}
-			<div class="vic-batt-metrics">
-				{#if batV != null}<span>{fmtV(batV)}</span>{/if}
-				{#if batA != null}<span>{fmtA(batA)}</span>{/if}
-				{#if batW != null}<span>{fmtW(batW)}</span>{/if}
-			</div>
 		</div>
 
+		<!-- Connector: Battery → DC Loads -->
+		<div class="conn-h" class:conn-on={hasDcLoad} class:arr-r={hasDcLoad}></div>
+
 		<!-- DC Loads -->
-		<div class="vic-box" class:vic-box--active={hasDcLoad}>
-			<div class="vic-box-header">
-				<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+		<div class="box" class:box-on={hasDcLoad}>
+			<div class="box-hdr">
+				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<circle cx="8" cy="8" r="6"/>
 					<line x1="5" y1="8" x2="11" y2="8"/>
 					<line x1="5" y1="6" x2="5" y2="10"/>
 					<line x1="8" y1="6" x2="8" y2="10"/>
 				</svg>
-				<span>DC Loads</span>
+				DC Loads
 			</div>
-			<div class="vic-box-val">
-				<span class="vic-num">{dcLoadsW != null ? dcLoadsW : '—'}</span><span class="vic-unit">W</span>
-			</div>
+			<div class="box-val">{dcLoadsW != null ? dcLoadsW : '—'} <span class="unit">W</span></div>
 		</div>
 
 	</div><!-- /vic-grid -->
-
-	<!-- ── SVG Flow Lines ──────────────────────────────────────────────────── -->
-	<!-- Coordinates based on the 3×2 grid cell centres (responsive via viewBox) -->
-	<svg class="vic-flow" viewBox="0 0 300 200" preserveAspectRatio="none">
-
-		<!-- Shore → Inverter (top row, horizontal) -->
-		<line class="vic-line" class:vic-line--on={isShoreOn}
-			x1="75" y1="50" x2="125" y2="50"/>
-		{#if isShoreOn}
-			<polygon class="vic-arrow vic-arrow--on" points="125,47 131,50 125,53"/>
-		{/if}
-
-		<!-- Inverter → AC Loads (top row) -->
-		<line class="vic-line" class:vic-line--on={hasLoad}
-			x1="175" y1="50" x2="225" y2="50"/>
-		{#if hasLoad}
-			<polygon class="vic-arrow vic-arrow--on" points="225,47 231,50 225,53"/>
-		{/if}
-
-		<!-- Inverter ↕ Battery (vertical centre) -->
-		<line class="vic-line" class:vic-line--on={isCharging || isDischarging}
-			x1="150" y1="75" x2="150" y2="125"/>
-		{#if isDischarging}
-			<!-- Arrow pointing UP (battery → inverter) -->
-			<polygon class="vic-arrow vic-arrow--on" points="147,82 150,75 153,82"/>
-		{:else if isCharging}
-			<!-- Arrow pointing DOWN (inverter → battery) -->
-			<polygon class="vic-arrow vic-arrow--on" points="147,118 150,125 153,118"/>
-		{/if}
-
-		<!-- Solar → Battery (bottom row) -->
-		<line class="vic-line" class:vic-line--on={isSolarOn}
-			x1="75" y1="150" x2="125" y2="150"/>
-		{#if isSolarOn}
-			<polygon class="vic-arrow vic-arrow--on" points="125,147 131,150 125,153"/>
-		{/if}
-
-		<!-- Battery → DC Loads (bottom row) -->
-		<line class="vic-line" class:vic-line--on={hasDcLoad}
-			x1="175" y1="150" x2="225" y2="150"/>
-		{#if hasDcLoad}
-			<polygon class="vic-arrow vic-arrow--on" points="225,147 231,150 225,153"/>
-		{/if}
-	</svg>
-
 </div>
 
 <style>
 	/* ── Card ── */
-	.vic-card {
-		position: relative;
+	.vic {
 		background: #081c2e;
 		border-radius: var(--r, 10px);
-		border: 1px solid rgba(255,255,255,0.06);
-		padding: 12px;
-		overflow: hidden;
+		border: 1px solid rgba(255,255,255,0.07);
+		padding: 12px 14px;
 	}
-	.vic-title {
-		font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.35);
-		text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;
+	.vic-header {
+		font-size: 11px; font-weight: 700;
+		color: rgba(255,255,255,0.3);
+		text-transform: uppercase; letter-spacing: 1px;
+		margin-bottom: 12px;
 	}
 
-	/* ── Grid ── */
+	/* ── Grid: 5 cols (box · conn · box · conn · box), 3 rows (row1 · vert · row2) ── */
 	.vic-grid {
 		display: grid;
-		grid-template-columns: 1fr 1.2fr 1fr;
-		grid-template-rows: auto auto;
-		gap: 6px;
-		position: relative;
-		z-index: 1;
+		grid-template-columns: 1fr 28px 1fr 28px 1fr;
+		grid-template-rows: auto 18px auto;
+		align-items: stretch;
 	}
 
 	/* ── Boxes ── */
-	.vic-box {
+	.box {
 		background: #0d2d4a;
-		border: 1px solid rgba(100,160,220,0.2);
+		border: 1px solid rgba(100,160,220,0.18);
 		border-radius: 6px;
-		padding: 8px 9px;
-		min-height: 72px;
-		display: flex; flex-direction: column; gap: 2px;
+		padding: 10px 12px;
+		min-height: 90px;
+		display: flex; flex-direction: column; gap: 3px;
 	}
-	.vic-box--active  { background: #1565c0; border-color: rgba(100,160,255,0.45); }
-	.vic-box--battery { min-height: 100px; }
-	.vic-box--center  { border-color: rgba(100,180,255,0.5); }
+	.box-on     { background: #1565c0; border-color: rgba(120,180,255,0.5); }
+	.box-center { border-color: rgba(120,180,255,0.4); }
+	.box-batt   { min-height: 110px; }
 
-	.vic-box-header {
+	.box-hdr {
 		display: flex; align-items: center; gap: 5px;
-		font-size: 10px; color: rgba(255,255,255,0.7);
-		font-weight: 600; letter-spacing: 0.2px;
-		margin-bottom: 4px;
+		font-size: 10px; color: rgba(255,255,255,0.65);
+		font-weight: 600; letter-spacing: 0.3px; margin-bottom: 3px;
 	}
-	.vic-box-val {
-		font-size: 18px; font-weight: 300; color: #fff;
-		font-variant-numeric: tabular-nums; line-height: 1.1;
+	.box-val {
+		font-size: 20px; font-weight: 300; color: #fff;
+		font-variant-numeric: tabular-nums; line-height: 1.2;
 	}
-	.vic-box-sub { font-size: 10px; color: rgba(255,255,255,0.55); }
-	.vic-box-state {
-		font-size: 18px; font-weight: 300; color: #fff;
-		line-height: 1.2;
+	.box-state {
+		font-size: 18px; font-weight: 300; color: #fff; line-height: 1.2;
 	}
+	.box-sub { font-size: 11px; color: rgba(255,255,255,0.55); }
+	.unit    { font-size: 14px; color: rgba(255,255,255,0.5); }
 
-	/* Number + unit formatting (matches Victron: large number, smaller grey unit) */
-	.vic-num  { font-size: 20px; font-weight: 300; }
-	.vic-unit { font-size: 14px; color: rgba(255,255,255,0.55); margin-left: 1px; }
-	.vic-num-lg  { font-size: 26px; font-weight: 300; }
-	.vic-unit-lg { font-size: 18px; color: rgba(255,255,255,0.55); margin-left: 1px; }
-
-	/* Battery specific */
-	.vic-batt-soc    { display: flex; align-items: baseline; line-height: 1; }
-	.vic-batt-status { font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 1px; }
-	.vic-batt-ttg    { font-size: 12px; color: rgba(255,255,255,0.65); }
-	.vic-batt-metrics {
-		display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;
-		font-size: 11px; color: rgba(255,255,255,0.75);
+	/* ── Battery specific ── */
+	.batt-main  { display: flex; align-items: center; gap: 8px; }
+	.batt-soc   { font-size: 28px; font-weight: 300; color: #fff; font-variant-numeric: tabular-nums; line-height: 1; }
+	.unit-lg    { font-size: 18px; color: rgba(255,255,255,0.5); }
+	.batt-info  { display: flex; flex-direction: column; gap: 1px; }
+	.batt-status{ font-size: 11px; color: rgba(255,255,255,0.7); }
+	.batt-ttg   { font-size: 12px; color: rgba(255,255,255,0.6); }
+	.batt-metrics {
+		display: flex; gap: 8px; flex-wrap: wrap;
+		font-size: 11px; color: rgba(255,255,255,0.7);
 		font-variant-numeric: tabular-nums;
 	}
+	/* Secondary batteries */
+	.batt-secondary {
+		margin-top: 6px;
+		padding-top: 6px;
+		border-top: 1px solid rgba(255,255,255,0.1);
+		display: flex; flex-direction: column; gap: 3px;
+	}
+	.batt-sec-row {
+		display: flex; justify-content: space-between; align-items: center;
+		gap: 6px;
+	}
+	.batt-sec-name { font-size: 10px; color: rgba(255,255,255,0.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.batt-sec-vals { font-size: 10px; color: rgba(255,255,255,0.75); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 
-	/* Solar bar chart */
+	/* ── Solar bar chart ── */
 	.vic-bars {
 		display: flex; align-items: flex-end; gap: 2px;
-		height: 26px; margin-top: 6px;
+		height: 28px; margin-top: 6px;
 	}
 	.vic-bar-wrap { flex: 1; height: 100%; display: flex; align-items: flex-end; }
 	.vic-bar {
-		width: 100%; min-height: 2px;
-		background: rgba(100,180,255,0.6);
+		width: 100%;
+		background: rgba(100,180,255,0.55);
 		border-radius: 2px 2px 0 0;
-		transition: height 0.3s ease;
+		min-height: 2px;
 	}
-	.vic-box--active .vic-bar { background: rgba(200,230,255,0.7); }
+	.box-on .vic-bar { background: rgba(200,230,255,0.7); }
 
-	/* ── SVG Flow Lines ── */
-	.vic-flow {
-		position: absolute;
-		inset: 0;
-		width: 100%; height: 100%;
-		pointer-events: none;
-		z-index: 0;
+	/* ── Horizontal connectors ── */
+	.conn-h {
+		display: flex; align-items: center; position: relative;
 	}
-	.vic-line {
-		stroke: rgba(255,255,255,0.1);
-		stroke-width: 1.5;
-		stroke-dasharray: none;
+	/* The line */
+	.conn-h::before {
+		content: '';
+		position: absolute; left: 0; right: 0; top: 50%;
+		height: 1.5px;
+		background: rgba(255,255,255,0.1);
+		transform: translateY(-50%);
 	}
-	.vic-line--on { stroke: rgba(100,170,255,0.75); }
-	.vic-arrow { fill: rgba(255,255,255,0.08); }
-	.vic-arrow--on { fill: rgba(140,200,255,0.9); }
+	.conn-h.conn-on::before { background: rgba(100,170,255,0.8); }
+	/* Right-pointing arrow */
+	.conn-h.arr-r::after {
+		content: '';
+		position: absolute; right: 1px;
+		width: 0; height: 0;
+		border-top: 5px solid transparent;
+		border-bottom: 5px solid transparent;
+		border-left: 7px solid rgba(140,200,255,0.9);
+	}
+
+	/* ── Vertical connector ── */
+	.conn-v {
+		grid-column: 3;
+		display: flex; justify-content: center; position: relative;
+	}
+	/* The line */
+	.conn-v::before {
+		content: '';
+		position: absolute; top: 0; bottom: 0; left: 50%;
+		width: 1.5px;
+		background: rgba(255,255,255,0.1);
+		transform: translateX(-50%);
+	}
+	.conn-v.conn-on::before { background: rgba(100,170,255,0.8); }
+	/* Arrow up (discharging: battery → inverter) */
+	.conn-v.arr-up::after {
+		content: '';
+		position: absolute; top: 1px;
+		width: 0; height: 0;
+		border-left: 5px solid transparent;
+		border-right: 5px solid transparent;
+		border-bottom: 7px solid rgba(140,200,255,0.9);
+	}
+	/* Arrow down (charging: inverter → battery) */
+	.conn-v.arr-dn::after {
+		content: '';
+		position: absolute; bottom: 1px;
+		width: 0; height: 0;
+		border-left: 5px solid transparent;
+		border-right: 5px solid transparent;
+		border-top: 7px solid rgba(140,200,255,0.9);
+	}
 </style>
