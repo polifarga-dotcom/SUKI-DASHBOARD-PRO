@@ -2,7 +2,6 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 
-	// ── Types ─────────────────────────────────────────────────────────────────
 	type TrackPoint = {
 		lat: number; lon: number; logged_at: string;
 		sog_kn: number | null; wind_speed_kn: number | null;
@@ -17,7 +16,6 @@
 		generated_at: string;
 	};
 
-	// ── State ─────────────────────────────────────────────────────────────────
 	let data            = $state<TrackerData | null>(null);
 	let error           = $state<string | null>(null);
 	let loading         = $state(true);
@@ -27,7 +25,6 @@
 	let passwordInput   = $state('');
 	let passwordWrong   = $state(false);
 	let passwordChecking = $state(false);
-	// Stored hashed password so we include it in refresh calls
 	let sessionPw       = $state<string | null>(null);
 
 	let L: any = null;
@@ -35,54 +32,57 @@
 	let boatMarker: any  = null;
 	let trackLine: any   = null;
 	let refreshTimer: ReturnType<typeof setInterval>;
-	let lastSlug = '';
 
 	const API = `https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/public-boat-tracker`;
 
-	// ── Helpers ───────────────────────────────────────────────────────────────
 	const CARDS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-	function cardinal(deg: number | null): string {
-		if (deg == null) return '—';
-		return CARDS[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+	function cardinal(deg: number | null) { return deg != null ? CARDS[Math.round(((deg%360)+360)%360/22.5)%16] : '—'; }
+	function fmt1(v: number | null, u = '') { return v != null ? `${v.toFixed(1)}${u}` : '—'; }
+	function fmt0(v: number | null, u = '') { return v != null ? `${v.toFixed(0)}${u}` : '—'; }
+
+	function beaufortLabel(kn: number | null): string {
+		if (kn == null) return '';
+		if (kn < 1)  return 'Calm';
+		if (kn < 4)  return 'Light air';
+		if (kn < 7)  return 'Light breeze';
+		if (kn < 11) return 'Gentle breeze';
+		if (kn < 17) return 'Moderate breeze';
+		if (kn < 22) return 'Fresh breeze';
+		if (kn < 28) return 'Strong breeze';
+		if (kn < 34) return 'Near gale';
+		if (kn < 41) return 'Gale';
+		return 'Severe gale+';
 	}
-	function fmt1(v: number | null, unit = ''): string { return v != null ? `${v.toFixed(1)}${unit}` : '—'; }
-	function fmt0(v: number | null, unit = ''): string { return v != null ? `${v.toFixed(0)}${unit}` : '—'; }
-	function fmtPct(v: number | null): string { return v != null ? `${(v * 100).toFixed(0)}%` : '—'; }
-	function fmtAgo(iso: string | null): string {
+	function beaufortColor(kn: number | null) {
+		if (kn == null) return '#64748b';
+		if (kn < 7)  return '#22d3ee';
+		if (kn < 17) return '#4ade80';
+		if (kn < 28) return '#facc15';
+		if (kn < 41) return '#f97316';
+		return '#f43f5e';
+	}
+	function sogColor(kn: number | null) {
+		if (kn == null || kn < 0.5) return '#475569';
+		if (kn < 3)  return '#38bdf8';
+		if (kn < 6)  return '#34d399';
+		if (kn < 9)  return '#a3e635';
+		return '#fb923c';
+	}
+	function fmtAgo(iso: string | null) {
 		if (!iso) return '—';
 		const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
-		if (s < 60)   return `${s}s ago`;
-		if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-		return `${Math.floor(s / 3600)}h ago`;
+		return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s/60)}m ago` : `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m ago`;
 	}
-	function fmtDuration(iso: string): string {
+	function fmtDuration(iso: string) {
 		const ms = Date.now() - new Date(iso).getTime();
 		const h  = Math.floor(ms / 3_600_000);
 		const m  = Math.floor((ms % 3_600_000) / 60_000);
-		return `${h}h ${m}m`;
-	}
-	function beaufortColor(kn: number | null): string {
-		if (kn == null) return '#6b7280';
-		if (kn < 7)  return '#22c55e';
-		if (kn < 17) return '#86efac';
-		if (kn < 28) return '#fbbf24';
-		if (kn < 41) return '#f97316';
-		return '#ef4444';
-	}
-	function sogColor(kn: number | null): string {
-		if (kn == null) return '#3b82f6';
-		if (kn < 2)  return '#6b7280';
-		if (kn < 4)  return '#3b82f6';
-		if (kn < 6)  return '#22c55e';
-		if (kn < 8)  return '#fbbf24';
-		return '#f97316';
+		return h > 0 ? `${h}h ${m}m` : `${m}m`;
 	}
 
-	// ── Fetch data ────────────────────────────────────────────────────────────
-	// SHA-256 hash (same as settings page, so comparison works on server)
 	async function sha256(text: string): Promise<string> {
 		const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-		return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+		return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 	}
 
 	async function fetchData(pw?: string | null) {
@@ -95,540 +95,515 @@
 			if (res.status === 401) {
 				passwordRequired = true;
 				passwordWrong    = json.wrong_password ?? false;
-				loading = false;
-				return;
+				loading = false; return;
 			}
-			if (!res.ok) { error = json.error ?? 'Failed to load'; loading = false; return; }
-			data             = json as TrackerData;
-			error            = null;
-			loading          = false;
-			passwordRequired = false;
+			if (!res.ok) { error = json.error ?? 'Not found'; loading = false; return; }
+			data = json as TrackerData;
+			error = null; loading = false; passwordRequired = false;
 			if (mapReady) updateMap();
-		} catch (e: any) {
-			error   = 'Network error — retrying…';
-			loading = false;
-		}
+		} catch { error = 'Network error — retrying…'; loading = false; }
 	}
 
 	async function submitPassword() {
 		if (!passwordInput.trim()) return;
-		passwordChecking = true;
-		passwordWrong    = false;
-		// Hash before sending — password never travels in plaintext
+		passwordChecking = true; passwordWrong = false;
 		const hashed = await sha256(passwordInput.trim());
-		sessionPw    = hashed;
+		sessionPw = hashed;
 		await fetchData(hashed);
 		passwordChecking = false;
 		if (!passwordWrong) passwordInput = '';
 	}
 
-	// ── Map ───────────────────────────────────────────────────────────────────
 	async function initMap() {
 		if (!mapEl || map) return;
 		const mod = await import('leaflet');
 		L = mod.default ?? mod;
-
 		const lat = data?.telemetry?.nav_lat ?? data?.track?.at(-1)?.lat ?? 39;
 		const lon = data?.telemetry?.nav_lon ?? data?.track?.at(-1)?.lon ?? 20;
+		map = L.map(mapEl, { center: [lat, lon], zoom: 11, zoomControl: false });
 
-		map = L.map(mapEl, {
-			center: [lat, lon], zoom: 11,
-			zoomControl: false,
-		});
-		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-			maxZoom: 19, attribution: '© OpenStreetMap',
+		// CartoDB Dark Matter — monochrome, minimal, modern
+		L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
+			attribution: '© CartoDB · OSM',
+			subdomains:  'abcd',
+			maxZoom:     19,
 		}).addTo(map);
+
+		// OpenSeaMap nautical marks on top (lighter opacity on dark base)
 		L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
-			maxZoom: 18, opacity: 0.9,
+			maxZoom: 18, opacity: 0.5,
 		}).addTo(map);
-		L.control.zoom({ position: 'bottomright' }).addTo(map);
 
+		L.control.zoom({ position: 'bottomright' }).addTo(map);
 		mapReady = true;
 		updateMap();
 	}
 
 	function updateMap() {
 		if (!map || !L || !data) return;
-		const t = data.telemetry;
-
-		// ── Track polyline (color-coded by SOG) ───────────────────────────────
-		// Build segments colored by speed
+		const t   = data.telemetry;
 		const pts = data.track.filter(p => p.lat && p.lon);
+
+		// Track — gradient line (cyan accent on dark map)
 		if (trackLine) { trackLine.remove(); trackLine = null; }
 		if (pts.length > 1) {
-			// Simple single-color polyline for perf; fancy multi-color below
-			const latlngs = pts.map(p => [p.lat, p.lon]);
-			trackLine = L.polyline(latlngs, {
-				color: '#00c8ff', weight: 2.5, opacity: 0.7,
-				dashArray: undefined,
+			trackLine = L.polyline(pts.map(p => [p.lat, p.lon]), {
+				color: '#0ea5e9', weight: 2.5, opacity: 0.85,
+				lineCap: 'round', lineJoin: 'round',
 			}).addTo(map);
 		}
 
-		// ── Boat marker ───────────────────────────────────────────────────────
-		const hdgDeg = t?.nav_hdg_rad != null ? t.nav_hdg_rad * 180 / Math.PI : 0;
-		const sogKn  = t?.nav_sog_ms  != null ? t.nav_sog_ms  * 1.94384 : null;
-		const boatColor = sogColor(sogKn);
+		// Boat icon — minimal, heading-up
+		const hdgDeg  = t?.nav_hdg_rad != null ? t.nav_hdg_rad * 180 / Math.PI : 0;
+		const sogKn   = t?.nav_sog_ms  != null ? t.nav_sog_ms  * 1.94384 : null;
+		const col     = sogColor(sogKn);
 
-		const boatHtml = `<div style="
-			width:32px;height:36px;
-			transform:rotate(${hdgDeg}deg);
-			transform-origin:50% 50%;
-			filter:drop-shadow(0 2px 6px rgba(0,0,0,.7));
-		">
-			<svg viewBox="0 0 32 36" width="32" height="36" style="overflow:visible">
-				<path d="M16 2 L26 16 L26 32 L6 32 L6 16 Z"
-					fill="${boatColor}" stroke="#0a1929" stroke-width="1.5" stroke-linejoin="round"/>
-				<line x1="16" y1="6" x2="16" y2="22" stroke="#0a1929" stroke-width="1.5" stroke-linecap="round"/>
-				<circle cx="16" cy="2" r="1.8" fill="#ffffff" stroke="#0a1929" stroke-width="1"/>
-			</svg>
-		</div>`;
-
-		const bIcon = L.divIcon({ className: '', iconSize: [32, 36], iconAnchor: [16, 18], html: boatHtml });
+		const boatSvg = `<div style="width:36px;height:36px;transform:rotate(${hdgDeg}deg);transform-origin:50% 50%;filter:drop-shadow(0 4px 12px rgba(0,0,0,.8))">
+			<svg viewBox="0 0 36 36" width="36" height="36">
+				<path d="M18 2 L29 18 L29 33 L7 33 L7 18 Z" fill="${col}" stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
+				<line x1="18" y1="7" x2="18" y2="23" stroke="rgba(0,0,0,0.4)" stroke-width="1.5" stroke-linecap="round"/>
+				<circle cx="18" cy="2" r="2" fill="white" opacity="0.9"/>
+			</svg></div>`;
+		const bIcon = L.divIcon({ className:'', iconSize:[36,36], iconAnchor:[18,18], html: boatSvg });
 
 		if (t?.nav_lat != null && t?.nav_lon != null) {
 			if (!boatMarker) {
-				boatMarker = L.marker([t.nav_lat, t.nav_lon], { icon: bIcon, zIndexOffset: 200 }).addTo(map);
-				map.setView([t.nav_lat, t.nav_lon], 11);
+				boatMarker = L.marker([t.nav_lat, t.nav_lon], { icon: bIcon, zIndexOffset: 500 }).addTo(map);
+				map.setView([t.nav_lat, t.nav_lon], 12);
 			} else {
 				boatMarker.setLatLng([t.nav_lat, t.nav_lon]);
 				boatMarker.setIcon(bIcon);
 			}
-		} else if (pts.length > 0) {
+		} else if (pts.length > 0 && !boatMarker) {
 			const last = pts.at(-1)!;
-			if (!boatMarker) {
-				boatMarker = L.marker([last.lat, last.lon], { icon: bIcon, zIndexOffset: 200 }).addTo(map);
-				map.setView([last.lat, last.lon], 11);
-			}
+			boatMarker = L.marker([last.lat, last.lon], { icon: bIcon, zIndexOffset: 500 }).addTo(map);
+			map.setView([last.lat, last.lon], 12);
 		}
 	}
 
-	// ── Lifecycle ─────────────────────────────────────────────────────────────
 	onMount(async () => {
 		await fetchData();
 		await initMap();
 		refreshTimer = setInterval(fetchData, 30_000);
 	});
+	onDestroy(() => { clearInterval(refreshTimer); map?.remove(); });
 
-	onDestroy(() => {
-		clearInterval(refreshTimer);
-		map?.remove();
-	});
+	// Derived values
+	const t       = $derived(data?.telemetry ?? null);
+	const tws     = $derived(data?.derived?.tws_kn ?? null);
+	const twd     = $derived(data?.derived?.twd_deg ?? null);
+	const sog     = $derived(t?.nav_sog_ms != null ? +(t.nav_sog_ms * 1.94384).toFixed(1) : null);
+	const hdgDeg  = $derived(t?.nav_hdg_rad != null ? Math.round(t.nav_hdg_rad * 180 / Math.PI) : null);
+	const aws     = $derived(t?.env_aws_ms  != null ? +(t.env_aws_ms  * 1.94384).toFixed(1) : null);
+	const awaRaw  = $derived(t?.env_awa_rad != null ? +(t.env_awa_rad * 180 / Math.PI) : null);
+	const baro    = $derived(t?.env_pressure_pa != null ? Math.round(t.env_pressure_pa / 100) : null);
+	const depth   = $derived(t?.env_depth_m ?? null);
+	const battSoc = $derived(t?.batt_main_soc != null ? Math.round(t.batt_main_soc * 100) : null);
+	const solar   = $derived(t?.solar_total_w ?? null);
+	const engOn   = $derived((t?.eng_rpm ?? 0) > 0 || (t?.eng_sb_rpm ?? 0) > 0);
+	const isStale = $derived(t?.updated_at != null && (Date.now() - new Date(t.updated_at as string).getTime()) > 300_000);
 
-	// ── Derived display values ────────────────────────────────────────────────
-	const t        = $derived(data?.telemetry ?? null);
-	const tws      = $derived(data?.derived?.tws_kn ?? null);
-	const twd      = $derived(data?.derived?.twd_deg ?? null);
-	const sog      = $derived(t?.nav_sog_ms != null ? +(t.nav_sog_ms * 1.94384).toFixed(1) : null);
-	const hdgDeg   = $derived(t?.nav_hdg_rad != null ? +(t.nav_hdg_rad * 180 / Math.PI).toFixed(0) : null);
-	const aws      = $derived(t?.env_aws_ms  != null ? +(t.env_aws_ms  * 1.94384).toFixed(1) : null);
-	const awaRaw   = $derived(t?.env_awa_rad != null ? +(t.env_awa_rad  * 180 / Math.PI).toFixed(0) : null);
-	const awaStr   = $derived(awaRaw != null ? `${Math.abs(awaRaw)}° ${awaRaw < 0 ? 'P' : 'S'}` : '—');
-	const baro     = $derived(t?.env_pressure_pa != null ? +(t.env_pressure_pa / 100).toFixed(0) : null);
-	const depth    = $derived(t?.env_depth_m ?? null);
-	const battSoc  = $derived(t?.batt_main_soc != null ? Math.round(t.batt_main_soc * 100) : null);
-	const solar    = $derived(t?.solar_total_w ?? null);
-	const engOn    = $derived((t?.eng_rpm ?? 0) > 0 || (t?.eng_sb_rpm ?? 0) > 0);
-	const ageStr   = $derived(fmtAgo(t?.updated_at ?? null));
-	const isStale  = $derived(t?.updated_at != null && (Date.now() - new Date(t.updated_at as string).getTime()) > 300_000);
+	// Wind compass SVG path helpers
+	const windAngle = $derived(twd ?? 0);
+	// Arrow endpoint in the compass (r=30 from center 44,44)
+	const wx = $derived(44 + 30 * Math.sin(windAngle * Math.PI / 180));
+	const wy = $derived(44 - 30 * Math.cos(windAngle * Math.PI / 180));
 
-	// Share URL
+	let copied = $state(false);
 	function copyLink() {
 		navigator.clipboard.writeText(window.location.href).catch(() => {});
 		copied = true; setTimeout(() => { copied = false; }, 2000);
 	}
-	let copied = $state(false);
 </script>
 
 <svelte:head>
-	<title>{data?.boat?.name ?? 'Boat Tracker'} · SUKI Live Tracking</title>
-	<meta name="description" content="Live position and telemetry for {data?.boat?.name ?? 'this vessel'}">
+	<title>{data?.boat?.name ?? 'Live Tracker'} · SUKI</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 </svelte:head>
 
-<div class="tracker">
+<div class="root">
 
-	{#if loading}
-	<!-- Loading -->
-	<div class="splash">
-		<div class="splash-icon">⚓</div>
-		<div class="splash-text">Loading tracker…</div>
+{#if loading}
+<div class="gate">
+	<div class="gate-spinner"></div>
+	<p class="gate-label">Loading tracker…</p>
+</div>
+
+{:else if passwordRequired}
+<div class="gate">
+	<svg class="gate-lock" viewBox="0 0 48 48" fill="none">
+		<rect x="10" y="22" width="28" height="20" rx="4" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
+		<path d="M16 22v-6a8 8 0 1 1 16 0v6" stroke="rgba(255,255,255,0.4)" stroke-width="2" stroke-linecap="round"/>
+		<circle cx="24" cy="32" r="3" fill="rgba(255,255,255,0.5)"/>
+	</svg>
+	<h2 class="gate-title">Password required</h2>
+	<p class="gate-sub">This tracking page is private.</p>
+	<div class="gate-form">
+		<input class="gate-input" type="password" bind:value={passwordInput}
+			placeholder="Enter password"
+			onkeydown={(e) => e.key === 'Enter' && submitPassword()}
+			autofocus/>
+		<button class="gate-btn" onclick={submitPassword}
+			disabled={passwordChecking || !passwordInput.trim()}>
+			{passwordChecking ? '…' : 'Continue'}
+		</button>
+	</div>
+	{#if passwordWrong}
+	<p class="gate-error">Incorrect password</p>
+	{/if}
+</div>
+
+{:else if error}
+<div class="gate">
+	<div class="gate-icon">⚓</div>
+	<h2 class="gate-title">Tracker not found</h2>
+	<p class="gate-sub">{error}</p>
+</div>
+
+{:else if data}
+
+<!-- ── Map (full screen background) ────────────────────────────────────── -->
+<div bind:this={mapEl} class="map-bg"></div>
+
+<!-- ── Top pill ─────────────────────────────────────────────────────────── -->
+<header class="pill-bar">
+	<div class="pill-name">{data.boat.name}</div>
+	<div class="pill-status" class:stale={isStale}>
+		<span class="pill-dot" class:stale={isStale}></span>
+		{isStale ? 'Stale' : 'Live'} · {fmtAgo(t?.updated_at ?? null)}
+	</div>
+	{#if data.trip}
+	<div class="pill-trip">
+		{data.trip.from_port ? data.trip.from_port + ' · ' : ''}{fmt1(data.trip.total_nm)} nm · {fmtDuration(data.trip.started_at)}
+	</div>
+	{/if}
+	<button class="pill-share" onclick={copyLink}>{copied ? '✓' : '↑'}</button>
+</header>
+
+<!-- ── Side panel (glass) ───────────────────────────────────────────────── -->
+<aside class="glass-panel">
+
+	<!-- Speed block -->
+	<div class="speed-block">
+		<div class="speed-num" style="color:{sogColor(sog)}">{sog ?? '—'}</div>
+		<div class="speed-unit">knots SOG</div>
+		<div class="speed-meta">
+			{hdgDeg != null ? `HDG ${hdgDeg}°` : ''}
+			{engOn ? ' · Motor' : sog != null && sog > 0.5 ? ' · Sailing' : ''}
+		</div>
 	</div>
 
-	{:else if passwordRequired}
-	<!-- Password gate -->
-	<div class="splash">
-		<div class="splash-icon">🔒</div>
-		<div class="splash-title">Password required</div>
-		<div class="splash-sub">This tracking page is password-protected. Enter the password to continue.</div>
-		<div class="pw-form">
-			<input class="pw-input" type="password" bind:value={passwordInput}
-				placeholder="Enter password…"
-				onkeydown={(e) => { if (e.key === 'Enter') submitPassword(); }}
-				autofocus/>
-			<button class="pw-btn" onclick={submitPassword} disabled={passwordChecking || !passwordInput.trim()}>
-				{passwordChecking ? 'Checking…' : 'View tracker'}
-			</button>
+	<div class="divider"></div>
+
+	<!-- Wind block -->
+	<div class="wind-block">
+		<div class="wind-top-row">
+			<div>
+				<div class="wind-big" style="color:{beaufortColor(tws)}">{tws ?? '—'}</div>
+				<div class="wind-unit">kn TWS</div>
+				<div class="wind-label">{beaufortLabel(tws)}</div>
+			</div>
+			<!-- Compass ring -->
+			<svg class="compass-svg" viewBox="0 0 88 88">
+				<!-- Outer ring -->
+				<circle cx="44" cy="44" r="40" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
+				<!-- Tick marks -->
+				{#each [0,45,90,135,180,225,270,315] as a}
+				<line
+					x1={44 + 36*Math.sin(a*Math.PI/180)}
+					y1={44 - 36*Math.cos(a*Math.PI/180)}
+					x2={44 + 40*Math.sin(a*Math.PI/180)}
+					y2={44 - 40*Math.cos(a*Math.PI/180)}
+					stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+				{/each}
+				<!-- Cardinal labels -->
+				{#each [['N',0],['E',90],['S',180],['W',270]] as [lbl, ang]}
+				<text
+					x={44 + 28*Math.sin((ang as number)*Math.PI/180)}
+					y={44 - 28*Math.cos((ang as number)*Math.PI/180) + 3.5}
+					text-anchor="middle" font-size="7"
+					fill="rgba(255,255,255,0.3)" font-family="system-ui">{lbl}</text>
+				{/each}
+				<!-- Wind direction arrow -->
+				{#if twd != null}
+				<!-- Tail (where wind comes FROM) -->
+				<circle
+					cx={44 + 32*Math.sin((windAngle+180)*Math.PI/180)}
+					cy={44 - 32*Math.cos((windAngle+180)*Math.PI/180)}
+					r="2" fill={beaufortColor(tws)} opacity="0.4"/>
+				<!-- Shaft -->
+				<line
+					x1={44 + 24*Math.sin((windAngle+180)*Math.PI/180)}
+					y1={44 - 24*Math.cos((windAngle+180)*Math.PI/180)}
+					x2={wx} y2={wy}
+					stroke={beaufortColor(tws)} stroke-width="2" stroke-linecap="round"/>
+				<!-- Arrow head (points TO where wind goes) -->
+				<polygon
+					points="{wx},{wy}
+						{44+22*Math.sin((windAngle-15)*Math.PI/180)},{44-22*Math.cos((windAngle-15)*Math.PI/180)}
+						{44+22*Math.sin((windAngle+15)*Math.PI/180)},{44-22*Math.cos((windAngle+15)*Math.PI/180)}"
+					fill={beaufortColor(tws)}/>
+				<!-- Direction label in center -->
+				<text x="44" y="47.5" text-anchor="middle" font-size="9"
+					fill="rgba(255,255,255,0.6)" font-family="system-ui" font-weight="600">
+					{cardinal(twd)}
+				</text>
+				{:else}
+				<text x="44" y="47.5" text-anchor="middle" font-size="9"
+					fill="rgba(255,255,255,0.2)" font-family="system-ui">—</text>
+				{/if}
+			</svg>
 		</div>
-		{#if passwordWrong}
-		<div class="pw-error">Incorrect password. Please try again.</div>
+		{#if aws != null || awaRaw != null}
+		<div class="wind-apparent">
+			{#if aws != null}<span>AWS <b>{aws}</b> kn</span>{/if}
+			{#if awaRaw != null}<span>AWA <b>{Math.abs(awaRaw).toFixed(0)}°{awaRaw < 0 ? 'P':'S'}</b></span>{/if}
+		</div>
 		{/if}
 	</div>
 
-	{:else if error}
-	<!-- Error -->
-	<div class="splash">
-		<div class="splash-icon">⚓</div>
-		<div class="splash-title">{error}</div>
-		<div class="splash-sub">The owner may not have enabled public tracking for this boat.</div>
+	<div class="divider"></div>
+
+	<!-- Stats grid -->
+	<div class="stats-grid">
+		{#if baro != null}
+		<div class="stat-item">
+			<div class="stat-val">{baro}</div>
+			<div class="stat-key">hPa</div>
+		</div>
+		{/if}
+		{#if depth != null}
+		<div class="stat-item">
+			<div class="stat-val">{depth.toFixed(1)}</div>
+			<div class="stat-key">m depth</div>
+		</div>
+		{/if}
+		{#if battSoc != null}
+		<div class="stat-item">
+			<div class="stat-val" style="color:{battSoc>50?'#4ade80':battSoc>20?'#facc15':'#f87171'}">{battSoc}%</div>
+			<div class="stat-key">battery</div>
+		</div>
+		{/if}
+		{#if solar != null && solar > 0}
+		<div class="stat-item">
+			<div class="stat-val">{Math.round(solar)}</div>
+			<div class="stat-key">W solar</div>
+		</div>
+		{/if}
+		{#if data.trip?.max_sog_kn != null}
+		<div class="stat-item">
+			<div class="stat-val">{data.trip.max_sog_kn.toFixed(1)}</div>
+			<div class="stat-key">kn max</div>
+		</div>
+		{/if}
+		{#if (t?.tank_fw ?? null) != null}
+		<div class="stat-item">
+			<div class="stat-val">{Math.round((t!.tank_fw as number)*100)}%</div>
+			<div class="stat-key">fresh H₂O</div>
+		</div>
+		{/if}
 	</div>
 
-	{:else if data}
-	<!-- ── Top bar ─────────────────────────────────────────────────────────── -->
-	<header class="topbar">
-		<div class="topbar-left">
-			<span class="boat-name">⚓ {data.boat.name}</span>
-			<span class="age-badge" class:stale={isStale}>
-				{isStale ? '⚠ stale' : '● live'} · {ageStr}
-			</span>
-		</div>
-		<div class="topbar-right">
-			{#if data.trip}
-			<span class="trip-badge">
-				{data.trip.from_port ? `From ${data.trip.from_port}` : 'Underway'} ·
-				{data.trip.total_nm ? `${data.trip.total_nm.toFixed(1)} nm` : ''}
-				· {fmtDuration(data.trip.started_at)}
-			</span>
-			{/if}
-			<button class="share-btn" onclick={copyLink}>
-				{copied ? '✓ Copied!' : '🔗 Share'}
-			</button>
-		</div>
-	</header>
-
-	<!-- ── Main layout ─────────────────────────────────────────────────────── -->
-	<div class="main">
-
-		<!-- Data panel -->
-		<aside class="panel">
-
-			<!-- Position -->
-			<div class="section-title">Navigation</div>
-			<div class="stat-grid">
-				<div class="stat">
-					<div class="stat-val" style="color:{sogColor(sog)}">{fmt1(sog)}</div>
-					<div class="stat-lbl">SOG kn</div>
-				</div>
-				<div class="stat">
-					<div class="stat-val">{hdgDeg != null ? `${hdgDeg}°` : '—'}</div>
-					<div class="stat-lbl">Heading</div>
-				</div>
-				<div class="stat">
-					<div class="stat-val">{engOn ? '🔴 Motor' : '⛵ Sail'}</div>
-					<div class="stat-lbl">Mode</div>
-				</div>
-				<div class="stat">
-					<div class="stat-val">{depth != null ? `${depth.toFixed(1)} m` : '—'}</div>
-					<div class="stat-lbl">Depth</div>
-				</div>
-			</div>
-
-			<!-- Wind — hero section -->
-			<div class="section-title wind-title">Wind</div>
-			<div class="wind-hero">
-				<!-- Wind direction compass -->
-				<div class="wind-compass">
-					<svg viewBox="0 0 80 80" width="80" height="80">
-						<!-- Compass rose -->
-						<circle cx="40" cy="40" r="36" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
-						{#each ['N','E','S','W'] as d, i}
-							<text x="40" y="40"
-								transform="rotate({i*90} 40 40) translate(0,-28)"
-								text-anchor="middle" dominant-baseline="middle"
-								font-size="8" fill="rgba(255,255,255,0.4)" font-family="monospace">{d}</text>
-						{/each}
-						<!-- Wind direction arrow (points TO where wind goes) -->
-						{#if twd != null}
-							<g transform="rotate({twd} 40 40)">
-								<line x1="40" y1="40" x2="40" y2="10" stroke={beaufortColor(tws)} stroke-width="3" stroke-linecap="round"/>
-								<polygon points="40,6 36,14 44,14" fill={beaufortColor(tws)}/>
-							</g>
-						{:else}
-							<text x="40" y="44" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.3)">—</text>
-						{/if}
-					</svg>
-					<div class="wind-from">{cardinal(twd)}</div>
-				</div>
-				<!-- Wind speeds -->
-				<div class="wind-speeds">
-					<div class="wind-stat">
-						<div class="wind-val" style="color:{beaufortColor(tws)}">{fmt1(tws)}</div>
-						<div class="wind-lbl">TWS kn</div>
-					</div>
-					<div class="wind-stat">
-						<div class="wind-val" style="color:{beaufortColor(aws)}">{fmt1(aws)}</div>
-						<div class="wind-lbl">AWS kn</div>
-					</div>
-					<div class="wind-stat">
-						<div class="wind-val">{awaStr}</div>
-						<div class="wind-lbl">AWA</div>
-					</div>
-					<div class="wind-stat">
-						<div class="wind-val">{twd != null ? `${fmt0(twd)}°` : '—'}</div>
-						<div class="wind-lbl">TWD</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- Environment -->
-			<div class="section-title">Environment</div>
-			<div class="stat-grid">
-				<div class="stat">
-					<div class="stat-val">{baro != null ? `${baro} hPa` : '—'}</div>
-					<div class="stat-lbl">Barometer</div>
-				</div>
-				<div class="stat">
-					<div class="stat-val">{battSoc != null ? `${battSoc}%` : '—'}</div>
-					<div class="stat-lbl">Battery</div>
-				</div>
-				{#if solar != null}
-				<div class="stat">
-					<div class="stat-val">{fmt0(solar)} W</div>
-					<div class="stat-lbl">Solar</div>
-				</div>
-				{/if}
-				{#if (t?.tank_fw ?? null) != null}
-				<div class="stat">
-					<div class="stat-val">{fmt0((t!.tank_fw as number) * 100)}%</div>
-					<div class="stat-lbl">Fresh water</div>
-				</div>
-				{/if}
-			</div>
-
-			<!-- Trip stats -->
-			{#if data.trip}
-			<div class="section-title">Current trip</div>
-			<div class="stat-grid">
-				<div class="stat">
-					<div class="stat-val">{fmt1(data.trip.total_nm)} nm</div>
-					<div class="stat-lbl">Distance</div>
-				</div>
-				<div class="stat">
-					<div class="stat-val">{fmtDuration(data.trip.started_at)}</div>
-					<div class="stat-lbl">Duration</div>
-				</div>
-				<div class="stat">
-					<div class="stat-val">{fmt1(data.trip.max_sog_kn)} kn</div>
-					<div class="stat-lbl">Max SOG</div>
-				</div>
-			</div>
-			{/if}
-
-			<!-- Track info -->
-			<div class="track-info">
-				{data.track.length} GPS points · last 7 days
-			</div>
-
-			<!-- Attribution -->
-			<div class="attribution">
-				Powered by <strong>SUKI Dashboard Pro</strong>
-			</div>
-		</aside>
-
-		<!-- Map -->
-		<div class="map-wrap">
-			<div bind:this={mapEl} class="map-el"></div>
-			{#if !mapReady}
-			<div class="map-overlay">Loading map…</div>
-			{/if}
-		</div>
+	<div class="panel-footer">
+		{data.track.length} pts · 7 day track
+		<br/>SUKI Dashboard Pro
 	</div>
-	{/if}
+</aside>
 
+{/if}
 </div>
 
 <style>
-	:global(html, body) { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+	:global(html,body) { margin:0; padding:0; height:100%; background:#080c14; overflow:hidden; }
 
-	.tracker {
-		width: 100vw; height: 100dvh;
-		display: flex; flex-direction: column;
-		background: #0a0e1a;
+	/* ── Root ── */
+	.root {
+		position: fixed; inset: 0;
+		font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;
 		color: #fff;
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		-webkit-font-smoothing: antialiased;
 	}
 
-	/* ── Splash ── */
-	.splash {
-		flex: 1; display: flex; flex-direction: column;
-		align-items: center; justify-content: center; gap: 12px;
-		color: rgba(255,255,255,0.6);
+	/* ── Loading / gate screens ── */
+	.gate {
+		position: absolute; inset: 0;
+		display: flex; flex-direction: column;
+		align-items: center; justify-content: center;
+		gap: 16px;
+		background: #080c14;
 	}
-	.splash-icon  { font-size: 48px; }
-	.splash-text  { font-size: 16px; }
-	.splash-title { font-size: 18px; color: #fff; font-weight: 600; }
-	.splash-sub   { font-size: 13px; max-width: 320px; text-align: center; }
-	.pw-form {
-		display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center;
+	.gate-spinner {
+		width: 32px; height: 32px;
+		border: 2px solid rgba(255,255,255,0.1);
+		border-top-color: #0ea5e9;
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
 	}
-	.pw-input {
-		padding: 10px 14px; background: rgba(255,255,255,0.08);
-		border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
-		color: #fff; font-size: 15px; outline: none; min-width: 200px;
-		transition: border-color 0.2s;
+	@keyframes spin { to { transform: rotate(360deg); } }
+	.gate-label { font-size: 14px; color: rgba(255,255,255,0.4); margin: 0; }
+	.gate-lock  { width: 56px; height: 56px; opacity: 0.6; }
+	.gate-icon  { font-size: 48px; }
+	.gate-title { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.3px; }
+	.gate-sub   { font-size: 13px; color: rgba(255,255,255,0.4); margin: 0; max-width: 280px; text-align: center; }
+	.gate-form  { display: flex; gap: 8px; }
+	.gate-input {
+		padding: 11px 16px; width: 220px;
+		background: rgba(255,255,255,0.07);
+		border: 1px solid rgba(255,255,255,0.12);
+		border-radius: 12px; color: #fff; font-size: 15px;
+		outline: none; transition: border-color 0.2s;
 	}
-	.pw-input:focus { border-color: #00c8ff; }
-	.pw-btn {
-		padding: 10px 20px; background: #00c8ff; border: none; border-radius: 8px;
-		color: #0a0e1a; font-size: 14px; font-weight: 700; cursor: pointer;
-		transition: opacity 0.15s;
+	.gate-input:focus { border-color: #0ea5e9; }
+	.gate-btn {
+		padding: 11px 20px; background: #0ea5e9;
+		border: none; border-radius: 12px;
+		color: #fff; font-size: 14px; font-weight: 600;
+		cursor: pointer; transition: opacity 0.15s;
 	}
-	.pw-btn:disabled { opacity: 0.5; cursor: default; }
-	.pw-error {
-		font-size: 13px; color: #f87171; margin-top: 6px;
+	.gate-btn:disabled { opacity: 0.4; cursor: default; }
+	.gate-error { font-size: 13px; color: #f87171; margin: 0; }
+
+	/* ── Map full background ── */
+	.map-bg {
+		position: absolute; inset: 0;
+		z-index: 0;
+	}
+	/* Dark vignette over map edges */
+	.map-bg::after {
+		content: '';
+		position: absolute; inset: 0;
+		background: radial-gradient(ellipse at center, transparent 40%, rgba(8,12,20,0.6) 100%);
+		pointer-events: none; z-index: 1;
 	}
 
-	/* ── Top bar ── */
-	.topbar {
-		display: flex; align-items: center; justify-content: space-between;
-		padding: 8px 16px;
-		background: rgba(0,0,0,0.7);
-		backdrop-filter: blur(8px);
-		border-bottom: 1px solid rgba(255,255,255,0.08);
-		flex-shrink: 0;
-		gap: 12px;
-		flex-wrap: wrap;
-		z-index: 100;
-	}
-	.topbar-left  { display: flex; align-items: center; gap: 10px; min-width: 0; }
-	.topbar-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-	.boat-name {
-		font-size: 16px; font-weight: 700;
-		letter-spacing: 0.3px;
+	/* ── Top pill bar ── */
+	.pill-bar {
+		position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+		z-index: 800;
+		display: flex; align-items: center; gap: 10px;
+		padding: 8px 14px 8px 16px;
+		background: rgba(8,12,20,0.75);
+		backdrop-filter: blur(20px) saturate(1.8);
+		-webkit-backdrop-filter: blur(20px) saturate(1.8);
+		border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 999px;
 		white-space: nowrap;
-	}
-	.age-badge {
-		font-size: 11px; font-weight: 600;
-		padding: 2px 8px; border-radius: 20px;
-		background: rgba(34,197,94,0.15);
-		color: #22c55e;
-		white-space: nowrap;
-	}
-	.age-badge.stale {
-		background: rgba(245,158,11,0.15);
-		color: #f59e0b;
-	}
-	.trip-badge {
-		font-size: 11px; color: rgba(255,255,255,0.6);
-		white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-		max-width: 260px;
-	}
-	.share-btn {
-		padding: 5px 14px;
-		background: rgba(0,200,255,0.1);
-		border: 1px solid rgba(0,200,255,0.3);
-		border-radius: 20px;
-		color: #00c8ff;
-		font-size: 12px; font-weight: 600;
-		cursor: pointer;
-		white-space: nowrap;
-		transition: background 0.15s;
-	}
-	.share-btn:hover { background: rgba(0,200,255,0.2); }
-
-	/* ── Main layout ── */
-	.main {
-		flex: 1; display: flex;
+		max-width: calc(100vw - 32px);
 		overflow: hidden;
-		min-height: 0;
 	}
+	.pill-name {
+		font-size: 14px; font-weight: 700;
+		letter-spacing: -0.2px;
+	}
+	.pill-status {
+		display: flex; align-items: center; gap: 5px;
+		font-size: 12px; color: rgba(255,255,255,0.5);
+	}
+	.pill-dot {
+		width: 6px; height: 6px; border-radius: 50%;
+		background: #4ade80;
+		animation: pulse-dot 2s ease-in-out infinite;
+	}
+	.pill-dot.stale { background: #facc15; animation: none; }
+	@keyframes pulse-dot {
+		0%,100% { opacity: 1; } 50% { opacity: 0.4; }
+	}
+	.pill-status.stale { color: #facc15; }
+	.pill-trip { font-size: 11px; color: rgba(255,255,255,0.35); }
+	.pill-share {
+		width: 28px; height: 28px;
+		background: rgba(255,255,255,0.08);
+		border: 1px solid rgba(255,255,255,0.1);
+		border-radius: 50%; color: rgba(255,255,255,0.7);
+		font-size: 14px; cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+		transition: background 0.15s; flex-shrink: 0;
+	}
+	.pill-share:hover { background: rgba(255,255,255,0.15); }
 
-	/* ── Panel ── */
-	.panel {
-		width: 240px; flex-shrink: 0;
-		background: rgba(10,14,26,0.92);
-		backdrop-filter: blur(10px);
-		border-right: 1px solid rgba(255,255,255,0.07);
+	/* ── Glass side panel ── */
+	.glass-panel {
+		position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+		z-index: 700;
+		width: 256px;
+		background: rgba(8,12,20,0.78);
+		backdrop-filter: blur(28px) saturate(1.6);
+		-webkit-backdrop-filter: blur(28px) saturate(1.6);
+		border: 1px solid rgba(255,255,255,0.07);
+		border-radius: 20px;
+		padding: 20px;
+		display: flex; flex-direction: column; gap: 0;
+		max-height: calc(100dvh - 120px);
 		overflow-y: auto;
-		padding: 12px;
-		display: flex; flex-direction: column; gap: 4px;
 	}
-	.panel::-webkit-scrollbar { width: 4px; }
-	.panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+	.glass-panel::-webkit-scrollbar { width: 3px; }
+	.glass-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
 
-	.section-title {
-		font-size: 9px; font-weight: 700;
-		color: rgba(255,255,255,0.35);
-		text-transform: uppercase; letter-spacing: 1px;
-		margin: 10px 0 6px;
+	/* Speed */
+	.speed-block { padding-bottom: 16px; }
+	.speed-num {
+		font-size: 52px; font-weight: 700;
+		letter-spacing: -3px;
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
 	}
-	.section-title:first-child { margin-top: 0; }
+	.speed-unit { font-size: 12px; color: rgba(255,255,255,0.35); letter-spacing: 0.5px; margin-top: 2px; }
+	.speed-meta { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px; }
 
-	.stat-grid {
+	.divider { height: 1px; background: rgba(255,255,255,0.06); margin: 0 0 16px; }
+
+	/* Wind */
+	.wind-block { padding-bottom: 16px; }
+	.wind-top-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+	.wind-big {
+		font-size: 38px; font-weight: 700; letter-spacing: -2px;
+		font-variant-numeric: tabular-nums; line-height: 1;
+	}
+	.wind-unit { font-size: 11px; color: rgba(255,255,255,0.35); letter-spacing: 0.5px; margin-top: 2px; }
+	.wind-label { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px; }
+	.compass-svg { width: 88px; height: 88px; flex-shrink: 0; }
+	.wind-apparent {
+		display: flex; gap: 12px; margin-top: 10px;
+		font-size: 11px; color: rgba(255,255,255,0.4);
+	}
+	.wind-apparent b { color: rgba(255,255,255,0.75); font-weight: 600; }
+
+	/* Stats grid */
+	.stats-grid {
 		display: grid; grid-template-columns: 1fr 1fr;
-		gap: 6px;
+		gap: 8px; padding-bottom: 16px;
 	}
-	.stat {
+	.stat-item {
 		background: rgba(255,255,255,0.04);
-		border: 1px solid rgba(255,255,255,0.06);
-		border-radius: 8px;
-		padding: 8px 10px;
-		text-align: center;
+		border: 1px solid rgba(255,255,255,0.05);
+		border-radius: 12px; padding: 10px 12px;
 	}
 	.stat-val {
-		font-size: 15px; font-weight: 700;
+		font-size: 18px; font-weight: 600;
+		letter-spacing: -0.5px;
 		font-variant-numeric: tabular-nums;
-		line-height: 1.2;
+		line-height: 1;
 	}
-	.stat-lbl {
-		font-size: 9px; color: rgba(255,255,255,0.4);
-		text-transform: uppercase; letter-spacing: 0.5px;
-		margin-top: 2px;
-	}
+	.stat-key { font-size: 9px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
 
-	/* ── Wind hero ── */
-	.wind-hero {
-		display: flex; align-items: center; gap: 12px;
-		background: rgba(255,255,255,0.03);
-		border: 1px solid rgba(255,255,255,0.07);
-		border-radius: 10px;
-		padding: 10px;
-		margin-bottom: 4px;
-	}
-	.wind-compass { display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0; }
-	.wind-from { font-size: 10px; color: rgba(255,255,255,0.5); font-weight: 600; letter-spacing: 0.5px; }
-	.wind-speeds { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; flex: 1; }
-	.wind-stat { text-align: center; }
-	.wind-val { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
-	.wind-lbl { font-size: 8px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.5px; }
-
-	.track-info {
-		font-size: 10px; color: rgba(255,255,255,0.25);
-		text-align: center; margin-top: 8px;
-	}
-	.attribution {
+	.panel-footer {
 		font-size: 10px; color: rgba(255,255,255,0.2);
-		text-align: center; margin-top: auto; padding-top: 16px;
-	}
-	.attribution strong { color: rgba(255,255,255,0.35); }
-
-	/* ── Map ── */
-	.map-wrap { flex: 1; position: relative; }
-	.map-el   { width: 100%; height: 100%; }
-	.map-overlay {
-		position: absolute; inset: 0;
-		display: flex; align-items: center; justify-content: center;
-		background: rgba(10,14,26,0.7);
-		font-size: 14px; color: rgba(255,255,255,0.5);
+		text-align: center; line-height: 1.6;
 	}
 
 	/* ── Mobile ── */
 	@media (max-width: 600px) {
-		.main { flex-direction: column-reverse; }
-		.panel { width: 100%; height: 220px; border-right: none; border-top: 1px solid rgba(255,255,255,0.08); flex-direction: row; flex-wrap: wrap; padding: 8px; overflow-x: auto; }
-		.section-title { display: none; }
-		.stat-grid { grid-template-columns: repeat(4, auto); }
-		.wind-hero { flex-shrink: 0; }
-		.track-info, .attribution { display: none; }
-		.trip-badge { display: none; }
+		.glass-panel {
+			left: 0; right: 0; top: auto; bottom: 0;
+			transform: none;
+			width: 100%; border-radius: 20px 20px 0 0;
+			max-height: 52dvh;
+			padding: 16px;
+		}
+		.speed-num { font-size: 40px; }
+		.wind-big  { font-size: 30px; }
+		.pill-bar  { top: 12px; }
+		.pill-trip { display: none; }
 	}
 </style>
