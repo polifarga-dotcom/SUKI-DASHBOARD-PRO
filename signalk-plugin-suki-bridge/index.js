@@ -141,15 +141,9 @@ module.exports = function (app) {
     // and charger instances are discovered and summed dynamically.
     'electrical.chargers.0.panelPower':                      'solar_total_w',
 
-    // Wakespeed alternator regulators — both instances static
-    // (Victron Cerbo CAN-Bus: electrical.alternator.{0,1}.*)
-    // Static mapping is more reliable than dynamic discovery on twin-engine boats.
-    'electrical.alternator.0.voltage':                       'ws_0_alt_v',
-    'electrical.alternator.0.temperature':                   'ws_0_alt_temp_k',
-    'electrical.alternator.0.fieldDrive':                    'ws_0_field_pct',
-    'electrical.alternator.1.voltage':                       'ws_1_alt_v',
-    'electrical.alternator.1.temperature':                   'ws_1_alt_temp_k',
-    'electrical.alternator.1.fieldDrive':                    'ws_1_field_pct',
+    // Wakespeed alternator regulators are discovered dynamically in
+    // discoverDynamicPaths() to support any instance numbering and any
+    // number of boats/configs. No static entries here.
 
     // Rudder
     'steering.rudderAngle':                                  'rudder_rad',
@@ -351,24 +345,35 @@ module.exports = function (app) {
       }
     }
 
-    // ── Wakespeed: electrical.alternator instance ≥ 1 ─────────────────────────
-    // Instance 0 is handled by static PATH_MAP + a dedicated chargingMode sub.
-    // Any additional instances (second Wakespeed unit) are discovered here.
-    const wsInsts = available
-      .map(p => { const m = p.match(/^electrical\.alternator\.(\d+)\.voltage$/); return m; })
-      .filter(m => m && Number(m[1]) >= 1)
-      .map(m => m[1])
-      .filter(inst => !_discoveredPaths.has(`electrical.alternator.${inst}.voltage`))
-      .sort((a, b) => Number(a) - Number(b))
-      .slice(0, 1);   // max one additional unit → ws_1
+    // ── Wakespeed: fully dynamic alternator discovery ─────────────────────────
+    // Discovers ALL electrical.alternator.* instances in ascending order and maps
+    // them to ws_0/ws_1 slots. Works for any instance numbering (0+1, 1+2, 2+3…)
+    // and any boat configuration. Re-runs every 60 s — skips already-subscribed paths.
+    const WS_SLOTS = [
+      { v: 'ws_0_alt_v', t: 'ws_0_alt_temp_k', f: 'ws_0_field_pct', m: 'ws_0_mode' },
+      { v: 'ws_1_alt_v', t: 'ws_1_alt_temp_k', f: 'ws_1_field_pct', m: 'ws_1_mode' },
+    ];
 
-    for (const inst of wsInsts) {
-      const numMap = {
-        [`electrical.alternator.${inst}.voltage`]:     'ws_1_alt_v',
-        [`electrical.alternator.${inst}.temperature`]: 'ws_1_alt_temp_k',
-        [`electrical.alternator.${inst}.fieldDrive`]:  'ws_1_field_pct',
+    // Alternator instances not yet subscribed, sorted ascending
+    const newWsInsts = available
+      .map(p => { const m = p.match(/^electrical\.alternator\.(\d+)\.voltage$/); return m ? Number(m[1]) : null; })
+      .filter(n => n !== null && !_discoveredPaths.has(`electrical.alternator.${n}.voltage`))
+      .sort((a, b) => a - b);
+
+    // Free slots = those not yet claimed
+    const freeSlots = WS_SLOTS.filter((_, idx) => !_discoveredPaths.has(`ws_slot_${idx}`));
+
+    newWsInsts.slice(0, freeSlots.length).forEach((inst, i) => {
+      const slot = freeSlots[i];
+      const slotIdx = WS_SLOTS.indexOf(slot);
+
+      // Subscribe numeric paths
+      const numPaths = {
+        [`electrical.alternator.${inst}.voltage`]:     slot.v,
+        [`electrical.alternator.${inst}.temperature`]: slot.t,
+        [`electrical.alternator.${inst}.fieldDrive`]:  slot.f,
       };
-      for (const [path, col] of Object.entries(numMap)) {
+      for (const [path, col] of Object.entries(numPaths)) {
         if (!available.includes(path)) continue;
         try {
           const unsub = app.streambundle.getSelfBus(path).onValue(({ value }) => {
@@ -381,12 +386,13 @@ module.exports = function (app) {
           app.debug(`Discovery: could not subscribe to ${path}: ${e.message}`);
         }
       }
-      // chargingMode string for ws_1
+
+      // Subscribe chargingMode (string — separate from PATH_MAP numeric paths)
       const modePath = `electrical.alternator.${inst}.chargingMode`;
       if (available.includes(modePath) && !_discoveredPaths.has(modePath)) {
         try {
           const unsub = app.streambundle.getSelfBus(modePath).onValue(({ value }) => {
-            if (typeof value === 'string' && value.length > 0) pendingStr['ws_1_mode'] = value;
+            if (typeof value === 'string' && value.length > 0) pendingStr[slot.m] = value;
           });
           unsubscribes.push(unsub);
           _discoveredPaths.add(modePath);
@@ -395,8 +401,10 @@ module.exports = function (app) {
           app.debug(`Discovery: could not subscribe to ${modePath}: ${e.message}`);
         }
       }
-      app.debug(`Wakespeed discovery: instance ${inst} → ws_1`);
-    }
+
+      _discoveredPaths.add(`ws_slot_${slotIdx}`);  // claim slot — prevents re-assignment
+      app.debug(`Wakespeed discovery: alternator instance ${inst} → slot ${slotIdx} (${slot.v})`);
+    });
 
     if (newCount > 0) {
       app.debug(`Dynamic discovery: subscribed to ${newCount} new paths`);
@@ -506,20 +514,8 @@ module.exports = function (app) {
         app.debug(`Could not subscribe to navigation.position compound: ${e.message}`);
       }
 
-      // ── Wakespeed chargingMode (string) — static subscriptions for both instances ──
-      // PATH_MAP only handles numeric values; chargingMode ("float","bulk","absorption"…)
-      // is a string and needs its own subscription into pendingStr.
-      for (const [inst, col] of [['0', 'ws_0_mode'], ['1', 'ws_1_mode']]) {
-        try {
-          const unsub = app.streambundle.getSelfBus(`electrical.alternator.${inst}.chargingMode`)
-            .onValue(({ value }) => {
-              if (typeof value === 'string' && value.length > 0) pendingStr[col] = value;
-            });
-          unsubscribes.push(unsub);
-        } catch (e) {
-          app.debug(`Could not subscribe to electrical.alternator.${inst}.chargingMode: ${e.message}`);
-        }
-      }
+      // Wakespeed chargingMode subscriptions are handled inside discoverDynamicPaths()
+      // alongside the numeric paths, so no static subscription needed here.
 
       // ── Dynamic path discovery ───────────────────────────────────────────────
       // Wait 5 s for SignalK data to start flowing (devices take time to connect),
