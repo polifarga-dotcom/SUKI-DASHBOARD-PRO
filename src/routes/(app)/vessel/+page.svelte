@@ -28,7 +28,7 @@
 	<RigCard t={$telemetry} />
 	<ShellyCard />
 	<VRMCard />
-	<VictronCard />
+	<div class="full-width"><VictronCard /></div>
 </div>
 
 <style>
@@ -42,6 +42,8 @@
 		text-align: center;
 		margin-bottom: 12px;
 	}
+
+	.full-width { grid-column: 1 / -1; }
 
 	.grid {
 		display: grid;
