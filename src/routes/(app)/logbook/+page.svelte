@@ -1727,9 +1727,13 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 				</div>
 
 				<!-- Interactive trip charts with shared time slider -->
+				<!-- {#key} re-mounts the component each time a different trip is expanded,
+				     re-triggering CSS animations cleanly -->
+				{#key expandedTripId}
 				{#if chartPoints.length >= 2}
 				<TripCharts points={chartPoints} />
 				{/if}
+				{/key}
 
 				<!-- First + last entries -->
 				{#if expandedLoading}

@@ -66,6 +66,45 @@
 		return { vals, min, max, range: max - min || 1 };
 	}
 
+	// ── Catmull-Rom → Cubic Bezier smoothing ────────────────────────────────
+	// Converts a sequence of (x,y) points into a smooth cubic-bezier SVG path.
+	// Handles null gaps (restarts path segment at each gap).
+	// tension=1 = standard Catmull-Rom, lower = tighter curves
+	const TENSION = 1.0;
+
+	function smoothPath(m: ChartMeta): string {
+		// Collect valid (x,y) segments, broken at nulls
+		const segments: [number, number][][] = [];
+		let seg: [number, number][] = [];
+		for (let i = 0; i < points.length; i++) {
+			const v = m.vals[i];
+			if (v == null) { if (seg.length) { segments.push(seg); seg = []; } continue; }
+			seg.push([tx(points[i].t), vy(v, m.min, m.range)]);
+		}
+		if (seg.length) segments.push(seg);
+
+		return segments.map(pts => {
+			if (pts.length < 2) return `M${pts[0][0]} ${pts[0][1]}`;
+			if (pts.length === 2) return `M${pts[0][0]} ${pts[0][1]} L${pts[1][0]} ${pts[1][1]}`;
+
+			let d = `M${pts[0][0]} ${pts[0][1]}`;
+			for (let i = 0; i < pts.length - 1; i++) {
+				const p0 = pts[Math.max(i - 1, 0)];
+				const p1 = pts[i];
+				const p2 = pts[i + 1];
+				const p3 = pts[Math.min(i + 2, pts.length - 1)];
+				// Catmull-Rom control points
+				const cp1x = p1[0] + (p2[0] - p0[0]) / 6 * TENSION;
+				const cp1y = p1[1] + (p2[1] - p0[1]) / 6 * TENSION;
+				const cp2x = p2[0] - (p3[0] - p1[0]) / 6 * TENSION;
+				const cp2y = p2[1] - (p3[1] - p1[1]) / 6 * TENSION;
+				d += ` C${cp1x.toFixed(2)} ${cp1y.toFixed(2)} ${cp2x.toFixed(2)} ${cp2y.toFixed(2)} ${p2[0].toFixed(2)} ${p2[1].toFixed(2)}`;
+			}
+			return d;
+		}).join(' ');
+	}
+
+	// Keep raw linePath for TWD scatter and AWA diverging (no smoothing needed)
 	function linePath(m: ChartMeta): string {
 		let d = '';
 		for (let i = 0; i < points.length; i++) {
@@ -77,11 +116,11 @@
 	}
 
 	function areaPath(m: ChartMeta): string {
-		const line = linePath(m);
+		const line = smoothPath(m);
 		if (!line) return '';
-		// Find first/last valid
-		let fx = tx(points.find(p => m.vals[points.indexOf(p)] != null)!.t);
-		let lx = tx([...points].reverse().find(p => m.vals[points.indexOf(p)] != null)!.t);
+		// Find first/last valid for baseline closure
+		let fx = tx(points.find((p, i) => m.vals[i] != null)!.t);
+		let lx = tx([...points].reverse().find((p, i) => m.vals[points.length - 1 - i] != null)!.t);
 		const base = PT + IH;
 		return `${line} L${lx} ${base} L${fx} ${base} Z`;
 	}
@@ -276,7 +315,7 @@
 
 	{#if hasSog && sogM}
 	{@const area = areaPath(sogM)}
-	{@const line = linePath(sogM)}
+	{@const line = smoothPath(sogM)}
 	{@const cy   = curY(sogM, cur?.sog ?? null)}
 	<div class="track">
 		<span class="track-lbl">SOG</span>
@@ -298,8 +337,8 @@
 
 	{#if hasTws && twsM}
 	{@const area = areaPath(twsM)}
-	{@const line = linePath(twsM)}
-	{@const lineAws = awsM ? linePath(awsM) : ''}
+	{@const line = smoothPath(twsM)}
+	{@const lineAws = awsM ? smoothPath(awsM) : ''}
 	{@const cy   = curY(twsM, cur?.tws ?? null)}
 	<div class="track">
 		<span class="track-lbl">Wind</span>
@@ -321,7 +360,7 @@
 	</div>
 	{:else if hasAws && awsM}
 	{@const area = areaPath(awsM)}
-	{@const line = linePath(awsM)}
+	{@const line = smoothPath(awsM)}
 	{@const cy   = curY(awsM, cur?.aws ?? null)}
 	<div class="track">
 		<span class="track-lbl">AWS</span>
@@ -386,7 +425,7 @@
 	{/if}
 
 	{#if hasBaro && baroM}
-	{@const line = linePath(baroM)}
+	{@const line = smoothPath(baroM)}
 	{@const cy   = curY(baroM, cur?.baro ?? null)}
 	<!-- Baro trend annotation -->
 	{@const baroTrend = (() => {
@@ -416,7 +455,7 @@
 
 	{#if hasDepth && depthM}
 	{@const area = areaPath(depthM)}
-	{@const line = linePath(depthM)}
+	{@const line = smoothPath(depthM)}
 	{@const cy   = curY(depthM, cur?.depth ?? null)}
 	<div class="track">
 		<span class="track-lbl">Depth</span>
@@ -436,7 +475,7 @@
 	{/if}
 
 	{#if hasSoc && socM}
-	{@const line = linePath(socM)}
+	{@const line = smoothPath(socM)}
 	{@const curSoc = cur?.batt_soc ?? null}
 	{@const cy    = curY(socM, curSoc)}
 	<div class="track">
@@ -485,7 +524,7 @@
 
 	{#if hasWave && waveM}
 	{@const area = areaPath(waveM)}
-	{@const line = linePath(waveM)}
+	{@const line = smoothPath(waveM)}
 	{@const cy   = curY(waveM, cur?.wave_h ?? null)}
 	<div class="track">
 		<span class="track-lbl">Wave</span>
@@ -505,7 +544,7 @@
 	{/if}
 
 	{#if hasRpm && rpmM}
-	{@const line = linePath(rpmM)}
+	{@const line = smoothPath(rpmM)}
 	{@const cy   = curY(rpmM, cur?.eng_rpm ?? cur?.eng_sb_rpm ?? null)}
 	<div class="track">
 		<span class="track-lbl">RPM</span>
@@ -650,5 +689,59 @@
 		font-weight: 600;
 		color: var(--accent);
 		font-variant-numeric: tabular-nums;
+	}
+
+	/* ── Animations ──────────────────────────────────────────────────────── */
+
+	/* Chart reveal: each track SVG slides in from left, staggered by track order */
+	@keyframes chart-reveal {
+		from { clip-path: inset(0 100% 0 0 round 3px); opacity: 0.4; }
+		to   { clip-path: inset(0 0%   0 0 round 3px); opacity: 1; }
+	}
+
+	/* Area fill fades in slightly after the line */
+	@keyframes area-fade {
+		from { opacity: 0; }
+		to   { opacity: 1; }
+	}
+
+	/* Cursor dot subtle bounce when it jumps to a new position */
+	@keyframes dot-pop {
+		0%   { transform: scale(0.5); opacity: 0.6; }
+		60%  { transform: scale(1.4); opacity: 1; }
+		100% { transform: scale(1);   opacity: 1; }
+	}
+
+	/* Apply reveal to all track SVGs with staggered delay */
+	.track-svg {
+		animation: chart-reveal 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+	}
+
+	/* Stagger each track by 45ms */
+	.track:nth-child(1)  .track-svg { animation-delay:   0ms; }
+	.track:nth-child(2)  .track-svg { animation-delay:  45ms; }
+	.track:nth-child(3)  .track-svg { animation-delay:  90ms; }
+	.track:nth-child(4)  .track-svg { animation-delay: 135ms; }
+	.track:nth-child(5)  .track-svg { animation-delay: 180ms; }
+	.track:nth-child(6)  .track-svg { animation-delay: 225ms; }
+	.track:nth-child(7)  .track-svg { animation-delay: 270ms; }
+	.track:nth-child(8)  .track-svg { animation-delay: 315ms; }
+	.track:nth-child(9)  .track-svg { animation-delay: 360ms; }
+	.track:nth-child(10) .track-svg { animation-delay: 405ms; }
+	.track:nth-child(n+11) .track-svg { animation-delay: 450ms; }
+
+	/* Area paths fade in 150ms after the clip-path starts */
+	:global(.track-svg path[fill]) {
+		animation: area-fade 0.5s ease-out 0.3s both;
+	}
+
+	/* Cursor dots pop when appearing */
+	:global(.track-svg circle:not([r="1.4"])) {
+		animation: dot-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+	}
+
+	/* Smooth cursor line movement */
+	:global(.cursor-line) {
+		transition: x1 0.05s ease, x2 0.05s ease;
 	}
 </style>
