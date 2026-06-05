@@ -7,8 +7,9 @@
 		sog_kn: number | null; wind_speed_kn: number | null;
 		wind_dir_deg: number | null; engine_on: boolean; batt_soc: number | null;
 	};
+	type BoatIcon = 'monohull' | 'catamaran' | 'trimaran' | 'motorboat';
 	type TrackerData = {
-		boat:      { name: string; slug: string; engine_count: number };
+		boat:      { name: string; slug: string; engine_count: number; boat_icon?: BoatIcon };
 		telemetry: Record<string, number | null> | null;
 		derived:   { tws_kn: number | null; twd_deg: number | null };
 		track:     TrackPoint[];
@@ -262,6 +263,39 @@
 		if (lat && lon) fetchMeteoWind(lat, lon);
 	}
 
+	// ── Boat icon SVGs (top-down view, bow pointing up) ───────────────────────
+	function boatIconSvg(type: string, col: string): string {
+		const s = `stroke="rgba(255,255,255,0.3)" stroke-width="0.8"`;
+		switch (type) {
+			case 'catamaran': return `<svg viewBox="0 0 40 48" width="40" height="48">
+				<!-- Port hull --><path d="M8 6 C6 6 4 10 4 24 C4 36 6 42 8 42 L14 42 C16 42 17 36 17 24 C17 10 16 6 14 6 Z" fill="${col}" ${s}/>
+				<!-- Stbd hull --><path d="M32 6 C30 6 23 10 23 24 C23 36 24 42 26 42 L32 42 C34 42 36 36 36 24 C36 10 34 6 32 6 Z" fill="${col}" ${s}/>
+				<!-- Crossbeam fwd --><rect x="14" y="14" width="12" height="3" rx="1.5" fill="${col}" ${s}/>
+				<!-- Crossbeam aft --><rect x="14" y="30" width="12" height="3" rx="1.5" fill="${col}" ${s}/>
+				<!-- Mast --><circle cx="20" cy="10" r="2" fill="white" opacity="0.8"/>
+			</svg>`;
+			case 'trimaran': return `<svg viewBox="0 0 40 48" width="40" height="48">
+				<!-- Main hull --><path d="M20 2 C17 2 14 8 14 24 C14 38 17 46 20 46 C23 46 26 38 26 24 C26 8 23 2 20 2 Z" fill="${col}" ${s}/>
+				<!-- Port ama --><path d="M5 16 C4 16 3 20 3 26 C3 32 4 35 5 35 L9 35 C10 35 11 32 11 26 C11 20 10 16 9 16 Z" fill="${col}" opacity="0.85" ${s}/>
+				<!-- Stbd ama --><path d="M35 16 C34 16 29 20 29 26 C29 32 30 35 31 35 L35 35 C36 35 37 32 37 26 C37 20 36 16 35 16 Z" fill="${col}" opacity="0.85" ${s}/>
+				<!-- Port beam --><line x1="11" y1="22" x2="14" y2="22" stroke="${col}" stroke-width="2.5"/>
+				<!-- Stbd beam --><line x1="26" y1="22" x2="29" y2="22" stroke="${col}" stroke-width="2.5"/>
+				<circle cx="20" cy="8" r="2" fill="white" opacity="0.8"/>
+			</svg>`;
+			case 'motorboat': return `<svg viewBox="0 0 40 48" width="40" height="48">
+				<!-- Wide hull --><path d="M20 4 C14 4 8 10 7 20 L6 36 C6 40 10 44 20 44 C30 44 34 40 34 36 L33 20 C32 10 26 4 20 4 Z" fill="${col}" ${s}/>
+				<!-- Windshield --><path d="M14 16 L26 16 L27 24 L13 24 Z" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.4)" stroke-width="0.8"/>
+				<!-- Bow dot --><circle cx="20" cy="7" r="2" fill="white" opacity="0.7"/>
+			</svg>`;
+			default: /* monohull */
+				return `<svg viewBox="0 0 40 48" width="40" height="48">
+				<!-- Hull --><path d="M20 2 C16 2 13 8 12 20 L11 38 C11 43 15 46 20 46 C25 46 29 43 29 38 L28 20 C27 8 24 2 20 2 Z" fill="${col}" ${s}/>
+				<!-- Keel line --><line x1="20" y1="8" x2="20" y2="38" stroke="rgba(0,0,0,0.3)" stroke-width="1.2" stroke-linecap="round"/>
+				<!-- Bow --><circle cx="20" cy="3" r="2.2" fill="white" opacity="0.85"/>
+			</svg>`;
+		}
+	}
+
 	function updateMap() {
 		if (!map || !L || !data) return;
 		const t   = data.telemetry;
@@ -281,13 +315,9 @@
 		const sogKn   = t?.nav_sog_ms  != null ? t.nav_sog_ms  * 1.94384 : null;
 		const col     = sogColor(sogKn);
 
-		const boatSvg = `<div style="width:36px;height:36px;transform:rotate(${hdgDeg}deg);transform-origin:50% 50%;filter:drop-shadow(0 4px 12px rgba(0,0,0,.8))">
-			<svg viewBox="0 0 36 36" width="36" height="36">
-				<path d="M18 2 L29 18 L29 33 L7 33 L7 18 Z" fill="${col}" stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
-				<line x1="18" y1="7" x2="18" y2="23" stroke="rgba(0,0,0,0.4)" stroke-width="1.5" stroke-linecap="round"/>
-				<circle cx="18" cy="2" r="2" fill="white" opacity="0.9"/>
-			</svg></div>`;
-		const bIcon = L.divIcon({ className:'', iconSize:[36,36], iconAnchor:[18,18], html: boatSvg });
+		const icon = data?.boat?.boat_icon ?? 'monohull';
+		const boatSvg = `<div style="width:40px;height:40px;transform:rotate(${hdgDeg}deg);transform-origin:50% 50%;filter:drop-shadow(0 4px 14px rgba(0,0,0,.9))">${boatIconSvg(icon, col)}</div>`;
+		const bIcon = L.divIcon({ className:'', iconSize:[40,48], iconAnchor:[20,24], html: boatSvg });
 
 		if (t?.nav_lat != null && t?.nav_lon != null) {
 			if (!boatMarker) {
@@ -678,45 +708,45 @@
 	.glass-panel {
 		position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
 		z-index: 700;
-		width: 256px;
+		width: 240px;
 		background: rgba(8,12,20,0.78);
 		backdrop-filter: blur(28px) saturate(1.6);
 		-webkit-backdrop-filter: blur(28px) saturate(1.6);
 		border: 1px solid rgba(255,255,255,0.07);
 		border-radius: 20px;
-		padding: 20px;
+		padding: 14px;
 		display: flex; flex-direction: column; gap: 0;
-		max-height: calc(100dvh - 120px);
+		max-height: calc(100dvh - 80px);
 		overflow-y: auto;
 	}
 	.glass-panel::-webkit-scrollbar { width: 3px; }
 	.glass-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
 
 	/* Speed */
-	.speed-block { padding-bottom: 16px; }
+	.speed-block { padding-bottom: 10px; }
 	.speed-num {
-		font-size: 52px; font-weight: 700;
-		letter-spacing: -3px;
+		font-size: 42px; font-weight: 700;
+		letter-spacing: -2px;
 		font-variant-numeric: tabular-nums;
 		line-height: 1;
 	}
 	.speed-unit { font-size: 12px; color: rgba(255,255,255,0.35); letter-spacing: 0.5px; margin-top: 2px; }
-	.speed-meta { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px; }
+	.speed-meta { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 4px; }
 
-	.divider { height: 1px; background: rgba(255,255,255,0.06); margin: 0 0 16px; }
+	.divider { height: 1px; background: rgba(255,255,255,0.06); margin: 0 0 10px; }
 
 	/* Wind */
-	.wind-block { padding-bottom: 16px; }
+	.wind-block { padding-bottom: 10px; }
 	.wind-top-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 	.wind-big {
-		font-size: 38px; font-weight: 700; letter-spacing: -2px;
+		font-size: 30px; font-weight: 700; letter-spacing: -1px;
 		font-variant-numeric: tabular-nums; line-height: 1;
 	}
 	.wind-unit { font-size: 11px; color: rgba(255,255,255,0.35); letter-spacing: 0.5px; margin-top: 2px; }
 	.wind-label { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px; }
-	.compass-svg { width: 88px; height: 88px; flex-shrink: 0; }
+	.compass-svg { width: 72px; height: 72px; flex-shrink: 0; }
 	.wind-apparent {
-		display: flex; gap: 12px; margin-top: 10px;
+		display: flex; gap: 10px; margin-top: 6px;
 		font-size: 11px; color: rgba(255,255,255,0.4);
 	}
 	.wind-apparent b { color: rgba(255,255,255,0.75); font-weight: 600; }
@@ -724,16 +754,16 @@
 	/* Stats grid */
 	.stats-grid {
 		display: grid; grid-template-columns: 1fr 1fr;
-		gap: 8px; padding-bottom: 16px;
+		gap: 6px; padding-bottom: 10px;
 	}
 	.stat-item {
 		background: rgba(255,255,255,0.04);
 		border: 1px solid rgba(255,255,255,0.05);
-		border-radius: 12px; padding: 10px 12px;
+		border-radius: 10px; padding: 7px 10px;
 	}
 	.stat-val {
-		font-size: 18px; font-weight: 600;
-		letter-spacing: -0.5px;
+		font-size: 15px; font-weight: 600;
+		letter-spacing: -0.3px;
 		font-variant-numeric: tabular-nums;
 		line-height: 1;
 	}

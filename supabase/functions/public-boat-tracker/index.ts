@@ -39,7 +39,7 @@ Deno.serve(async (req: Request) => {
   // ── Resolve boat ──────────────────────────────────────────────────────────
   const { data: boat } = await supabase
     .from('boats')
-    .select('id, name, tracking_slug, tracking_enabled, engine_count, tracking_password_hash')
+    .select('id, name, tracking_slug, tracking_enabled, engine_count, tracking_password_hash, boat_icon')
     .eq('tracking_slug', slug)
     .single();
 
@@ -142,6 +142,7 @@ Deno.serve(async (req: Request) => {
       name:         boat.name,
       slug:         boat.tracking_slug,
       engine_count: boat.engine_count,
+      boat_icon:    boat.boat_icon ?? 'monohull',
     },
     telemetry,
     derived: { tws_kn, twd_deg },
