@@ -30,6 +30,7 @@
 
 module.exports = function (app) {
   let sendTimer        = null;
+  let logTimer         = null;   // offline log snapshot timer
   let pending          = {};
   let pendingStr       = {};   // string-valued fields (ws_*_mode)
   let unsubscribes     = [];
@@ -444,6 +445,8 @@ module.exports = function (app) {
     start (config) {
       const { api_key, endpoint, interval_ms = 5000 } = config || {};
       const url = endpoint || 'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/signalk-ingest';
+      // Offline log buffer endpoint — same base URL, different function
+      const logUrl = url.replace('/signalk-ingest', '/ingest-log-entries');
 
       if (!api_key) {
         app.setPluginError('API key not configured — go to SUKI Dashboard → Settings → SignalK Bridge');
@@ -593,19 +596,150 @@ module.exports = function (app) {
             if (res.status === 401) {
               app.setPluginError('Invalid API key — check SUKI Dashboard → Settings → SignalK Bridge');
             }
+            // Mark as offline for log buffering
+            _online = false;
           } else {
             app.debug(`Sent ${Object.keys(payload).length} fields`);
+            // Was offline → flush buffer now that we're back online
+            if (!_online) {
+              _online = true;
+              flushLogBuffer().catch(e => app.debug(`Buffer flush error: ${e.message}`));
+            }
           }
         } catch (e) {
           app.debug(`Network error: ${e.message}`);
+          _online = false;
         }
       }, interval_ms);
+
+      // ── Offline log snapshot timer (every 120 s) ──────────────────────────
+      // Captures current telemetry as a log entry snapshot. When offline,
+      // snapshots are written to a local JSONL file. When online, the buffer
+      // is flushed to Supabase via ingest-log-entries to fill logbook gaps.
+      const LOG_INTERVAL_MS = 120_000;
+      const LOG_BUFFER_FILE = '/tmp/suki-log-buffer.jsonl';
+      const MAX_BUFFER_ENTRIES = 1440; // 48 hours at 120s intervals
+      const fs = require('fs');
+
+      let _online = true;           // tracks connectivity state
+      let _lastLogPos = null;       // [lat, lon] of last logged position
+
+      // Calculate distance in nm between two [lat,lon] pairs
+      function _distNm (a, b) {
+        if (!a || !b) return null;
+        const R = 3440.065;
+        const dLat = (b[0] - a[0]) * Math.PI / 180;
+        const dLon = (b[1] - a[1]) * Math.PI / 180;
+        const s = Math.sin(dLat/2)**2 + Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLon/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
+      }
+
+      // True wind calculation from AWS/AWA/SOG/COG-HDG (same as browser logbook)
+      function _calcTrueWind (aws, awa, sog, hdg, cog) {
+        if (aws == null || awa == null || sog == null) return { tws: null, twa: null };
+        const leeway = (cog != null && hdg != null) ? cog - hdg : 0;
+        const boatX = sog * Math.cos(leeway);
+        const boatY = sog * Math.sin(leeway);
+        const twX = aws * Math.cos(awa) - boatX;
+        const twY = aws * Math.sin(awa) - boatY;
+        return { tws: Math.sqrt(twX*twX + twY*twY), twa: Math.atan2(twY, twX) };
+      }
+
+      function buildLogSnapshot () {
+        const lat   = pending.nav_lat   ?? null;
+        const lon   = pending.nav_lon   ?? null;
+        const sog   = pending.nav_sog_ms != null ? pending.nav_sog_ms * 1.94384 : null;
+        const hdg   = pending.nav_hdg_rad ?? null;
+        const cog   = pending.nav_cog_rad ?? null;
+        const aws   = pending.env_aws_ms  ?? null;
+        const awa   = pending.env_awa_rad ?? null;
+        const tws_s = pending.env_tws_ms  ?? null;
+        const twa_s = pending.env_twa_rad ?? null;
+        const { tws: twsCalc, twa: twaCalc } = _calcTrueWind(aws, awa, pending.nav_sog_ms, hdg, cog);
+
+        const pos = (lat != null && lon != null) ? [lat, lon] : null;
+        const distNm = _distNm(_lastLogPos, pos);
+        if (pos) _lastLogPos = pos;
+
+        return {
+          logged_at:  new Date().toISOString(),
+          lat, lon,
+          sog_kn: sog != null ? +sog.toFixed(2) : null,
+          cog_deg: cog != null ? +(cog * 180 / Math.PI).toFixed(1) : null,
+          tws_kn: tws_s != null ? +(tws_s * 1.94384).toFixed(1) : (twsCalc != null ? +(twsCalc * 1.94384).toFixed(1) : null),
+          twd_deg: (hdg != null && twa_s != null) ? +((((hdg + twa_s) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1)
+                 : (hdg != null && twaCalc != null) ? +((((hdg + twaCalc) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1) : null,
+          aws_kn: aws != null ? +(aws * 1.94384).toFixed(1) : null,
+          awa_deg: awa != null ? +(awa * 180 / Math.PI).toFixed(1) : null,
+          baro_hpa: pending.env_pressure_pa != null ? +(pending.env_pressure_pa / 100).toFixed(1) : null,
+          depth_m:  pending.env_depth_m != null ? +pending.env_depth_m.toFixed(1) : null,
+          batt_soc: pending.batt_main_soc ?? null,
+          engine_on:  (pending.eng_rpm ?? 0) > 0,
+          engine_rpm: pending.eng_rpm ?? null,
+          engine_temp_c: pending.eng_temp_k != null ? +(pending.eng_temp_k - 273.15).toFixed(1) : null,
+          engine_hours: pending.eng_run_sec != null ? +(pending.eng_run_sec / 3600).toFixed(2) : null,
+          engine_sb_on:  (pending.eng_sb_rpm ?? 0) > 0,
+          engine_sb_rpm: pending.eng_sb_rpm ?? null,
+          engine_sb_temp_c: pending.eng_sb_temp_k != null ? +(pending.eng_sb_temp_k - 273.15).toFixed(1) : null,
+          engine_sb_hours: pending.eng_sb_run_sec != null ? +(pending.eng_sb_run_sec / 3600).toFixed(2) : null,
+          distance_nm: distNm != null ? +distNm.toFixed(3) : null,
+        };
+      }
+
+      async function flushLogBuffer () {
+        if (!fs.existsSync(LOG_BUFFER_FILE)) return;
+        const lines = fs.readFileSync(LOG_BUFFER_FILE, 'utf8').split('\n').filter(Boolean);
+        if (!lines.length) return;
+        app.debug(`Flushing ${lines.length} buffered log snapshots`);
+        try {
+          const entries = lines.map(l => JSON.parse(l));
+          const res = await fetch(logUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key, entries }),
+          });
+          if (res.ok) {
+            const result = await res.json().catch(() => ({}));
+            app.debug(`Buffer flush: inserted=${result.inserted} skipped=${result.skipped} errors=${result.errors}`);
+            fs.writeFileSync(LOG_BUFFER_FILE, ''); // clear buffer
+          } else {
+            app.debug(`Buffer flush failed: ${res.status}`);
+          }
+        } catch (e) {
+          app.debug(`Buffer flush network error: ${e.message}`);
+        }
+      }
+
+      logTimer = setInterval(() => {
+        const snap = buildLogSnapshot();
+        if (_online) {
+          // Online: try to flush existing buffer first, then send directly
+          flushLogBuffer().catch(() => {});
+          // (The ingest-log-entries call handles the snapshot retroactively
+          //  when the browser auto-log may have missed entries)
+        } else {
+          // Offline: append snapshot to local JSONL buffer
+          try {
+            const existing = fs.existsSync(LOG_BUFFER_FILE)
+              ? fs.readFileSync(LOG_BUFFER_FILE, 'utf8').split('\n').filter(Boolean)
+              : [];
+            // Trim to max entries (ring buffer — drop oldest)
+            const trimmed = existing.slice(-MAX_BUFFER_ENTRIES + 1);
+            trimmed.push(JSON.stringify(snap));
+            fs.writeFileSync(LOG_BUFFER_FILE, trimmed.join('\n') + '\n');
+            app.debug(`Buffered log snapshot (${trimmed.length} total)`);
+          } catch (e) {
+            app.debug(`Buffer write error: ${e.message}`);
+          }
+        }
+      }, LOG_INTERVAL_MS);
 
       app.setPluginStatus(`Connected — sending every ${interval_ms / 1000}s`);
     },
 
     stop () {
       if (sendTimer)        { clearInterval(sendTimer);       sendTimer        = null; }
+      if (logTimer)         { clearInterval(logTimer);        logTimer         = null; }
       if (discoveryTimer)   { clearTimeout(discoveryTimer);   discoveryTimer   = null; }
       if (rediscoveryTimer) { clearTimeout(rediscoveryTimer); rediscoveryTimer = null; }
 
