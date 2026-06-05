@@ -377,32 +377,22 @@
 	/* Base: all connectors have position:relative and a centred dim line */
 	.conn { position:relative; overflow:visible; }
 
-	/* ── Arrow travel animations — move in direction of energy flow ── */
-	/* Arrows start at the source end, travel to destination, fade out, loop */
+	/* ── Arrow travel animations — separate position + fade ── */
+	/* Two animations per arrow: linear position travel + ease-in-out fade.
+	   Splitting them prevents keyframe interpolation conflicts. */
 
-	@keyframes arr-move-r {    /* → rightward  */
-		0%   { left: -8px;          opacity: 0; }
-		15%  {                       opacity: 1; }
-		85%  {                       opacity: 1; }
-		100% { left: calc(100% + 2px); opacity: 0; }
-	}
-	@keyframes arr-move-l {    /* ← leftward   */
-		0%   { right: -8px;           opacity: 0; }
-		15%  {                        opacity: 1; }
-		85%  {                        opacity: 1; }
-		100% { right: calc(100% + 2px); opacity: 0; }
-	}
-	@keyframes arr-move-u {    /* ↑ upward     */
-		0%   { bottom: -8px;          opacity: 0; }
-		15%  {                        opacity: 1; }
-		85%  {                        opacity: 1; }
-		100% { bottom: calc(100% + 2px); opacity: 0; }
-	}
-	@keyframes arr-move-d {    /* ↓ downward   */
-		0%   { top: -8px;             opacity: 0; }
-		15%  {                        opacity: 1; }
-		85%  {                        opacity: 1; }
-		100% { top: calc(100% + 2px);  opacity: 0; }
+	/* Position keyframes (linear, source → destination) */
+	@keyframes arr-pos-r { from { left: -8px; } to { left: calc(100% + 2px); } }
+	@keyframes arr-pos-l { from { right: -8px; } to { right: calc(100% + 2px); } }
+	@keyframes arr-pos-u { from { bottom: -8px; } to { bottom: calc(100% + 2px); } }
+	@keyframes arr-pos-d { from { top: -8px; } to { top: calc(100% + 2px); } }
+
+	/* Shared fade keyframe (appears at 15%, stays until 85%, then fades out) */
+	@keyframes arr-fade {
+		0%   { opacity: 0; }
+		15%  { opacity: 1; }
+		85%  { opacity: 1; }
+		100% { opacity: 0; }
 	}
 
 	/* Horizontal line */
@@ -423,7 +413,7 @@
 		right:auto;                          /* unset static position */
 		top:50%; transform:translateY(-50%);
 		border-left-color: rgba(140,200,255,.95);
-		animation: arr-move-r 1.1s ease-in-out infinite;
+		animation: arr-pos-r 1.1s linear infinite, arr-fade 1.1s ease-in-out infinite;
 	}
 
 	/* Left-pointing arrow */
@@ -436,7 +426,7 @@
 		left:auto;
 		top:50%; transform:translateY(-50%);
 		border-right-color: rgba(140,200,255,.95);
-		animation: arr-move-l 1.1s ease-in-out infinite;
+		animation: arr-pos-l 1.1s linear infinite, arr-fade 1.1s ease-in-out infinite;
 	}
 
 	/* Vertical connector */
@@ -458,7 +448,7 @@
 		top:auto;
 		left:50%; transform:translateX(-50%);
 		border-bottom-color: rgba(140,200,255,.95);
-		animation: arr-move-u 1.1s ease-in-out infinite;
+		animation: arr-pos-u 1.1s linear infinite, arr-fade 1.1s ease-in-out infinite;
 	}
 
 	/* Down arrow (inactive: dim at bottom) */
@@ -472,7 +462,7 @@
 		bottom:auto;
 		left:50%; transform:translateX(-50%);
 		border-top-color: rgba(140,200,255,.95);
-		animation: arr-move-d 1.1s ease-in-out infinite;
+		animation: arr-pos-d 1.1s linear infinite, arr-fade 1.1s ease-in-out infinite;
 	}
 
 	/* Load boxes: stretch to full row height like other boxes */
