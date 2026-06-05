@@ -18,11 +18,6 @@ export type Telemetry = {
 	solar_total_a: number | null;
 	solar_yield_today_j: number | null;
 	solar_yield_yesterday_j: number | null;
-	inv_mode: string | null;
-	inv_ac_v: number | null;
-	inv_ac_hz: number | null;
-	inv_ac_w: number | null;
-	inv_dc_w: number | null;
 	nav_lat: number | null;
 	nav_lon: number | null;
 	nav_hdg_rad: number | null;
@@ -45,11 +40,6 @@ export type Telemetry = {
 	temp_amasb: number | null;
 	temp_amabb: number | null;
 	temp_water: number | null;
-	hum_salon: number | null;
-	hum_fridge: number | null;
-	hum_tech: number | null;
-	hum_amasb: number | null;
-	hum_amabb: number | null;
 	rig_port: number | null;
 	rig_sb: number | null;
 	// Primary engine (or port on catamaran)

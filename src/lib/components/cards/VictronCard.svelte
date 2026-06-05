@@ -99,9 +99,9 @@
 		</div>
 
 		<!-- desktop: h connector Shore→Inverter -->
-		<div class="conn d-only" class:on={isShoreOn} class:arr-r={isShoreOn} style="grid-area:ch1"></div>
+		<div class="conn conn-h d-only" class:on={isShoreOn} class:arr-r={isShoreOn} style="grid-area:ch1"></div>
 		<!-- mobile: v connector Shore↓Inverter -->
-		<div class="conn m-only" class:on={isShoreOn} class:arr-d={isShoreOn} style="grid-area:mv1"></div>
+		<div class="conn conn-v m-only" class:on={isShoreOn} class:arr-d={isShoreOn} style="grid-area:mv1"></div>
 
 		<div class="box box-c" style="grid-area:inv">
 			<div class="box-hdr">
@@ -115,11 +115,11 @@
 		</div>
 
 		<!-- desktop: h connector Inverter→AC Loads -->
-		<div class="conn d-only" class:on={hasLoad} class:arr-r={hasLoad} style="grid-area:ch2"></div>
+		<div class="conn conn-h d-only" class:on={hasLoad} class:arr-r={hasLoad} style="grid-area:ch2"></div>
 		<!-- mobile: v connector Inverter↓AC -->
-		<div class="conn m-only" class:on={hasLoad} class:arr-d={hasLoad} style="grid-area:mv3"></div>
+		<div class="conn conn-v m-only" class:on={hasLoad} class:arr-d={hasLoad} style="grid-area:mv3"></div>
 
-		<div class="box" class:box-on={hasLoad} style="grid-area:acload">
+		<div class="box box-load" class:box-on={hasLoad} style="grid-area:acload">
 			<div class="box-hdr">
 				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<circle cx="8" cy="8" r="6"/>
@@ -134,13 +134,13 @@
 
 		<!-- ░░ MIDDLE ROW (desktop vertical + mobile horizontal) ░░ -->
 		<!-- desktop: v connector Inverter↕Battery (center col) -->
-		<div class="conn d-only"
+		<div class="conn conn-v d-only"
 			class:on={isCharging || isDischarging}
 			class:arr-u={isDischarging}
 			class:arr-d={isCharging && !isDischarging}
 			style="grid-area:cv"></div>
 		<!-- mobile: h connector Inverter↔Battery (center row) -->
-		<div class="conn m-only"
+		<div class="conn conn-mh m-only"
 			class:on={isCharging || isDischarging}
 			class:arr-r={isDischarging}
 			class:arr-l={isCharging && !isDischarging}
@@ -186,9 +186,9 @@
 		</div>
 
 		<!-- desktop: h connector Solar→Battery -->
-		<div class="conn d-only" class:on={isSolarOn} class:arr-r={isSolarOn} style="grid-area:ch3"></div>
+		<div class="conn conn-h d-only" class:on={isSolarOn} class:arr-r={isSolarOn} style="grid-area:ch3"></div>
 		<!-- mobile: v connector Solar↓Battery -->
-		<div class="conn m-only" class:on={isSolarOn} class:arr-d={isSolarOn} style="grid-area:mv2"></div>
+		<div class="conn conn-v m-only" class:on={isSolarOn} class:arr-d={isSolarOn} style="grid-area:mv2"></div>
 
 		<!-- Battery -->
 		<div class="box box-c box-batt" style="grid-area:batt">
@@ -227,11 +227,11 @@
 		</div>
 
 		<!-- desktop: h connector Battery→DC Loads -->
-		<div class="conn d-only" class:on={hasDcLoad} class:arr-r={hasDcLoad} style="grid-area:ch4"></div>
+		<div class="conn conn-h d-only" class:on={hasDcLoad} class:arr-r={hasDcLoad} style="grid-area:ch4"></div>
 		<!-- mobile: v connector Battery↓DC Loads -->
-		<div class="conn m-only" class:on={hasDcLoad} class:arr-d={hasDcLoad} style="grid-area:mv4"></div>
+		<div class="conn conn-v m-only" class:on={hasDcLoad} class:arr-d={hasDcLoad} style="grid-area:mv4"></div>
 
-		<div class="box" class:box-on={hasDcLoad} style="grid-area:dcload">
+		<div class="box box-load" class:box-on={hasDcLoad} style="grid-area:dcload">
 			<div class="box-hdr">
 				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<circle cx="8" cy="8" r="6"/>
@@ -373,57 +373,66 @@
 	.mppt-yld { font-size:10px; color:rgba(255,255,255,.5); flex-shrink:0; }
 
 	/* ── Connectors ── */
-	/* Horizontal */
-	.conn { position:relative; }
-	/* horizontal line */
-	.conn::before {
+	/* Base: all connectors have position:relative and a centred dim line */
+	.conn { position:relative; overflow:visible; }
+
+	/* Horizontal line (default for .d-only connectors) */
+	.conn-h::before {
 		content:''; position:absolute; left:0; right:0; top:50%;
 		height:1.5px; background:rgba(255,255,255,.1); transform:translateY(-50%);
 	}
-	.conn.on::before { background:rgba(100,170,255,.8); }
-	/* right arrow */
-	.conn.arr-r::after {
-		content:''; position:absolute; right:2px;
+	.conn-h.on::before { background:rgba(100,170,255,.8); }
+
+	/* Right-pointing arrow — centred vertically, at right end of connector */
+	.conn-h.arr-r::after {
+		content:''; position:absolute;
+		right:0; top:50%; transform:translateY(-50%);
 		border:5px solid transparent; border-left:7px solid rgba(140,200,255,.9);
 	}
-	/* left arrow */
-	.conn.arr-l::after {
-		content:''; position:absolute; left:2px;
+	/* Left-pointing arrow */
+	.conn-h.arr-l::after {
+		content:''; position:absolute;
+		left:0; top:50%; transform:translateY(-50%);
 		border:5px solid transparent; border-right:7px solid rgba(140,200,255,.9);
 	}
 
-	/* Vertical (desktop cv + mobile mv*) */
-	.conn[style*="cv"],
-	.conn[style*="mv"] {
+	/* Vertical connector (desktop: between rows) */
+	.conn-v {
 		display:flex; align-items:center; justify-content:center;
 	}
-	/* vertical line via ::before override */
-	.conn[style*="cv"]::before,
-	.conn[style*="mv"]::before {
-		left:50%; right:auto; top:0; bottom:0; height:auto;
-		width:1.5px; transform:translateX(-50%);
+	.conn-v::before {
+		content:''; position:absolute; top:0; bottom:0; left:50%;
+		width:1.5px; background:rgba(255,255,255,.1); transform:translateX(-50%);
 	}
-	/* up arrow */
-	.conn.arr-u::after {
-		content:''; position:absolute; top:2px;
+	.conn-v.on::before { background:rgba(100,170,255,.8); }
+	/* Up arrow — centred horizontally, at top */
+	.conn-v.arr-u::after {
+		content:''; position:absolute;
+		top:0; left:50%; transform:translateX(-50%);
 		border:5px solid transparent; border-bottom:7px solid rgba(140,200,255,.9);
 	}
-	/* down arrow */
-	.conn.arr-d::after {
-		content:''; position:absolute; bottom:2px;
+	/* Down arrow — centred horizontally, at bottom */
+	.conn-v.arr-d::after {
+		content:''; position:absolute;
+		bottom:0; left:50%; transform:translateX(-50%);
 		border:5px solid transparent; border-top:7px solid rgba(140,200,255,.9);
 	}
 
-	/* Mobile horizontal connector (mh) between inv and batt */
-	.conn[style*="mh"] {
-		display:none; /* hidden desktop */
+	/* Load boxes: don't stretch to match taller Battery cell */
+	.box-load { align-self:start; }
+
+	/* Mobile connectors hidden on desktop */
+	.m-only { display:none !important; }
+
+	/* Mobile horizontal connector between inv and batt */
+	.conn-mh { display:none; }
+	.conn-mh::before {
+		left:0; right:0; top:50%; bottom:auto; height:1.5px; width:auto; transform:translateY(-50%);
 	}
+
 	@media (max-width: 540px) {
-		.conn[style*="mh"] {
-			display:flex; align-items:center;
-		}
-		.conn[style*="mh"]::before {
-			left:0; right:0; top:50%; bottom:auto; height:1.5px; width:auto; transform:translateY(-50%);
-		}
+		.m-only  { display:flex !important; align-items:center; justify-content:center; }
+		.conn-mh { display:flex; align-items:center; }
+		.conn-mh::before { content:''; position:absolute; }
 	}
 </style>

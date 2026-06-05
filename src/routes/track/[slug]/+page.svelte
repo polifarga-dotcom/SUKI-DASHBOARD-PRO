@@ -338,7 +338,7 @@
 	const baro    = $derived(t?.env_pressure_pa != null ? Math.round(t.env_pressure_pa / 100) : null);
 	const depth   = $derived(t?.env_depth_m ?? null);
 	const battSoc = $derived(t?.batt_main_soc != null ? Math.round(t.batt_main_soc * 100) : null);
-	const solar   = $derived(t?.solar_total_w ?? null);
+	const solar   = $derived(t?.solar_total_w ?? null);  // telemetry from SignalK plugin
 	const engOn   = $derived((t?.eng_rpm ?? 0) > 0 || (t?.eng_sb_rpm ?? 0) > 0);
 	// Status: Anchored ≤ 1.5 kn, Motoring when engine on, Sailing otherwise
 	const boatStatus = $derived(
