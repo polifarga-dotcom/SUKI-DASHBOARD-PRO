@@ -227,13 +227,30 @@
 		return '#ef4444';
 	}
 
-	// Handle click on SVG → move cursor
-	function onSvgClick(e: MouseEvent) {
-		const svg = e.currentTarget as SVGSVGElement;
-		const rect = svg.getBoundingClientRect();
+	// ── Pointer handling (mouse + touch) ────────────────────────────────────
+	// Uses Pointer Events API with setPointerCapture so drag continues even
+	// if the pointer leaves the SVG. touch-action:none on the SVG prevents
+	// the page from scrolling while the user drags the cursor.
+	let dragging = $state(false);
+
+	function moveCursor(e: PointerEvent) {
+		const rect = (e.currentTarget as Element).getBoundingClientRect();
 		const pct = (e.clientX - rect.left) / rect.width;
 		sliderVal = Math.round(Math.max(0, Math.min(1, pct)) * 1000);
 	}
+
+	function onPointerDown(e: PointerEvent) {
+		dragging = true;
+		(e.currentTarget as Element).setPointerCapture(e.pointerId);
+		moveCursor(e);
+	}
+
+	function onPointerMove(e: PointerEvent) {
+		if (!dragging) return;
+		moveCursor(e);
+	}
+
+	function onPointerUp() { dragging = false; }
 </script>
 
 {#if points.length >= 2}
@@ -245,7 +262,11 @@
 	<div class="track">
 		<span class="track-lbl">{label}</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			{@html svgContent}
 			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
 		</svg>
@@ -260,7 +281,11 @@
 	<div class="track">
 		<span class="track-lbl">SOG</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			{@html engineBg}
 			<path d={area} fill="rgba(34,211,238,0.15)"/>
 			<path d={line} stroke="#22d3ee" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
@@ -279,7 +304,11 @@
 	<div class="track">
 		<span class="track-lbl">Wind</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			<path d={area} fill="rgba(34,197,94,0.15)"/>
 			<path d={line} stroke="#22c55e" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
 			{#if lineAws}<path d={lineAws} stroke="#fb923c" stroke-width="1" stroke-dasharray="3 2" fill="none" stroke-linejoin="round"/>{/if}
@@ -297,7 +326,11 @@
 	<div class="track">
 		<span class="track-lbl">AWS</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			<path d={area} fill="rgba(251,146,60,0.15)"/>
 			<path d={line} stroke="#fb923c" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
 			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
@@ -311,7 +344,11 @@
 	<div class="track">
 		<span class="track-lbl">TWD</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			<!-- N/S labels -->
 			<text x={PL} y={PT+6} font-size="7" fill="rgba(255,255,255,0.3)" font-family="monospace">N</text>
 			<text x={PL} y={PT+IH} font-size="7" fill="rgba(255,255,255,0.3)" font-family="monospace">S</text>
@@ -327,7 +364,11 @@
 	<div class="track">
 		<span class="track-lbl">AWA</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			<!-- Centre line (0° = close hauled boundary) -->
 			<line x1={PL} y1={cx_center} x2={W-PR} y2={cx_center} stroke="rgba(255,255,255,0.12)" stroke-width="0.5"/>
 			<text x={PL} y={cx_center - 2} font-size="6" fill="rgba(255,255,255,0.25)" font-family="monospace">S</text>
@@ -360,7 +401,11 @@
 	<div class="track">
 		<span class="track-lbl">Baro {baroTrend}</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			<path d={line} stroke="#a78bfa" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
 			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
 			{#if cy != null}<circle cx={cursorX} cy={cy} r="3" fill="#a78bfa"/>{/if}
@@ -376,7 +421,11 @@
 	<div class="track">
 		<span class="track-lbl">Depth</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			<path d={area} fill="rgba(14,165,233,0.15)"/>
 			<path d={line} stroke="#0ea5e9" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
 			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
@@ -393,7 +442,11 @@
 	<div class="track">
 		<span class="track-lbl">Batt</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			<path d={line} stroke={socColor(curSoc)} stroke-width="1.5" fill="none" stroke-linejoin="round"/>
 			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
 			{#if cy != null}<circle cx={cursorX} cy={cy} r="3" fill={socColor(curSoc)}/>{/if}
@@ -410,7 +463,11 @@
 	<div class="track">
 		<span class="track-lbl">Temp</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			{#if airLine}  <path d={airLine}   stroke="#fb923c" stroke-width="1.5" fill="none" stroke-linejoin="round"/>{/if}
 			{#if waterLine}<path d={waterLine} stroke="#38bdf8" stroke-width="1.5" fill="none" stroke-dasharray="3 2" stroke-linejoin="round"/>{/if}
 			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
@@ -433,7 +490,11 @@
 	<div class="track">
 		<span class="track-lbl">Wave</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			<path d={area} fill="rgba(99,102,241,0.15)"/>
 			<path d={line} stroke="#6366f1" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
 			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
@@ -449,7 +510,11 @@
 	<div class="track">
 		<span class="track-lbl">RPM</span>
 		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img" onclick={onSvgClick}>
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
 			{@html engineBg}
 			<path d={line} stroke="#fb923c" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
 			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
@@ -493,14 +558,17 @@
 		gap: 6px;
 		height: 52px;
 	}
+	/* Fixed widths (not min-width) so slider aligns exactly with SVG area */
 	.track-lbl {
 		font-size: 9px;
 		color: var(--muted);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
-		min-width: 32px;
+		width: 36px;            /* fixed — prevents "Baro ↑" from pushing SVG */
 		text-align: right;
 		flex-shrink: 0;
+		overflow: hidden;
+		white-space: nowrap;
 	}
 	.track-svg {
 		flex: 1;
@@ -508,13 +576,17 @@
 		cursor: crosshair;
 		border-radius: 3px;
 		background: rgba(255,255,255,0.03);
+		touch-action: none;    /* prevent page scroll during drag */
 	}
 	.track-val {
 		font-size: 10px;
 		font-weight: 600;
-		min-width: 70px;
+		width: 72px;            /* fixed — prevents wrapping from shifting layout */
+		flex-shrink: 0;
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	/* Cursor line (rendered via SVG attribute, styled via CSS) */
@@ -526,10 +598,12 @@
 	}
 
 	/* ── Slider area ── */
+	/* padding-left = label width (36px) + gap (6px) = 42px  */
+	/* padding-right = value width (72px) + gap (6px) = 78px */
 	.slider-area {
 		margin-top: 6px;
-		padding-left: 38px;   /* align with track SVGs */
-		padding-right: 76px;  /* align with track-val */
+		padding-left: 42px;
+		padding-right: 78px;
 		position: relative;
 	}
 	.time-axis {
