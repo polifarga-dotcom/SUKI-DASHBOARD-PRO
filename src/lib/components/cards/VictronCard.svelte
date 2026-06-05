@@ -139,11 +139,14 @@
 			class:arr-u={isDischarging}
 			class:arr-d={isCharging && !isDischarging}
 			style="grid-area:cv"></div>
-		<!-- mobile: h connector Inverter↔Battery (center row) -->
-		<div class="conn conn-mh m-only"
+		<!-- mobile: h connector Inverter↔Battery (center row)
+		     Mobile layout: Inverter=left col, Battery=right col
+		     Discharging  → energy flows Battery→Inverter = RIGHT→LEFT = arr-l
+		     Charging     → energy flows Inverter→Battery = LEFT→RIGHT = arr-r -->
+		<div class="conn conn-h conn-mh m-only"
 			class:on={isCharging || isDischarging}
-			class:arr-r={isDischarging}
-			class:arr-l={isCharging && !isDischarging}
+			class:arr-l={isDischarging}
+			class:arr-r={isCharging && !isDischarging}
 			style="grid-area:mh"></div>
 
 		<!-- ░░ ROW 2 ░░ -->
