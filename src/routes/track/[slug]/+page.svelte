@@ -302,9 +302,19 @@
 		}
 	}
 
+	// ── Key fix: initMap when mapEl becomes available ────────────────────────
+	// mapEl is null until the {:else if data} branch renders. The onMount
+	// call was too early. This $effect fires whenever mapEl changes — which
+	// happens exactly when the map div appears in the DOM after data loads.
+	$effect(() => {
+		if (mapEl && !map) {
+			initMap();
+		}
+	});
+
 	onMount(async () => {
 		await fetchData();
-		await initMap();
+		// initMap() will be triggered by the $effect above once mapEl is set
 		refreshTimer = setInterval(fetchData, 30_000);
 	});
 	onDestroy(() => {
