@@ -27,8 +27,8 @@
 	<EngineCard t={$telemetry} boatId={$currentBoat?.id} engineCount={($currentBoat?.engine_count ?? 1) as 1|2} />
 	<WakespeedCard t={$telemetry} />
 	<RigCard t={$telemetry} />
-	<VRMCard />
 	<div class="full-width"><VictronCard /></div>
+	<div class="full-width"><VRMCard /></div>
 </div>
 
 <style>

@@ -65,6 +65,14 @@
 
 	const hasAnyData = $derived(total != null || hasMppts || hasYield);
 
+	// Max power across all VRM MPPTs (for compact bar scaling)
+	const vrmMppts   = $derived($vrmData?.mpptsArr ?? []);
+	const vrmMaxW    = $derived(Math.max(1, ...vrmMppts.map(m => m.power_w)));
+	const vrmMaxToday= $derived(Math.max(0.001, ...vrmMppts.map(m => m.yield_today_wh ?? 0)));
+	// Peak power today across all MPPTs
+	const peakToday  = $derived(vrmMppts.length
+		? Math.max(...vrmMppts.map(m => m.power_w)) : null);
+
 	let expanded = $state(false);
 </script>
 
@@ -82,17 +90,63 @@
 		</div>
 	</button>
 
-	<!-- Compact summary: yield today + yesterday always visible -->
-	{#if hasYield}
-		<div class="yield-row compact">
+	<!-- ── Compact view — always visible ── -->
+	<div class="compact-body">
+
+		<!-- Key stats row -->
+		<div class="compact-stats">
 			{#if yieldToday != null}
-				<div><div class="label">Today</div><div class="val">{joule2kwh(yieldToday)}</div></div>
+			<div class="cstat">
+				<div class="cstat-lbl">Today</div>
+				<div class="cstat-val">{joule2kwh(yieldToday)}</div>
+			</div>
 			{/if}
 			{#if yieldYest != null}
-				<div><div class="label">Yesterday</div><div class="val">{joule2kwh(yieldYest)}</div></div>
+			<div class="cstat">
+				<div class="cstat-lbl">Yesterday</div>
+				<div class="cstat-val">{joule2kwh(yieldYest)}</div>
+			</div>
+			{/if}
+			{#if peakToday != null && peakToday > 0}
+			<div class="cstat">
+				<div class="cstat-lbl">Peak now</div>
+				<div class="cstat-val" style="color:var(--amber)">{fmtW(peakToday)}</div>
+			</div>
+			{/if}
+			{#if totalA != null}
+			<div class="cstat">
+				<div class="cstat-lbl">Current</div>
+				<div class="cstat-val">{totalA.toFixed(1)} A</div>
+			</div>
 			{/if}
 		</div>
-	{/if}
+
+		<!-- Per-MPPT mini bars (VRM data) or named panel bars -->
+		{#if vrmMppts.length > 0}
+		<div class="mini-bars">
+			{#each vrmMppts as m}
+			<div class="mini-bar-col" title="{m.name}: {m.power_w} W">
+				<div class="mini-bar-track">
+					<div class="mini-bar-fill" style="height:{Math.max(2, Math.round(m.power_w / vrmMaxW * 100))}%; background:{m.power_w > 50 ? 'var(--amber)' : 'rgba(245,200,66,0.3)'}"></div>
+				</div>
+				<div class="mini-bar-lbl">{m.name.replace(/^.*#(\d)/,'$1').replace(/^(Blue|Smart)Solar.*?(#\d|\d+\/\d+).*/,'$2').trim().slice(0,4)}</div>
+			</div>
+			{/each}
+		</div>
+		{:else if hasMppts}
+		<div class="mini-bars">
+			{#each panels.filter(p => p.w != null) as p}
+			<div class="mini-bar-col" title="MPPT {p.label}: {p.w} W">
+				<div class="mini-bar-track">
+					<div class="mini-bar-fill" style="height:{Math.max(2, Math.round((p.w ?? 0) / maxW() * 100))}%; background:var(--amber)"></div>
+				</div>
+				<div class="mini-bar-lbl">{p.label}</div>
+			</div>
+			{/each}
+		</div>
+		{/if}
+
+	</div><!-- /compact-body -->
 
 	{#if expanded}
 
@@ -232,10 +286,34 @@
 	.card-head:hover .expand-btn {
 		background: rgba(245,200,66,0.22);
 	}
-	.yield-row.compact {
-		display: flex; gap: 24px;
-		margin-bottom: 4px;
+	/* ── Compact body ── */
+	.compact-body { display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px; }
+
+	.compact-stats {
+		display: flex; gap: 0; flex-wrap: wrap;
 	}
+	.cstat {
+		flex: 1; min-width: 60px;
+		padding: 6px 8px;
+		background: var(--card2);
+		border-radius: 6px;
+		margin: 2px;
+		text-align: center;
+	}
+	.cstat-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+	.cstat-val { font-size: 14px; font-weight: 700; color: var(--text); margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+	/* Mini bar chart */
+	.mini-bars {
+		display: flex; gap: 4px; align-items: flex-end; height: 44px;
+	}
+	.mini-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; height: 100%; }
+	.mini-bar-track {
+		flex: 1; width: 100%; display: flex; align-items: flex-end;
+		background: rgba(255,255,255,0.05); border-radius: 3px 3px 0 0; overflow: hidden;
+	}
+	.mini-bar-fill { width: 100%; border-radius: 3px 3px 0 0; min-height: 2px; transition: height 0.5s ease; }
+	.mini-bar-lbl { font-size: 8px; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; max-width: 100%; }
 
 	.panels {
 		display: flex;
