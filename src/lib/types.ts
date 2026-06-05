@@ -196,6 +196,7 @@ export type VRMData = {
 	ac_output_v: number | null;
 	ac_output_w: number | null;
 	load_w: number | null;
+	vebus_dc_a: number | null;   // VE.Bus DC current (A): positive = inverting, negative = charging
 	// Environment
 	temperatures: VRMTempSensor[];
 	// Tanks

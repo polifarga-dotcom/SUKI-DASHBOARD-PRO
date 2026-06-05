@@ -186,6 +186,13 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		? mpptsArr.reduce((s, m) => s + m.yield_today_wh, 0)
 		: null;
 
+	// ── VE.Bus DC current (for DC loads calculation) ─────────────────────────
+	// The VE.Bus inverter/charger exposes /Dc/0/Current on its own device record.
+	// We find it by matching Device='VE.Bus System' to avoid confusion with battery monitors.
+	const vebusRow = rows.find(r => r.dbusPath === '/Dc/0/Current' &&
+		typeof r.Device === 'string' && r.Device.includes('VE.Bus'));
+	const vebus_dc_a = num(vebusRow?.rawValue) ?? null;
+
 	// ── AC Input (shore power / generator) ───────────────────────────────────
 	const acInV  = num(find('/Ac/In/L1/V')?.rawValue)
 		?? num(find('/Ac/ActiveIn/L1/V')?.rawValue);
@@ -287,6 +294,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		ac_input_v: acInV ?? null, ac_input_w: acInP,
 		ac_output_v: acOutV, ac_output_w: acOutP,
 		load_w,
+		vebus_dc_a,
 		temperatures,
 		tanks,
 		gps_lat, gps_lon, gps_speed_ms, gps_course_deg, gps_ts,

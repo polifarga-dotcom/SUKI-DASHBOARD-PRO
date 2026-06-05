@@ -9,6 +9,7 @@
 	import RigCard from '$lib/components/cards/RigCard.svelte';
 	import ShellyCard from '$lib/components/cards/ShellyCard.svelte';
 	import VRMCard from '$lib/components/cards/VRMCard.svelte';
+	import VictronCard from '$lib/components/cards/VictronCard.svelte';
 	import WakespeedCard from '$lib/components/cards/WakespeedCard.svelte';
 </script>
 
@@ -27,6 +28,7 @@
 	<RigCard t={$telemetry} />
 	<ShellyCard />
 	<VRMCard />
+	<VictronCard />
 </div>
 
 <style>
