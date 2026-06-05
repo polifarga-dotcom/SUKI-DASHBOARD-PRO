@@ -44,18 +44,18 @@ const SVGS: Record<string, string> = {
     '<path d="M20 3 C22 7 23 16 23 29 C23 41 22 50 20 55',
     ' C18 50 17 41 17 29 C17 16 18 7 20 3Z"',
     ' fill="COL" stroke="rgba(255,255,255,0.25)" stroke-width="1"/>',
-    // Port ama — shorter, positioned mid-length, centred at x=7
-    '<path d="M7 19 C5 21 4 27 4 33 C4 39 5 44 7 47',
-    ' C9 44 10 39 10 33 C10 27 9 21 7 19Z"',
+    // Port ama — longer, positioned alongside main hull, centred at x=7
+    '<path d="M7 12 C5 15 4 22 4 32 C4 42 5 48 7 52',
+    ' C9 48 10 42 10 32 C10 22 9 15 7 12Z"',
     ' fill="COL" stroke="rgba(255,255,255,0.18)" stroke-width="0.8" opacity="0.9"/>',
     // Stbd ama — perfect mirror, centred at x=33
-    '<path d="M33 19 C35 21 36 27 36 33 C36 39 35 44 33 47',
-    ' C31 44 30 39 30 33 C30 27 31 21 33 19Z"',
+    '<path d="M33 12 C35 15 36 22 36 32 C36 42 35 48 33 52',
+    ' C31 48 30 42 30 32 C30 22 31 15 33 12Z"',
     ' fill="COL" stroke="rgba(255,255,255,0.18)" stroke-width="0.8" opacity="0.9"/>',
-    // Port crossbeam beam (from ama to main hull)
-    '<rect x="10" y="27" width="7" height="2.5" rx="1.25" fill="COL" opacity="0.95"/>',
-    // Stbd crossbeam beam
-    '<rect x="23" y="27" width="7" height="2.5" rx="1.25" fill="COL" opacity="0.95"/>',
+    // Port crossbeam (from ama to main hull)
+    '<rect x="10" y="24" width="7" height="2.5" rx="1.25" fill="COL" opacity="0.95"/>',
+    // Stbd crossbeam
+    '<rect x="23" y="24" width="7" height="2.5" rx="1.25" fill="COL" opacity="0.95"/>',
     // Bow highlight
     '<circle cx="20" cy="4" r="2.2" fill="rgba(255,255,255,0.85)"/>',
     '</svg>',
