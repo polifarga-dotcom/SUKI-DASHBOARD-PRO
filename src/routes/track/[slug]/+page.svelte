@@ -234,14 +234,16 @@
 		const lon = data?.telemetry?.nav_lon ?? data?.track?.at(-1)?.lon ?? 20;
 		map = L.map(mapEl, { center: [lat, lon], zoom: 11, zoomControl: false });
 
-		// CartoDB Dark Matter — monochrome, minimal
-		L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
-			attribution: '© CartoDB · OSM', subdomains: 'abcd', maxZoom: 19,
+		// Standard OSM tiles — always reliable, no CORS, no rate limit
+		// Dark appearance achieved via CSS filter on .leaflet-tile-pane
+		L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+			attribution: '© OpenStreetMap contributors',
+			maxZoom: 19,
 		}).addTo(map);
 
-		// OpenSeaMap nautical overlay
+		// OpenSeaMap nautical overlay (transparent PNG on top)
 		L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
-			maxZoom: 18, opacity: 0.45,
+			maxZoom: 18, opacity: 0.7,
 		}).addTo(map);
 
 		L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -555,9 +557,14 @@
 <style>
 	:global(html,body) { margin:0; padding:0; height:100%; background:#080c14; overflow:hidden; }
 
-	/* Slightly brighten dark tiles so labels are readable without a vignette */
+	/* Dark map effect via CSS filter on OSM tiles:
+	   invert → hue-rotate compensates colour inversion → slightly desaturate */
 	:global(.leaflet-tile-pane) {
-		filter: brightness(1.05) contrast(0.95);
+		filter: invert(1) hue-rotate(200deg) brightness(0.85) saturate(0.55) contrast(0.9);
+	}
+	/* Keep OpenSeaMap sea marks readable on dark background */
+	:global(.leaflet-tile-pane > .leaflet-layer:last-child) {
+		filter: invert(1) hue-rotate(200deg) brightness(1.4);
 	}
 
 	/* ── Root ── */
@@ -617,9 +624,9 @@
 	/* ── Wind particle canvas ── */
 	.wind-canvas {
 		position: absolute; inset: 0;
-		z-index: 200;          /* above map tiles, below markers */
+		z-index: 800;          /* above all Leaflet layers (markers=600, popups=700) */
 		pointer-events: none;  /* clicks pass through to map */
-		mix-blend-mode: screen; /* additive blend makes particles glow on dark map */
+		/* No mix-blend-mode — particles are visible on their own */
 	}
 
 	/* ── Top pill bar ── */
