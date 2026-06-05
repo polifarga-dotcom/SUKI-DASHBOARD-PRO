@@ -314,6 +314,7 @@
 		background:#0d2d4a; border:1px solid rgba(100,160,220,.18);
 		border-radius:6px; padding:10px 12px;
 		min-height:80px; display:flex; flex-direction:column; gap:3px;
+		justify-content:center;
 	}
 	.box-on { background:#1565c0; border-color:rgba(120,180,255,.5); }
 	.box-c  { border-color:rgba(120,180,255,.4); }
@@ -376,27 +377,10 @@
 	/* Base: all connectors have position:relative and a centred dim line */
 	.conn { position:relative; overflow:visible; }
 
-	/* ── Keyframe animations (energy flow) ── */
-	@keyframes flow-right {
-		from { background-position: -18px center; }
-		to   { background-position: 0 center; }
-	}
-	@keyframes flow-left {
-		from { background-position: 18px center; }
-		to   { background-position: 0 center; }
-	}
-	@keyframes flow-up {
-		from { background-position: center 18px; }
-		to   { background-position: center 0; }
-	}
-	@keyframes flow-down {
-		from { background-position: center -18px; }
-		to   { background-position: center 0; }
-	}
-	/* Subtle pulse on arrow triangle when active */
+	/* Arrow pulse animation (only arrows blink, no moving dashes) */
 	@keyframes arr-pulse {
 		0%,100% { opacity:1; }
-		50%      { opacity:0.5; }
+		50%      { opacity:0.15; }
 	}
 
 	/* Horizontal line */
@@ -404,37 +388,28 @@
 		content:''; position:absolute; left:0; right:0; top:50%;
 		height:2px; background:rgba(255,255,255,.08); transform:translateY(-50%);
 	}
-	/* Active: animated flowing dashes moving rightward (default) */
-	.conn-h.on::before {
-		background:
-			repeating-linear-gradient(
-				90deg,
-				rgba(100,170,255,0.85) 0 9px,
-				transparent 9px 18px
-			);
-		background-size: 18px 100%;
-		animation: flow-right 0.55s linear infinite;
-	}
-	/* When flow goes left: reverse dash direction */
-	.conn-h.arr-l.on::before { animation: flow-left 0.55s linear infinite; }
+	.conn-h.on::before { background:rgba(100,170,255,.75); }
 
 	/* Right-pointing arrow */
 	.conn-h.arr-r::after {
 		content:''; position:absolute;
 		right:0; top:50%; transform:translateY(-50%);
-		border:5px solid transparent; border-left:7px solid rgba(140,200,255,.6);
+		border:5px solid transparent; border-left:7px solid rgba(140,200,255,.25);
 	}
 	.conn-h.arr-r.on::after {
-		border-left-color:rgba(140,200,255,.95);
-		animation: arr-pulse 1.1s ease-in-out infinite;
+		border-left-color:rgba(140,200,255,1);
+		animation: arr-pulse 1.2s ease-in-out infinite;
 	}
 	/* Left-pointing arrow */
 	.conn-h.arr-l::after {
 		content:''; position:absolute;
 		left:0; top:50%; transform:translateY(-50%);
-		border:5px solid transparent; border-right:7px solid rgba(140,200,255,.6);
+		border:5px solid transparent; border-right:7px solid rgba(140,200,255,.25);
 	}
-	.conn-h.arr-l.on::after { border-right-color:rgba(140,200,255,.95); animation:arr-pulse 1.1s ease-in-out infinite; }
+	.conn-h.arr-l.on::after {
+		border-right-color:rgba(140,200,255,1);
+		animation: arr-pulse 1.2s ease-in-out infinite;
+	}
 
 	/* Vertical connector */
 	.conn-v { display:flex; align-items:center; justify-content:center; }
@@ -442,45 +417,31 @@
 		content:''; position:absolute; top:0; bottom:0; left:50%;
 		width:2px; background:rgba(255,255,255,.08); transform:translateX(-50%);
 	}
-	/* Active upward flow */
-	.conn-v.on.arr-u::before {
-		background:
-			repeating-linear-gradient(
-				0deg,
-				rgba(100,170,255,0.85) 0 9px,
-				transparent 9px 18px
-			);
-		background-size: 100% 18px;
-		animation: flow-up 0.55s linear infinite;
-	}
-	/* Active downward flow */
-	.conn-v.on.arr-d::before {
-		background:
-			repeating-linear-gradient(
-				180deg,
-				rgba(100,170,255,0.85) 0 9px,
-				transparent 9px 18px
-			);
-		background-size: 100% 18px;
-		animation: flow-down 0.55s linear infinite;
-	}
+	.conn-v.on::before { background:rgba(100,170,255,.75); }
+
 	/* Up arrow */
 	.conn-v.arr-u::after {
 		content:''; position:absolute;
 		top:0; left:50%; transform:translateX(-50%);
-		border:5px solid transparent; border-bottom:7px solid rgba(140,200,255,.6);
+		border:5px solid transparent; border-bottom:7px solid rgba(140,200,255,.25);
 	}
-	.conn-v.arr-u.on::after { border-bottom-color:rgba(140,200,255,.95); animation:arr-pulse 1.1s ease-in-out infinite; }
+	.conn-v.arr-u.on::after {
+		border-bottom-color:rgba(140,200,255,1);
+		animation: arr-pulse 1.2s ease-in-out infinite;
+	}
 	/* Down arrow */
 	.conn-v.arr-d::after {
 		content:''; position:absolute;
 		bottom:0; left:50%; transform:translateX(-50%);
-		border:5px solid transparent; border-top:7px solid rgba(140,200,255,.6);
+		border:5px solid transparent; border-top:7px solid rgba(140,200,255,.25);
 	}
-	.conn-v.arr-d.on::after { border-top-color:rgba(140,200,255,.95); animation:arr-pulse 1.1s ease-in-out infinite; }
+	.conn-v.arr-d.on::after {
+		border-top-color:rgba(140,200,255,1);
+		animation: arr-pulse 1.2s ease-in-out infinite;
+	}
 
-	/* Load boxes: don't stretch to match taller Battery cell */
-	.box-load { align-self:start; }
+	/* Load boxes: stretch to full row height like other boxes */
+	.box-load { }  /* no override — grid stretches all equally */
 
 	/* Mobile connectors hidden on desktop */
 	.m-only { display:none !important; }
