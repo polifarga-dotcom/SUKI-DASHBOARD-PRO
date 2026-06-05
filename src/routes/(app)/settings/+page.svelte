@@ -494,8 +494,10 @@
 			? (v: TestState) => { tgTest = v; }
 			: (v: TestState) => { poTest = v; };
 		set('sending');
-		const { error } = await supabase.from('relay_commands').insert({
-			device: 'notification_test', channel, desired_state: 1,
+		const boatId = $currentBoat?.id;
+		if (!boatId) { set('err'); setTimeout(() => set('idle'), 3000); return; }
+		const { error } = await supabase.functions.invoke('send-test-notification', {
+			body: { boat_id: boatId, channel },
 		});
 		set(error ? 'err' : 'ok');
 		setTimeout(() => set('idle'), 3000);
