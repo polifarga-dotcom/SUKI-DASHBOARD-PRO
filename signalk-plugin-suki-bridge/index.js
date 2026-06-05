@@ -141,12 +141,15 @@ module.exports = function (app) {
     // and charger instances are discovered and summed dynamically.
     'electrical.chargers.0.panelPower':                      'solar_total_w',
 
-    // Wakespeed alternator regulators — instance 0 fast path
-    // (Victron Cerbo CAN-Bus integration: electrical.alternator.{n}.*)
-    // Instance 1 discovered dynamically in discoverDynamicPaths().
+    // Wakespeed alternator regulators — both instances static
+    // (Victron Cerbo CAN-Bus: electrical.alternator.{0,1}.*)
+    // Static mapping is more reliable than dynamic discovery on twin-engine boats.
     'electrical.alternator.0.voltage':                       'ws_0_alt_v',
     'electrical.alternator.0.temperature':                   'ws_0_alt_temp_k',
     'electrical.alternator.0.fieldDrive':                    'ws_0_field_pct',
+    'electrical.alternator.1.voltage':                       'ws_1_alt_v',
+    'electrical.alternator.1.temperature':                   'ws_1_alt_temp_k',
+    'electrical.alternator.1.fieldDrive':                    'ws_1_field_pct',
 
     // Rudder
     'steering.rudderAngle':                                  'rudder_rad',
@@ -503,17 +506,19 @@ module.exports = function (app) {
         app.debug(`Could not subscribe to navigation.position compound: ${e.message}`);
       }
 
-      // ── Wakespeed chargingMode (string) — instance 0 static subscription ────────
+      // ── Wakespeed chargingMode (string) — static subscriptions for both instances ──
       // PATH_MAP only handles numeric values; chargingMode ("float","bulk","absorption"…)
       // is a string and needs its own subscription into pendingStr.
-      try {
-        const wsMode0Unsub = app.streambundle.getSelfBus('electrical.alternator.0.chargingMode')
-          .onValue(({ value }) => {
-            if (typeof value === 'string' && value.length > 0) pendingStr['ws_0_mode'] = value;
-          });
-        unsubscribes.push(wsMode0Unsub);
-      } catch (e) {
-        app.debug(`Could not subscribe to electrical.alternator.0.chargingMode: ${e.message}`);
+      for (const [inst, col] of [['0', 'ws_0_mode'], ['1', 'ws_1_mode']]) {
+        try {
+          const unsub = app.streambundle.getSelfBus(`electrical.alternator.${inst}.chargingMode`)
+            .onValue(({ value }) => {
+              if (typeof value === 'string' && value.length > 0) pendingStr[col] = value;
+            });
+          unsubscribes.push(unsub);
+        } catch (e) {
+          app.debug(`Could not subscribe to electrical.alternator.${inst}.chargingMode: ${e.message}`);
+        }
       }
 
       // ── Dynamic path discovery ───────────────────────────────────────────────
