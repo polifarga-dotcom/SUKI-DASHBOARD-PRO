@@ -18,11 +18,17 @@
 	};
 
 	// ── State ─────────────────────────────────────────────────────────────────
-	let data     = $state<TrackerData | null>(null);
-	let error    = $state<string | null>(null);
-	let loading  = $state(true);
-	let mapEl    = $state<HTMLDivElement | null>(null);
-	let mapReady = $state(false);
+	let data            = $state<TrackerData | null>(null);
+	let error           = $state<string | null>(null);
+	let loading         = $state(true);
+	let mapEl           = $state<HTMLDivElement | null>(null);
+	let mapReady        = $state(false);
+	let passwordRequired = $state(false);
+	let passwordInput   = $state('');
+	let passwordWrong   = $state(false);
+	let passwordChecking = $state(false);
+	// Stored hashed password so we include it in refresh calls
+	let sessionPw       = $state<string | null>(null);
 
 	let L: any = null;
 	let map: any = null;
@@ -73,21 +79,47 @@
 	}
 
 	// ── Fetch data ────────────────────────────────────────────────────────────
-	async function fetchData() {
+	// SHA-256 hash (same as settings page, so comparison works on server)
+	async function sha256(text: string): Promise<string> {
+		const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+		return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+	}
+
+	async function fetchData(pw?: string | null) {
 		const slug = $page.params.slug;
 		if (!slug) return;
+		const pwParam = (pw ?? sessionPw) ? `&pw=${encodeURIComponent(pw ?? sessionPw!)}` : '';
 		try {
-			const res  = await fetch(`${API}?slug=${encodeURIComponent(slug)}`);
+			const res  = await fetch(`${API}?slug=${encodeURIComponent(slug)}${pwParam}`);
 			const json = await res.json();
+			if (res.status === 401) {
+				passwordRequired = true;
+				passwordWrong    = json.wrong_password ?? false;
+				loading = false;
+				return;
+			}
 			if (!res.ok) { error = json.error ?? 'Failed to load'; loading = false; return; }
-			data    = json as TrackerData;
-			error   = null;
-			loading = false;
+			data             = json as TrackerData;
+			error            = null;
+			loading          = false;
+			passwordRequired = false;
 			if (mapReady) updateMap();
 		} catch (e: any) {
 			error   = 'Network error — retrying…';
 			loading = false;
 		}
+	}
+
+	async function submitPassword() {
+		if (!passwordInput.trim()) return;
+		passwordChecking = true;
+		passwordWrong    = false;
+		// Hash before sending — password never travels in plaintext
+		const hashed = await sha256(passwordInput.trim());
+		sessionPw    = hashed;
+		await fetchData(hashed);
+		passwordChecking = false;
+		if (!passwordWrong) passwordInput = '';
 	}
 
 	// ── Map ───────────────────────────────────────────────────────────────────
@@ -222,10 +254,30 @@
 		<div class="splash-text">Loading tracker…</div>
 	</div>
 
+	{:else if passwordRequired}
+	<!-- Password gate -->
+	<div class="splash">
+		<div class="splash-icon">🔒</div>
+		<div class="splash-title">Password required</div>
+		<div class="splash-sub">This tracking page is password-protected. Enter the password to continue.</div>
+		<div class="pw-form">
+			<input class="pw-input" type="password" bind:value={passwordInput}
+				placeholder="Enter password…"
+				onkeydown={(e) => { if (e.key === 'Enter') submitPassword(); }}
+				autofocus/>
+			<button class="pw-btn" onclick={submitPassword} disabled={passwordChecking || !passwordInput.trim()}>
+				{passwordChecking ? 'Checking…' : 'View tracker'}
+			</button>
+		</div>
+		{#if passwordWrong}
+		<div class="pw-error">Incorrect password. Please try again.</div>
+		{/if}
+	</div>
+
 	{:else if error}
 	<!-- Error -->
 	<div class="splash">
-		<div class="splash-icon">🔒</div>
+		<div class="splash-icon">⚓</div>
 		<div class="splash-title">{error}</div>
 		<div class="splash-sub">The owner may not have enabled public tracking for this boat.</div>
 	</div>
@@ -415,6 +467,25 @@
 	.splash-text  { font-size: 16px; }
 	.splash-title { font-size: 18px; color: #fff; font-weight: 600; }
 	.splash-sub   { font-size: 13px; max-width: 320px; text-align: center; }
+	.pw-form {
+		display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center;
+	}
+	.pw-input {
+		padding: 10px 14px; background: rgba(255,255,255,0.08);
+		border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+		color: #fff; font-size: 15px; outline: none; min-width: 200px;
+		transition: border-color 0.2s;
+	}
+	.pw-input:focus { border-color: #00c8ff; }
+	.pw-btn {
+		padding: 10px 20px; background: #00c8ff; border: none; border-radius: 8px;
+		color: #0a0e1a; font-size: 14px; font-weight: 700; cursor: pointer;
+		transition: opacity 0.15s;
+	}
+	.pw-btn:disabled { opacity: 0.5; cursor: default; }
+	.pw-error {
+		font-size: 13px; color: #f87171; margin-top: 6px;
+	}
 
 	/* ── Top bar ── */
 	.topbar {

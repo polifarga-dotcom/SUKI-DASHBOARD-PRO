@@ -208,30 +208,76 @@
 	let inreachTestMsg  = $state('');
 
 	// ── Public Tracking ───────────────────────────────────────────────────────
-	let trackingEnabled  = $state(false);
-	let trackingSlug     = $state('');
-	let trackingSaving   = $state(false);
-	let trackingSaved    = $state(false);
+	let trackingEnabled    = $state(false);
+	let trackingSlug       = $state('');
+	let trackingPassword   = $state('');        // plaintext while editing — hashed before saving
+	let trackingHasPass    = $state(false);     // true if a password hash is stored
+	let trackingSaving     = $state(false);
+	let trackingSaved      = $state(false);
+	let trackingError      = $state('');
 	let trackingLinkCopied = $state(false);
 
 	$effect(() => {
-		const b = $currentBoat;
+		const b = $currentBoat as any;
 		if (b) {
-			trackingEnabled = (b as any).tracking_enabled ?? false;
-			trackingSlug    = (b as any).tracking_slug    ?? b.name.toLowerCase().replace(/\s+/g, '-');
+			trackingEnabled = b.tracking_enabled ?? false;
+			trackingSlug    = b.tracking_slug    ?? b.name.toLowerCase().replace(/\s+/g, '-');
+			trackingHasPass = !!b.tracking_password_hash;
 		}
 	});
+
+	// SHA-256 hash of a string (Web Crypto API — available in browser)
+	async function sha256(text: string): Promise<string> {
+		const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+		return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+	}
 
 	async function saveTracking() {
 		const boatId = $currentBoat?.id;
 		if (!boatId) return;
+		trackingError = '';
+		const slug = trackingSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+		if (!slug) { trackingError = 'Slug cannot be empty.'; return; }
+
+		// Check slug uniqueness — must not be taken by another boat
+		const { data: conflict } = await supabase
+			.from('boats').select('id').eq('tracking_slug', slug).neq('id', boatId).maybeSingle();
+		if (conflict) {
+			trackingError = `"${slug}" is already taken by another boat. Choose a different slug.`;
+			return;
+		}
+
+		// Hash password if a new one was entered; keep existing if left blank
+		let passwordHash: string | null | undefined = undefined; // undefined = don't change
+		if (trackingPassword.trim()) {
+			passwordHash = await sha256(trackingPassword.trim());
+			trackingHasPass = true;
+		}
+
+		const patch: Record<string, unknown> = {
+			tracking_enabled: trackingEnabled,
+			tracking_slug:    slug,
+		};
+		if (passwordHash !== undefined) patch.tracking_password_hash = passwordHash;
+
 		trackingSaving = true;
-		const { data } = await supabase.from('boats')
-			.update({ tracking_enabled: trackingEnabled, tracking_slug: trackingSlug.trim() || null })
-			.eq('id', boatId).select().single();
+		const { data, error } = await supabase.from('boats').update(patch).eq('id', boatId).select().single();
+		trackingSaving = false;
+		if (error) { trackingError = error.message; return; }
 		if (data) currentBoat.update(b => b ? { ...b, ...(data as any) } : b);
-		trackingSaving = false; trackingSaved = true;
+		trackingSlug     = slug;
+		trackingPassword = '';    // clear after save
+		trackingSaved    = true;
 		setTimeout(() => { trackingSaved = false; }, 2000);
+	}
+
+	async function removeTrackingPassword() {
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
+		await supabase.from('boats').update({ tracking_password_hash: null }).eq('id', boatId);
+		trackingHasPass = true; // will flip after currentBoat update
+		currentBoat.update(b => b ? { ...b, tracking_password_hash: null } as any : b);
+		trackingHasPass = false;
 	}
 
 	function copyTrackingLink() {
@@ -1062,12 +1108,12 @@
 		<div class="setting-row" style="margin-top:12px">
 			<div class="setting-label">
 				<h3>URL slug</h3>
-				<p>Customise the link (lowercase, hyphens only)</p>
+				<p>Unique name in the link (lowercase, hyphens only)</p>
 			</div>
 			<input class="setting-input"
 				bind:value={trackingSlug}
 				placeholder="sv-my-boat"
-				pattern="[a-z0-9\-]+"
+				oninput={(e) => { trackingSlug = (e.target as HTMLInputElement).value.toLowerCase().replace(/[^a-z0-9-]/g, '-'); }}
 				style="max-width:160px"/>
 		</div>
 
@@ -1077,8 +1123,33 @@
 				{trackingLinkCopied ? '✓ Copied!' : '🔗 Copy link'}
 			</button>
 		</div>
+
+		<!-- Password protection -->
+		<div class="tracking-pass-section">
+			<div class="setting-row" style="margin-top:4px">
+				<div class="setting-label">
+					<h3>Password protection</h3>
+					<p>{trackingHasPass ? '🔒 Password is set — only people with the password can view the tracker.' : '🌐 Public — anyone with the link can view the tracker.'}</p>
+				</div>
+			</div>
+			<div class="pass-row">
+				<input class="setting-input" type="password"
+					bind:value={trackingPassword}
+					placeholder={trackingHasPass ? 'Enter new password to change…' : 'Set a password (optional)…'}
+					style="flex:1"/>
+				{#if trackingHasPass}
+				<button class="btn btn-ghost" onclick={removeTrackingPassword} style="white-space:nowrap;color:var(--red)">
+					Remove password
+				</button>
+				{/if}
+			</div>
+			{#if trackingPassword}
+			<p class="pass-hint">Password will be saved when you click Save below.</p>
+			{/if}
+		</div>
 		{/if}
 
+		{#if trackingError}<div class="alert alert-error">{trackingError}</div>{/if}
 		{#if trackingSaved}<div class="alert alert-info">✓ Saved</div>{/if}
 		<button class="btn btn-primary mt" onclick={saveTracking} disabled={trackingSaving}>
 			{trackingSaving ? 'Saving…' : 'Save tracking settings'}
@@ -1330,5 +1401,8 @@
 		font-size: 12px; font-family: monospace; color: var(--accent);
 		flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	}
+	.tracking-pass-section { margin-top: 12px; }
+	.pass-row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+	.pass-hint { font-size: 11px; color: var(--muted); margin: 4px 0 0; font-style: italic; }
 
 </style>

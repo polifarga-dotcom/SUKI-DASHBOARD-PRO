@@ -39,7 +39,7 @@ Deno.serve(async (req: Request) => {
   // ── Resolve boat ──────────────────────────────────────────────────────────
   const { data: boat } = await supabase
     .from('boats')
-    .select('id, name, tracking_slug, tracking_enabled, engine_count')
+    .select('id, name, tracking_slug, tracking_enabled, engine_count, tracking_password_hash')
     .eq('tracking_slug', slug)
     .single();
 
@@ -48,6 +48,27 @@ Deno.serve(async (req: Request) => {
   }
 
   const boatId = boat.id as string;
+
+  // ── Password check ────────────────────────────────────────────────────────
+  // If a password hash is stored, the caller must provide the correct password.
+  // Password is SHA-256 hashed client-side before sending (never plaintext in transit).
+  if (boat.tracking_password_hash) {
+    const provided = url.searchParams.get('pw');
+    if (!provided) {
+      // No password supplied → tell client to show the password form
+      return json({ password_required: true }, 401);
+    }
+    // Hash what was provided and compare
+    const enc     = new TextEncoder().encode(provided);
+    const hashBuf = await crypto.subtle.digest('SHA-256', enc);
+    const hashHex = Array.from(new Uint8Array(hashBuf))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    if (hashHex !== boat.tracking_password_hash) {
+      return json({ password_required: true, wrong_password: true }, 401);
+    }
+    // Correct password — no cache for password-protected pages
+    CORS['Cache-Control'] = 'no-store';
+  }
 
   // ── Fetch all data in parallel ────────────────────────────────────────────
   const [telRes, trackRes, tripRes] = await Promise.all([
