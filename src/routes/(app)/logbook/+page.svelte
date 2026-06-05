@@ -472,7 +472,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			expandedEntries   = [];
 			expandedAllEntries = [];
 			expandedMapPositions = [];
-			expandedWindData  = []; chartPoints = [];
+			expandedWindData  = []; chartPoints = []; expandedNotedEntries = [];
 			expandedEntryCount = 0;
 			showAllEntries    = false;
 			return;
@@ -561,6 +561,15 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			wave_period_s: r.wave_period_s         as number | null,
 		}));
 		expandedLoading = false;
+
+		// Load entries that have notes (lightweight query, separate from chart data)
+		const { data: notedData } = await supabase
+			.from('log_entries')
+			.select('id, logged_at, notes')
+			.eq('trip_id', tripId)
+			.not('notes', 'is', null)
+			.order('logged_at', { ascending: true });
+		expandedNotedEntries = (notedData ?? []) as Array<{ id: string; logged_at: string; notes: string }>;
 
 		await tick();   // DOM renders map container + entry list
 		if (expandedMapEl) await initTripMap();
@@ -668,6 +677,52 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	let entrySails     = $state('');
 	let entryManualSOG = $state<string>('');
 	let entryManualCOG = $state<string>('');
+
+	// ── Quick note (inline, appended to last entry) ───────────────────────────
+	let quickNoteText    = $state('');
+	let quickNoteSaving  = $state(false);
+	let showAllActiveEntries = $state(false);
+
+	// Build environmental context string to append to notes
+	function buildEnvContext(): string {
+		const parts: string[] = [];
+		const sog = liveSog(); if (sog != null) parts.push(`SOG ${sog} kn`);
+		const wind = liveWind(); if (wind != null) {
+			const wdir = liveWindDir();
+			parts.push(`TWS ${wind} kn${wdir != null ? ' ' + dirAbbr(wdir) : ''}`);
+		}
+		if (t?.env_aws_ms != null) {
+			const aws = +(t.env_aws_ms * 1.94384).toFixed(1);
+			const awa = t.env_awa_rad != null ? t.env_awa_rad * 180 / Math.PI : null;
+			parts.push(`AWS ${aws} kn${awa != null ? ' ' + Math.abs(awa).toFixed(0) + '°' + (awa < 0 ? 'P' : 'S') : ''}`);
+		}
+		const baro = liveBaro(); if (baro != null) parts.push(`${baro.toFixed(0)} hPa`);
+		if (t?.env_depth_m != null) parts.push(`${t.env_depth_m.toFixed(1)} m depth`);
+		if (t?.batt_main_soc != null) parts.push(`Batt ${(t.batt_main_soc * 100).toFixed(0)}%`);
+		return parts.length > 0 ? `[${parts.join(' · ')}]` : '';
+	}
+
+	async function saveQuickNote() {
+		const note = quickNoteText.trim();
+		if (!note || !$activeTrip) return;
+		const ctx = buildEnvContext();
+		const fullNote = ctx ? `${note}\n${ctx}` : note;
+		const lastEntry = $tripEntries[0];
+		if (!lastEntry) return;
+		quickNoteSaving = true;
+		const { error } = await supabase
+			.from('log_entries')
+			.update({ notes: fullNote })
+			.eq('id', lastEntry.id);
+		if (!error) {
+			tripEntries.update(es => es.map(e => e.id === lastEntry.id ? { ...e, notes: fullNote } : e));
+			quickNoteText = '';
+		}
+		quickNoteSaving = false;
+	}
+
+	// ── Past trip noted entries (loaded on trip expand) ────────────────────────
+	let expandedNotedEntries = $state<Array<{ id: string; logged_at: string; notes: string }>>([]);
 
 	// ── Derived live values ───────────────────────────────────────────────────
 	const liveLat   = $derived(() => pts?.[0]?.lat ?? t?.nav_lat ?? null);
@@ -1441,13 +1496,32 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	</div>
 	{/if}
 
+	<!-- ── Quick note field (active trip) ─────────────────────────────────── -->
+	{#if $activeTrip && $tripEntries.length > 0}
+	<div class="quick-note-area">
+		<textarea class="quick-note-input" bind:value={quickNoteText}
+			placeholder="Write a note… (current conditions will be appended automatically)"
+			rows="2"></textarea>
+		<button class="quick-note-btn" onclick={saveQuickNote}
+			disabled={quickNoteSaving || !quickNoteText.trim()}>
+			{quickNoteSaving ? 'Saving…' : '+ Add note to last entry'}
+		</button>
+	</div>
+	{/if}
+
 	<!-- ── Log entries (active trip) ──────────────────────────────────────── -->
 	{#if entries.length > 0}
+	{@const visibleEntries = showAllActiveEntries ? entries : entries.slice(0, 5)}
 	<div class="section-header">
 		<span class="section-title">Entries · {entries.length}</span>
+		{#if entries.length > 5}
+		<button class="show-all-btn" onclick={() => { showAllActiveEntries = !showAllActiveEntries; }}>
+			{showAllActiveEntries ? 'Show less' : `Show all ${entries.length}`}
+		</button>
+		{/if}
 	</div>
 	<div class="entry-list">
-		{#each entries as e (e.id)}
+		{#each visibleEntries as e (e.id)}
 		<div class="entry-row" class:auto={e.source === 'auto'}>
 			<div class="entry-time">
 				<span class="entry-hhmm">{fmtTime(e.logged_at)}</span>
@@ -1729,6 +1803,19 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 					{/each}
 				</div>
 				{/if}
+				{/if}
+
+				<!-- Notes from log entries -->
+				{#if expandedNotedEntries.length > 0}
+				<div class="trip-notes-section">
+					<div class="section-label" style="margin-bottom:6px">Notes</div>
+					{#each expandedNotedEntries as n (n.id)}
+					<div class="trip-note-row">
+						<span class="trip-note-time">{fmtDate(n.logged_at)} {fmtTime(n.logged_at)}</span>
+						<p class="trip-note-text">{n.notes}</p>
+					</div>
+					{/each}
+				</div>
 				{/if}
 
 				<!-- Edit + delete (inside expanded — safe from accidental tap) -->
@@ -2094,6 +2181,70 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		color: #ffaa44;
 	}
 	.past-trip-notes { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+
+	/* ── Quick note field ── */
+	.quick-note-area {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 10px;
+		background: var(--card2);
+		border-radius: 8px;
+		border: 1px solid var(--border);
+	}
+	.quick-note-input {
+		width: 100%;
+		padding: 8px 10px;
+		background: var(--bg);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		color: var(--text);
+		font-size: 13px;
+		font-family: inherit;
+		resize: none;
+		outline: none;
+		line-height: 1.4;
+		transition: border-color 0.2s;
+	}
+	.quick-note-input:focus { border-color: var(--accent); }
+	.quick-note-input::placeholder { color: var(--muted); font-size: 12px; }
+	.quick-note-btn {
+		align-self: flex-end;
+		padding: 6px 14px;
+		background: rgba(0,200,255,0.1);
+		border: 1px solid rgba(0,200,255,0.3);
+		border-radius: 6px;
+		color: var(--accent);
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+	.quick-note-btn:disabled { opacity: 0.4; cursor: default; }
+	.quick-note-btn:not(:disabled):hover { background: rgba(0,200,255,0.2); }
+
+	/* ── Past trip notes list ── */
+	.trip-notes-section {
+		padding: 10px 0 4px;
+		border-top: 1px solid var(--border);
+		margin-top: 8px;
+	}
+	.trip-note-row {
+		margin-bottom: 8px;
+	}
+	.trip-note-time {
+		font-size: 10px;
+		color: var(--muted);
+		display: block;
+		margin-bottom: 2px;
+	}
+	.trip-note-text {
+		font-size: 12px;
+		color: var(--text);
+		line-height: 1.4;
+		margin: 0;
+		white-space: pre-line;   /* preserve newlines from env context block */
+	}
 
 	/* Trip header row */
 	.past-trip-header {

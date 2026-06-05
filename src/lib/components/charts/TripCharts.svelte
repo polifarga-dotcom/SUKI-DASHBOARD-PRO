@@ -316,7 +316,7 @@
 			{#if cy != null}<circle cx={cursorX} cy={cy} r="3" fill="#22c55e"/>{/if}
 		</svg>
 		<span class="track-val" style="color:#22c55e">
-			TWS {fmtV(cur?.tws ?? null, 1, 'kn')}{#if cur?.aws != null} · AWS {cur.aws.toFixed(1)}{/if}
+			<span style="color:#22c55e">TWS {fmtV(cur?.tws ?? null, 1, 'kn')}</span>{#if cur?.aws != null}<br/><span style="color:#fb923c;font-weight:500">AWS {cur.aws.toFixed(1)} kn</span>{/if}
 		</span>
 	</div>
 	{:else if hasAws && awsM}
@@ -581,12 +581,12 @@
 	.track-val {
 		font-size: 10px;
 		font-weight: 600;
-		width: 72px;            /* fixed — prevents wrapping from shifting layout */
+		width: 72px;            /* fixed — prevents layout shift */
 		flex-shrink: 0;
 		font-variant-numeric: tabular-nums;
-		white-space: nowrap;
+		white-space: normal;    /* allow wrap for long wind values */
+		line-height: 1.3;
 		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 
 	/* Cursor line (rendered via SVG attribute, styled via CSS) */
