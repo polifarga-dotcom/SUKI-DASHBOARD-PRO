@@ -644,10 +644,36 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	const liveLon   = $derived(() => pts?.[0]?.lon ?? t?.nav_lon ?? null);
 	const liveSog   = $derived(() => t?.nav_sog_ms != null ? +(t.nav_sog_ms * 1.94384).toFixed(2) : null);
 	const liveCog   = $derived(() => t?.nav_hdg_rad != null ? +(t.nav_hdg_rad * 180 / Math.PI).toFixed(1) : null);
-	const liveWind  = $derived(() => t?.env_tws_ms  != null ? +(t.env_tws_ms * 1.94384).toFixed(1) : null);
-	const liveWindDir = $derived(() => {
-		if (t?.nav_hdg_rad == null || t?.env_twa_rad == null) return null;
-		return +((((t.nav_hdg_rad + t.env_twa_rad) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1);
+	// True wind speed: prefer direct TWS signal; fall back to vector calculation from AWS/AWA/SOG
+	// TWS vector: V_tw = V_aw - V_boat  (all in m/s, boat speed along heading)
+	const liveWind = $derived((): number | null => {
+		if (t?.env_tws_ms != null) return +(t.env_tws_ms * 1.94384).toFixed(1);
+		if (t?.env_aws_ms != null && t?.env_awa_rad != null && t?.nav_sog_ms != null) {
+			// Decompose: aws along boat axis = aws*cos(awa), sog subtracted
+			const awsX = t.env_aws_ms * Math.cos(t.env_awa_rad);  // forward component
+			const awsY = t.env_aws_ms * Math.sin(t.env_awa_rad);  // lateral component
+			const twsX = awsX - t.nav_sog_ms;
+			const tws  = Math.sqrt(twsX * twsX + awsY * awsY);
+			return +(tws * 1.94384).toFixed(1);
+		}
+		return null;
+	});
+	// True wind direction: prefer TWA signal; fall back to calculation from AWA/SOG
+	const liveWindDir = $derived((): number | null => {
+		if (t?.nav_hdg_rad == null) return null;
+		if (t?.env_twa_rad != null) {
+			// TWD = heading + TWA (both in radians, then convert)
+			return +((((t.nav_hdg_rad + t.env_twa_rad) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1);
+		}
+		if (t?.env_aws_ms != null && t?.env_awa_rad != null && t?.nav_sog_ms != null) {
+			// Calculate TWA from AWS/AWA/SOG, then add heading
+			const awsX = t.env_aws_ms * Math.cos(t.env_awa_rad);
+			const awsY = t.env_aws_ms * Math.sin(t.env_awa_rad);
+			const twsX = awsX - t.nav_sog_ms;
+			const twaRad = Math.atan2(awsY, twsX);
+			return +((((t.nav_hdg_rad + twaRad) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1);
+		}
+		return null;
 	});
 	const liveBaro   = $derived(() => t?.env_pressure_pa != null ? +(t.env_pressure_pa / 100).toFixed(1) : null);
 	const liveAirT   = $derived(() => t?.temp_salon   != null ? +(t.temp_salon - 273.15).toFixed(1) : null);
