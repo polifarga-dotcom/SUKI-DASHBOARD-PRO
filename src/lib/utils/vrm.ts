@@ -109,7 +109,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		// Input (solar)
 		'/Pv/V', '/Pv/I', '/Pv/P',
 		// Energy
-		'/Yield/User', '/Yield/System',
+		'/Yield/User', '/Yield/System', '/History/Daily/1/Yield',
 		// State & diagnostics
 		'/State', '/MppOperatingMode', '/ErrorCode', '/Dc/0/Temperature',
 		// Metadata
@@ -129,7 +129,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 			// Input
 			pv_v: null, pv_i: null, pv_p: null,
 			// Energy
-			yield_today_wh: 0, yield_total_kwh: null,
+			yield_today_wh: 0, yield_yesterday_wh: 0, yield_total_kwh: null,
 			// State & diagnostics
 			state: null, mppt_mode: null, error_code: null, temp_c: null,
 			// Metadata
@@ -146,8 +146,9 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		else if (r.dbusPath === '/Pv/I')         entry.pv_i            = v;
 		else if (r.dbusPath === '/Pv/P')         entry.pv_p            = v;
 		// Energy (both in Wh from VRM API)
-		else if (r.dbusPath === '/Yield/User')   entry.yield_today_wh  = v ?? 0;  // Already in Wh
-		else if (r.dbusPath === '/Yield/System') entry.yield_total_kwh = (v ?? 0) / 1000;  // Convert Wh to kWh
+		else if (r.dbusPath === '/Yield/User')              entry.yield_today_wh     = v ?? 0;  // Wh
+		else if (r.dbusPath === '/History/Daily/1/Yield')   entry.yield_yesterday_wh = v ?? 0;  // Wh
+		else if (r.dbusPath === '/Yield/System')            entry.yield_total_kwh    = (v ?? 0) / 1000;
 		// State & diagnostics
 		else if (r.dbusPath === '/State')        entry.state           = v != null ? Math.round(v) : null;
 		else if (r.dbusPath === '/MppOperatingMode') entry.mppt_mode   = v != null ? Math.round(v) : null;
@@ -184,6 +185,12 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		: null;
 	const solar_yield_today_wh = mpptsArr.length > 0
 		? mpptsArr.reduce((s, m) => s + m.yield_today_wh, 0)
+		: null;
+	const solar_yield_yesterday_wh = mpptsArr.length > 0
+		? mpptsArr.reduce((s, m) => s + m.yield_yesterday_wh, 0)
+		: null;
+	const solar_a = mpptsArr.length > 0
+		? mpptsArr.reduce((s, m) => s + (m.batt_i ?? 0), 0)
 		: null;
 
 	// ── VE.Bus DC current (for DC loads calculation) ─────────────────────────
@@ -290,7 +297,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	return {
 		battery_soc, battery_v, battery_a, battery_w,
 		batteries,
-		solar_w, solar_yield_today_wh, mpptsArr,
+		solar_w, solar_a, solar_yield_today_wh, solar_yield_yesterday_wh, mpptsArr,
 		ac_input_v: acInV ?? null, ac_input_w: acInP,
 		ac_output_v: acOutV, ac_output_w: acOutP,
 		load_w,

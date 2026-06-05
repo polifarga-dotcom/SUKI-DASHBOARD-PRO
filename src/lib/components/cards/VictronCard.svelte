@@ -3,25 +3,27 @@
 
 	const data = $derived($vrmData);
 
-	const batSoc    = $derived(data?.battery_soc   ?? null);
-	const batV      = $derived(data?.battery_v     ?? null);
-	const batA      = $derived(data?.battery_a     ?? null);
-	const batW      = $derived(data?.battery_w     ?? null);
-	const batTTG    = $derived(data?.batteries[0]?.time_to_go_s ?? null);
-	const secBatts  = $derived(data?.batteries.slice(1) ?? []);
-	const solW      = $derived(data?.solar_w       ?? null);
-	const acInW     = $derived(data?.ac_input_w    ?? null);
-	const acInV     = $derived(data?.ac_input_v    ?? null);
-	const loadW     = $derived(data?.load_w        ?? null);
-	const vebDcA    = $derived(data?.vebus_dc_a    ?? null);
+	const batSoc   = $derived(data?.battery_soc   ?? null);
+	const batV     = $derived(data?.battery_v     ?? null);
+	const batA     = $derived(data?.battery_a     ?? null);
+	const batW     = $derived(data?.battery_w     ?? null);
+	const batTTG   = $derived(data?.batteries[0]?.time_to_go_s ?? null);
+	const secBatts = $derived(data?.batteries.slice(1) ?? []);
+	const solW     = $derived(data?.solar_w       ?? null);
+	const solA     = $derived(data?.solar_a       ?? null);
+	const solToday = $derived(data?.solar_yield_today_wh     != null ? data.solar_yield_today_wh / 1000     : null);
+	const solYest  = $derived(data?.solar_yield_yesterday_wh != null ? data.solar_yield_yesterday_wh / 1000 : null);
+	const mpptsArr = $derived(data?.mpptsArr ?? []);
+	const acInW    = $derived(data?.ac_input_w    ?? null);
+	const acInV    = $derived(data?.ac_input_v    ?? null);
+	const loadW    = $derived(data?.load_w        ?? null);
+	const vebDcA   = $derived(data?.vebus_dc_a    ?? null);
 
-	// DC Loads = |battery discharge| − solar − VE.Bus DC draw
 	const dcLoadsW = $derived((() => {
 		if (!data || batW == null) return null;
 		const discharge = -Math.min(batW, 0);
 		const solar     = Math.max(0, solW ?? 0);
-		const vebDC     = vebDcA != null && batV != null
-			? Math.max(0, vebDcA) * Math.abs(batV) : 0;
+		const vebDC     = vebDcA != null && batV != null ? Math.max(0, vebDcA) * Math.abs(batV) : 0;
 		const dc = Math.round(discharge - solar - vebDC);
 		return dc > 5 ? dc : null;
 	})());
@@ -44,44 +46,43 @@
 		isDischarging ? 'Discharging' : 'Idle'
 	);
 
+	let solarExpanded = $state(false);
+
 	function fmtTTG(s: number | null): string {
 		if (!s || s <= 0) return '';
-		const d = Math.floor(s / 86400);
-		const h = Math.floor((s % 86400) / 3600);
+		const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
 		return d > 0 ? `${d}d ${h}h` : `${h}h`;
 	}
-	function r(n: number | null, d = 0): string {
-		return n != null ? n.toFixed(d) : '—';
-	}
-
-	// Solar bar chart per MPPT
-	const solarBars = $derived((() => {
-		if (!data?.mpptsArr.length) {
-			const wh = data?.solar_yield_today_wh ?? 0;
-			return [{ pct: wh > 0 ? 100 : 2, name: 'Solar' }];
-		}
-		const maxWh = Math.max(...data.mpptsArr.map(m => m.yield_today_wh), 1);
-		return data.mpptsArr.slice(0, 6).map(m => ({
-			pct: Math.max(2, Math.round(m.yield_today_wh / maxWh * 100)),
-			name: m.name,
-		}));
-	})());
+	function r0(n: number | null) { return n != null ? Math.round(n).toString() : '—'; }
+	function r2(n: number | null) { return n != null ? n.toFixed(2) : '—'; }
+	function r1(n: number | null) { return n != null ? n.toFixed(1) : '—'; }
+	function kw(wh: number | null) { return wh != null ? (wh).toFixed(2) + ' kWh' : '—'; }
 </script>
 
 <div class="vic">
-	<div class="vic-header">Victron</div>
+	<div class="vic-hdr">Victron</div>
 
 	<!--
-		Layout: 5-column grid (box · connector · box · connector · box)
-		        3-row grid   (row1 · vertical-connector · row2)
-		All connectors are grid cells with CSS-drawn lines + arrows.
+	  LAYOUT STRATEGY
+	  Desktop (≥ 540 px): horizontal flow  3 cols × 3 rows (incl. connector rows)
+	    Shore ──► Inverter ──► AC Loads
+	                ↕
+	    Solar ──► Battery ──► DC Loads
+
+	  Mobile (< 540 px): vertical flow  3 cols × 5 rows  (rotated 90° right)
+	    Shore   │ vert │ Solar
+	    vert    │      │ vert
+	    Inverter│horiz │ Battery
+	    vert    │      │ vert
+	    AC Loads│      │ DC Loads
+
+	  Implementation: every connector exists twice in the DOM (desktop + mobile),
+	  CSS shows/hides the correct set per breakpoint.
 	-->
 	<div class="vic-grid">
 
-		<!-- ══ Row 1 ══════════════════════════════════════════════════════════ -->
-
-		<!-- Shore -->
-		<div class="box" class:box-on={isShoreOn}>
+		<!-- ░░ ROW 1 ░░ -->
+		<div class="box" class:box-on={isShoreOn} style="grid-area:shore">
 			<div class="box-hdr">
 				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<circle cx="8" cy="8" r="6"/><line x1="8" y1="4" x2="8" y2="12"/>
@@ -90,18 +91,19 @@
 				Shore
 			</div>
 			{#if isShoreOn}
-				<div class="box-val">{r(acInV,1)} <span class="unit">V</span></div>
-				<div class="box-sub">{r(acInW,0)} W</div>
+				<div class="box-val">{r1(acInV)} <span class="u">V</span></div>
+				<div class="box-sub">{r0(acInW)} W</div>
 			{:else}
 				<div class="box-state">Disconnected</div>
 			{/if}
 		</div>
 
-		<!-- Connector: Shore → Inverter -->
-		<div class="conn-h" class:conn-on={isShoreOn} class:arr-r={isShoreOn}></div>
+		<!-- desktop: h connector Shore→Inverter -->
+		<div class="conn d-only" class:on={isShoreOn} class:arr-r={isShoreOn} style="grid-area:ch1"></div>
+		<!-- mobile: v connector Shore↓Inverter -->
+		<div class="conn m-only" class:on={isShoreOn} class:arr-d={isShoreOn} style="grid-area:mv1"></div>
 
-		<!-- Inverter / Charger -->
-		<div class="box box-center">
+		<div class="box box-c" style="grid-area:inv">
 			<div class="box-hdr">
 				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<rect x="2" y="3" width="12" height="10" rx="1.5"/>
@@ -112,11 +114,12 @@
 			<div class="box-state">{inverterState}</div>
 		</div>
 
-		<!-- Connector: Inverter → AC Loads -->
-		<div class="conn-h" class:conn-on={hasLoad} class:arr-r={hasLoad}></div>
+		<!-- desktop: h connector Inverter→AC Loads -->
+		<div class="conn d-only" class:on={hasLoad} class:arr-r={hasLoad} style="grid-area:ch2"></div>
+		<!-- mobile: v connector Inverter↓AC -->
+		<div class="conn m-only" class:on={hasLoad} class:arr-d={hasLoad} style="grid-area:mv3"></div>
 
-		<!-- AC Loads -->
-		<div class="box" class:box-on={hasLoad}>
+		<div class="box" class:box-on={hasLoad} style="grid-area:acload">
 			<div class="box-hdr">
 				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<circle cx="8" cy="8" r="6"/>
@@ -126,25 +129,28 @@
 				</svg>
 				AC Loads
 			</div>
-			<div class="box-val">{r(loadW,0)} <span class="unit">W</span></div>
+			<div class="box-val">{r0(loadW)} <span class="u">W</span></div>
 		</div>
 
-		<!-- ══ Vertical connector row ══════════════════════════════════════════ -->
-		<div></div><!-- placeholder col 1 -->
-		<div></div><!-- placeholder col 2 -->
-		<!-- Vertical connector: Inverter ↕ Battery (col 3, center) -->
-		<div class="conn-v"
-			class:conn-on={isCharging || isDischarging}
-			class:arr-up={isDischarging}
-			class:arr-dn={isCharging}></div>
-		<div></div><!-- placeholder col 4 -->
-		<div></div><!-- placeholder col 5 -->
+		<!-- ░░ MIDDLE ROW (desktop vertical + mobile horizontal) ░░ -->
+		<!-- desktop: v connector Inverter↕Battery (center col) -->
+		<div class="conn d-only"
+			class:on={isCharging || isDischarging}
+			class:arr-u={isDischarging}
+			class:arr-d={isCharging && !isDischarging}
+			style="grid-area:cv"></div>
+		<!-- mobile: h connector Inverter↔Battery (center row) -->
+		<div class="conn m-only"
+			class:on={isCharging || isDischarging}
+			class:arr-r={isDischarging}
+			class:arr-l={isCharging && !isDischarging}
+			style="grid-area:mh"></div>
 
-		<!-- ══ Row 2 ══════════════════════════════════════════════════════════ -->
+		<!-- ░░ ROW 2 ░░ -->
 
-		<!-- Solar yield -->
-		<div class="box" class:box-on={isSolarOn}>
-			<div class="box-hdr">
+		<!-- Solar box — collapsible -->
+		<div class="box" class:box-on={isSolarOn} style="grid-area:solar">
+			<button class="solar-hdr box-hdr" onclick={() => solarExpanded = !solarExpanded}>
 				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<circle cx="8" cy="8" r="3"/>
 					<line x1="8" y1="1" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="15"/>
@@ -153,22 +159,39 @@
 					<line x1="13" y1="3" x2="11.5" y2="4.5"/><line x1="4.5" y1="11.5" x2="3" y2="13"/>
 				</svg>
 				Solar yield
+				<span class="expand-icon">{solarExpanded ? '▲' : '▼'}</span>
+			</button>
+			<!-- Compact view -->
+			<div class="sol-compact">
+				<div class="box-val">{r0(solW)} <span class="u">W</span>
+					{#if solA != null && solA > 0.05}<span class="sol-a"> · {r1(solA)} A</span>{/if}
+				</div>
+				<div class="sol-yields">
+					<span>Today {kw(solToday)}</span>
+					{#if solYest != null}<span>Yesterday {kw(solYest)}</span>{/if}
+				</div>
 			</div>
-			<div class="box-val">{r(solW,0)} <span class="unit">W</span></div>
-			<div class="vic-bars">
-				{#each solarBars as bar}
-					<div class="vic-bar-wrap">
-						<div class="vic-bar" style="height:{bar.pct}%" title={bar.name}></div>
-					</div>
+			<!-- Expanded MPPT list -->
+			{#if solarExpanded && mpptsArr.length > 0}
+			<div class="sol-mpptslist">
+				{#each mpptsArr as m}
+				<div class="mppt-row">
+					<span class="mppt-name">{m.name}</span>
+					<span class="mppt-pw">{r0(m.power_w)} W</span>
+					<span class="mppt-yld">{kw(m.yield_today_wh / 1000 > 0 ? m.yield_today_wh : null)}</span>
+				</div>
 				{/each}
 			</div>
+			{/if}
 		</div>
 
-		<!-- Connector: Solar → Battery -->
-		<div class="conn-h" class:conn-on={isSolarOn} class:arr-r={isSolarOn}></div>
+		<!-- desktop: h connector Solar→Battery -->
+		<div class="conn d-only" class:on={isSolarOn} class:arr-r={isSolarOn} style="grid-area:ch3"></div>
+		<!-- mobile: v connector Solar↓Battery -->
+		<div class="conn m-only" class:on={isSolarOn} class:arr-d={isSolarOn} style="grid-area:mv2"></div>
 
-		<!-- Battery (main + secondary) -->
-		<div class="box box-center box-batt">
+		<!-- Battery -->
+		<div class="box box-c box-batt" style="grid-area:batt">
 			<div class="box-hdr">
 				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<rect x="1" y="4" width="12" height="8" rx="1.5"/>
@@ -176,26 +199,24 @@
 				</svg>
 				Battery
 			</div>
-			<!-- Main battery -->
 			<div class="batt-main">
-				<span class="batt-soc">{r(batSoc,0)}<span class="unit-lg">%</span></span>
+				<span class="batt-soc">{r0(batSoc)}<span class="u-lg">%</span></span>
 				<div class="batt-info">
 					<span class="batt-status">{battStatus}</span>
 					{#if fmtTTG(batTTG)}<span class="batt-ttg">{fmtTTG(batTTG)}</span>{/if}
 				</div>
 			</div>
-			<div class="batt-metrics">
-				{#if batV != null}<span>{r(batV,2)} V</span>{/if}
-				{#if batA != null}<span>{r(batA,1)} A</span>{/if}
-				{#if batW != null}<span>{r(batW,0)} W</span>{/if}
+			<div class="batt-met">
+				{#if batV != null}<span>{r2(batV)} V</span>{/if}
+				{#if batA != null}<span>{r1(batA)} A</span>{/if}
+				{#if batW != null}<span>{r0(batW)} W</span>{/if}
 			</div>
-			<!-- Secondary batteries -->
 			{#if secBatts.length > 0}
-			<div class="batt-secondary">
+			<div class="sec-batts">
 				{#each secBatts as b}
-				<div class="batt-sec-row">
-					<span class="batt-sec-name">{b.name}</span>
-					<span class="batt-sec-vals">
+				<div class="sec-row">
+					<span class="sec-name">{b.name}</span>
+					<span class="sec-vals">
 						{#if b.soc != null}{Math.round(b.soc)}%{/if}
 						{#if b.v != null} · {b.v.toFixed(2)} V{/if}
 					</span>
@@ -205,11 +226,12 @@
 			{/if}
 		</div>
 
-		<!-- Connector: Battery → DC Loads -->
-		<div class="conn-h" class:conn-on={hasDcLoad} class:arr-r={hasDcLoad}></div>
+		<!-- desktop: h connector Battery→DC Loads -->
+		<div class="conn d-only" class:on={hasDcLoad} class:arr-r={hasDcLoad} style="grid-area:ch4"></div>
+		<!-- mobile: v connector Battery↓DC Loads -->
+		<div class="conn m-only" class:on={hasDcLoad} class:arr-d={hasDcLoad} style="grid-area:mv4"></div>
 
-		<!-- DC Loads -->
-		<div class="box" class:box-on={hasDcLoad}>
+		<div class="box" class:box-on={hasDcLoad} style="grid-area:dcload">
 			<div class="box-hdr">
 				<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 					<circle cx="8" cy="8" r="6"/>
@@ -219,156 +241,179 @@
 				</svg>
 				DC Loads
 			</div>
-			<div class="box-val">{dcLoadsW != null ? dcLoadsW : '—'} <span class="unit">W</span></div>
+			<div class="box-val">{dcLoadsW != null ? dcLoadsW : '—'} <span class="u">W</span></div>
 		</div>
 
-	</div><!-- /vic-grid -->
+	</div>
 </div>
 
 <style>
 	/* ── Card ── */
-	.vic {
-		background: #081c2e;
-		border-radius: var(--r, 10px);
-		border: 1px solid rgba(255,255,255,0.07);
-		padding: 12px 14px;
-	}
-	.vic-header {
-		font-size: 11px; font-weight: 700;
-		color: rgba(255,255,255,0.3);
-		text-transform: uppercase; letter-spacing: 1px;
-		margin-bottom: 12px;
-	}
+	.vic { background:#081c2e; border-radius:var(--r,10px); border:1px solid rgba(255,255,255,.07); padding:12px 14px; }
+	.vic-hdr { font-size:11px; font-weight:700; color:rgba(255,255,255,.3); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; }
 
-	/* ── Grid: 5 cols (box · conn · box · conn · box), 3 rows (row1 · vert · row2) ── */
+	/* ── Desktop grid ─────────────────────────────────────────────────────── */
 	.vic-grid {
 		display: grid;
 		grid-template-columns: 1fr 28px 1fr 28px 1fr;
-		grid-template-rows: auto 18px auto;
-		align-items: stretch;
+		grid-template-rows: auto 20px auto;
+		grid-template-areas:
+			"shore  ch1  inv  ch2  acload"
+			".      .    cv   .    ."
+			"solar  ch3  batt ch4  dcload";
+		gap: 6px 0;
+	}
+
+	/* Mobile connector areas are removed from desktop layout (display:none via class) */
+
+	/* ── Mobile grid ─────────────────────────────────────────────────────── */
+	@media (max-width: 540px) {
+		.vic-grid {
+			grid-template-columns: 1fr 28px 1fr;
+			grid-template-rows: auto 20px auto 20px auto;
+			grid-template-areas:
+				"shore  mv1  solar"
+				"mv1b   mh   mv2"
+				"inv    mh   batt"
+				"mv3    .    mv4"
+				"acload .    dcload";
+		}
+		/* Fix: mv1 is both the arrow area and needs to be in row 2, col 1 */
+		/* Correct grid-template-areas for mobile: */
+	}
+
+	/* Override the mobile grid with correct named areas */
+	@media (max-width: 540px) {
+		.vic-grid {
+			grid-template-areas:
+				"shore  .   solar"
+				"mv1    mh  mv2"
+				"inv    mh  batt"
+				"mv3    .   mv4"
+				"acload .   dcload";
+		}
+		/* Reassign connector grid-areas for mobile */
+		[style*="grid-area:ch1"] { display: none; }
+		[style*="grid-area:ch2"] { display: none; }
+		[style*="grid-area:cv"]  { display: none; }
+		[style*="grid-area:ch3"] { display: none; }
+		[style*="grid-area:ch4"] { display: none; }
+	}
+
+	/* ── Show/hide desktop vs mobile connectors ── */
+	.d-only { /* shown on desktop */ }
+	.m-only { display: none; }  /* hidden on desktop */
+
+	@media (max-width: 540px) {
+		.d-only { display: none; }
+		.m-only { display: flex; align-items: center; justify-content: center; }
 	}
 
 	/* ── Boxes ── */
 	.box {
-		background: #0d2d4a;
-		border: 1px solid rgba(100,160,220,0.18);
-		border-radius: 6px;
-		padding: 10px 12px;
-		min-height: 90px;
-		display: flex; flex-direction: column; gap: 3px;
+		background:#0d2d4a; border:1px solid rgba(100,160,220,.18);
+		border-radius:6px; padding:10px 12px;
+		min-height:80px; display:flex; flex-direction:column; gap:3px;
 	}
-	.box-on     { background: #1565c0; border-color: rgba(120,180,255,0.5); }
-	.box-center { border-color: rgba(120,180,255,0.4); }
-	.box-batt   { min-height: 110px; }
+	.box-on { background:#1565c0; border-color:rgba(120,180,255,.5); }
+	.box-c  { border-color:rgba(120,180,255,.4); }
+	.box-batt { min-height:100px; }
 
 	.box-hdr {
-		display: flex; align-items: center; gap: 5px;
-		font-size: 10px; color: rgba(255,255,255,0.65);
-		font-weight: 600; letter-spacing: 0.3px; margin-bottom: 3px;
+		display:flex; align-items:center; gap:5px;
+		font-size:10px; color:rgba(255,255,255,.65);
+		font-weight:600; letter-spacing:.3px; margin-bottom:3px;
 	}
-	.box-val {
-		font-size: 20px; font-weight: 300; color: #fff;
-		font-variant-numeric: tabular-nums; line-height: 1.2;
-	}
-	.box-state {
-		font-size: 18px; font-weight: 300; color: #fff; line-height: 1.2;
-	}
-	.box-sub { font-size: 11px; color: rgba(255,255,255,0.55); }
-	.unit    { font-size: 14px; color: rgba(255,255,255,0.5); }
+	.box-val  { font-size:20px; font-weight:300; color:#fff; font-variant-numeric:tabular-nums; line-height:1.2; }
+	.box-state{ font-size:17px; font-weight:300; color:#fff; line-height:1.2; }
+	.box-sub  { font-size:11px; color:rgba(255,255,255,.55); }
+	.u        { font-size:14px; color:rgba(255,255,255,.5); }
 
-	/* ── Battery specific ── */
-	.batt-main  { display: flex; align-items: center; gap: 8px; }
-	.batt-soc   { font-size: 28px; font-weight: 300; color: #fff; font-variant-numeric: tabular-nums; line-height: 1; }
-	.unit-lg    { font-size: 18px; color: rgba(255,255,255,0.5); }
-	.batt-info  { display: flex; flex-direction: column; gap: 1px; }
-	.batt-status{ font-size: 11px; color: rgba(255,255,255,0.7); }
-	.batt-ttg   { font-size: 12px; color: rgba(255,255,255,0.6); }
-	.batt-metrics {
-		display: flex; gap: 8px; flex-wrap: wrap;
-		font-size: 11px; color: rgba(255,255,255,0.7);
-		font-variant-numeric: tabular-nums;
-	}
-	/* Secondary batteries */
-	.batt-secondary {
-		margin-top: 6px;
-		padding-top: 6px;
-		border-top: 1px solid rgba(255,255,255,0.1);
-		display: flex; flex-direction: column; gap: 3px;
-	}
-	.batt-sec-row {
-		display: flex; justify-content: space-between; align-items: center;
-		gap: 6px;
-	}
-	.batt-sec-name { font-size: 10px; color: rgba(255,255,255,0.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	.batt-sec-vals { font-size: 10px; color: rgba(255,255,255,0.75); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+	/* ── Battery ── */
+	.batt-main { display:flex; align-items:center; gap:8px; }
+	.batt-soc  { font-size:26px; font-weight:300; color:#fff; font-variant-numeric:tabular-nums; line-height:1; }
+	.u-lg      { font-size:17px; color:rgba(255,255,255,.5); }
+	.batt-info { display:flex; flex-direction:column; gap:1px; }
+	.batt-status{ font-size:11px; color:rgba(255,255,255,.7); }
+	.batt-ttg  { font-size:11px; color:rgba(255,255,255,.6); }
+	.batt-met  { display:flex; gap:8px; flex-wrap:wrap; font-size:11px; color:rgba(255,255,255,.7); font-variant-numeric:tabular-nums; }
+	.sec-batts { margin-top:6px; padding-top:6px; border-top:1px solid rgba(255,255,255,.1); display:flex; flex-direction:column; gap:3px; }
+	.sec-row   { display:flex; justify-content:space-between; gap:6px; }
+	.sec-name  { font-size:10px; color:rgba(255,255,255,.55); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+	.sec-vals  { font-size:10px; color:rgba(255,255,255,.75); font-variant-numeric:tabular-nums; flex-shrink:0; }
 
-	/* ── Solar bar chart ── */
-	.vic-bars {
-		display: flex; align-items: flex-end; gap: 2px;
-		height: 28px; margin-top: 6px;
+	/* ── Solar collapsible ── */
+	.solar-hdr {
+		background:none; border:none; padding:0; cursor:pointer; width:100%;
+		text-align:left; color:inherit; font:inherit;
+		display:flex; align-items:center; gap:5px;
 	}
-	.vic-bar-wrap { flex: 1; height: 100%; display: flex; align-items: flex-end; }
-	.vic-bar {
-		width: 100%;
-		background: rgba(100,180,255,0.55);
-		border-radius: 2px 2px 0 0;
-		min-height: 2px;
+	.expand-icon { margin-left:auto; font-size:8px; color:rgba(255,255,255,.4); }
+	.sol-compact { display:flex; flex-direction:column; gap:2px; }
+	.sol-a       { font-size:13px; color:rgba(255,255,255,.6); }
+	.sol-yields  { display:flex; gap:10px; flex-wrap:wrap; font-size:10px; color:rgba(255,255,255,.55); margin-top:2px; }
+	.sol-mpptslist {
+		margin-top:6px; padding-top:6px;
+		border-top:1px solid rgba(255,255,255,.1);
+		display:flex; flex-direction:column; gap:3px;
 	}
-	.box-on .vic-bar { background: rgba(200,230,255,0.7); }
+	.mppt-row { display:flex; gap:6px; align-items:center; }
+	.mppt-name{ font-size:10px; color:rgba(255,255,255,.5); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+	.mppt-pw  { font-size:10px; color:rgba(255,255,255,.8); font-variant-numeric:tabular-nums; flex-shrink:0; }
+	.mppt-yld { font-size:10px; color:rgba(255,255,255,.5); flex-shrink:0; }
 
-	/* ── Horizontal connectors ── */
-	.conn-h {
-		display: flex; align-items: center; position: relative;
+	/* ── Connectors ── */
+	/* Horizontal */
+	.conn { position:relative; }
+	/* horizontal line */
+	.conn::before {
+		content:''; position:absolute; left:0; right:0; top:50%;
+		height:1.5px; background:rgba(255,255,255,.1); transform:translateY(-50%);
 	}
-	/* The line */
-	.conn-h::before {
-		content: '';
-		position: absolute; left: 0; right: 0; top: 50%;
-		height: 1.5px;
-		background: rgba(255,255,255,0.1);
-		transform: translateY(-50%);
+	.conn.on::before { background:rgba(100,170,255,.8); }
+	/* right arrow */
+	.conn.arr-r::after {
+		content:''; position:absolute; right:2px;
+		border:5px solid transparent; border-left:7px solid rgba(140,200,255,.9);
 	}
-	.conn-h.conn-on::before { background: rgba(100,170,255,0.8); }
-	/* Right-pointing arrow */
-	.conn-h.arr-r::after {
-		content: '';
-		position: absolute; right: 1px;
-		width: 0; height: 0;
-		border-top: 5px solid transparent;
-		border-bottom: 5px solid transparent;
-		border-left: 7px solid rgba(140,200,255,0.9);
+	/* left arrow */
+	.conn.arr-l::after {
+		content:''; position:absolute; left:2px;
+		border:5px solid transparent; border-right:7px solid rgba(140,200,255,.9);
 	}
 
-	/* ── Vertical connector ── */
-	.conn-v {
-		grid-column: 3;
-		display: flex; justify-content: center; position: relative;
+	/* Vertical (desktop cv + mobile mv*) */
+	.conn[style*="cv"],
+	.conn[style*="mv"] {
+		display:flex; align-items:center; justify-content:center;
 	}
-	/* The line */
-	.conn-v::before {
-		content: '';
-		position: absolute; top: 0; bottom: 0; left: 50%;
-		width: 1.5px;
-		background: rgba(255,255,255,0.1);
-		transform: translateX(-50%);
+	/* vertical line via ::before override */
+	.conn[style*="cv"]::before,
+	.conn[style*="mv"]::before {
+		left:50%; right:auto; top:0; bottom:0; height:auto;
+		width:1.5px; transform:translateX(-50%);
 	}
-	.conn-v.conn-on::before { background: rgba(100,170,255,0.8); }
-	/* Arrow up (discharging: battery → inverter) */
-	.conn-v.arr-up::after {
-		content: '';
-		position: absolute; top: 1px;
-		width: 0; height: 0;
-		border-left: 5px solid transparent;
-		border-right: 5px solid transparent;
-		border-bottom: 7px solid rgba(140,200,255,0.9);
+	/* up arrow */
+	.conn.arr-u::after {
+		content:''; position:absolute; top:2px;
+		border:5px solid transparent; border-bottom:7px solid rgba(140,200,255,.9);
 	}
-	/* Arrow down (charging: inverter → battery) */
-	.conn-v.arr-dn::after {
-		content: '';
-		position: absolute; bottom: 1px;
-		width: 0; height: 0;
-		border-left: 5px solid transparent;
-		border-right: 5px solid transparent;
-		border-top: 7px solid rgba(140,200,255,0.9);
+	/* down arrow */
+	.conn.arr-d::after {
+		content:''; position:absolute; bottom:2px;
+		border:5px solid transparent; border-top:7px solid rgba(140,200,255,.9);
+	}
+
+	/* Mobile horizontal connector (mh) between inv and batt */
+	.conn[style*="mh"] {
+		display:none; /* hidden desktop */
+	}
+	@media (max-width: 540px) {
+		.conn[style*="mh"] {
+			display:flex; align-items:center;
+		}
+		.conn[style*="mh"]::before {
+			left:0; right:0; top:50%; bottom:auto; height:1.5px; width:auto; transform:translateY(-50%);
+		}
 	}
 </style>

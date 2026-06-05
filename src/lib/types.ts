@@ -147,7 +147,8 @@ export type VRMMppt = {
 	pv_i: number | null;         // PV current A
 	pv_p: number | null;         // PV power W
 	// Energy
-	yield_today_wh: number;      // Daily yield Wh (user resettable)
+	yield_today_wh: number;         // Daily yield Wh (user resettable)
+	yield_yesterday_wh: number;     // Yesterday's yield Wh
 	yield_total_kwh: number | null; // Total yield kWh (system)
 	// State & diagnostics
 	state: number | null;        // 0=off 2=fault 3=bulk 4=absorb 5=float 7=equalize 252=hub-1
@@ -188,7 +189,9 @@ export type VRMData = {
 	batteries: VRMBattery[];
 	// Solar
 	solar_w: number | null;
+	solar_a: number | null;
 	solar_yield_today_wh: number | null;
+	solar_yield_yesterday_wh: number | null;
 	mpptsArr: VRMMppt[];
 	// AC
 	ac_input_v: number | null;
