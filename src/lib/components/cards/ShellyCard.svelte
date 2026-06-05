@@ -122,10 +122,10 @@
 	{#if !loaded}
 		<div class="empty">Connecting…</div>
 	{:else}
-		<div class="list">
+		<div class="grid">
 			{#each devices as dev (dev.id)}
-				<div class="row">
-					<div class="device-info">
+				<div class="cell">
+					<div class="cell-top">
 						<span class="dot" class:online={dev.online}></span>
 						<span class="label">{dev.name}</span>
 					</div>
@@ -147,13 +147,19 @@
 <style>
 	.title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
 	.empty { font-size: 13px; color: var(--muted); line-height: 1.5; }
-	.list { display: flex; flex-direction: column; gap: 2px; }
-	.row {
-		display: flex; justify-content: space-between; align-items: center;
-		padding: 8px 0; border-bottom: 1px solid var(--border);
+	.grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
 	}
-	.row:last-child { border-bottom: none; }
-	.device-info { display: flex; align-items: center; gap: 8px; overflow: hidden; }
+	.cell {
+		background: var(--card2);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 10px 12px;
+		display: flex; flex-direction: column; gap: 8px;
+	}
+	.cell-top { display: flex; align-items: center; gap: 6px; overflow: hidden; }
 	.dot {
 		width: 7px; height: 7px; border-radius: 50%;
 		background: var(--muted); flex-shrink: 0; opacity: 0.4;

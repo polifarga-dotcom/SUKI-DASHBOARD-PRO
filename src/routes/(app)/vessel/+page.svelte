@@ -21,12 +21,12 @@
 
 <div class="grid">
 	<BatteryCard vrm={$vrmData} t={$telemetry} />
+	<ShellyCard />
 	<SolarCard t={$telemetry} />
 	<EnvironmentCard t={$telemetry} />
 	<EngineCard t={$telemetry} boatId={$currentBoat?.id} engineCount={($currentBoat?.engine_count ?? 1) as 1|2} />
 	<WakespeedCard t={$telemetry} />
 	<RigCard t={$telemetry} />
-	<ShellyCard />
 	<VRMCard />
 	<div class="full-width"><VictronCard /></div>
 </div>
