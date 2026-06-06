@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import { supabase } from '$lib/supabase.js';
 	import { onMount } from 'svelte';
 	import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+	import { isSuperAdminStore } from '$lib/stores/superadmin.js';
 
-	const isSuperAdmin = $derived((page.data as { isSuperAdmin?: boolean }).isSuperAdmin === true);
+	const isSuperAdmin = $derived($isSuperAdminStore);
 
 	type AdminUser = {
 		id: string;

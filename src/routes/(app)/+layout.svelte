@@ -7,6 +7,7 @@
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { authStore } from '$lib/stores/auth.js';
 	import { myBoats, currentBoat, boatRole, boatRoles } from '$lib/stores/boat.js';
+	import { isSuperAdminStore } from '$lib/stores/superadmin.js';
 	import { dataAge, fmtLatLon, ms2knNum } from '$lib/utils/units.js';
 	import StatusBar from '$lib/components/layout/StatusBar.svelte';
 	import VRMFetcher from '$lib/services/VRMFetcher.svelte';
@@ -14,7 +15,7 @@
 
 	let { children, data } = $props();
 
-	let isSuperAdmin = $state(false);
+	const isSuperAdmin = $derived($isSuperAdminStore);
 
 	const tabs = [
 		{
@@ -200,9 +201,9 @@
 				.select('is_superadmin')
 				.eq('user_id', uid)
 				.single()
-				.then(({ data }) => { isSuperAdmin = data?.is_superadmin === true; });
+				.then(({ data }) => { isSuperAdminStore.set(data?.is_superadmin === true); });
 		} else {
-			isSuperAdmin = false;
+			isSuperAdminStore.set(false);
 		}
 	});
 
