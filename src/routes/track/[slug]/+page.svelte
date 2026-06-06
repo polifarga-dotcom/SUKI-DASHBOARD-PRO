@@ -456,31 +456,20 @@
 
 	<div class="divider"></div>
 
-	<!-- Wind block -->
-	<div class="wind-block">
-		<div class="wind-nums">
-			<div>
-				<div class="wind-big" style="color:{beaufortColor(tws)}">{tws ?? '—'}</div>
-				<div class="wind-unit">kn TWS</div>
-			</div>
-			{#if aws != null}
-			<div>
-				<div class="wind-big" style="color:{beaufortColor(aws)};opacity:0.7">{aws}</div>
-				<div class="wind-unit">kn AWS</div>
-			</div>
-			{/if}
-		</div>
-		<div class="wind-meta-row">
-			{#if twd != null}<span style="color:{beaufortColor(tws)}">{cardinal(twd)} {fmt0(twd)}°</span>{/if}
-			{#if awaRaw != null}<span>AWA {Math.abs(awaRaw).toFixed(0)}°{awaRaw < 0 ? 'P':'S'}</span>{/if}
-			{#if tws != null}<span style="color:{beaufortColor(tws)}">{beaufortLabel(tws)}</span>{/if}
-		</div>
-	</div>
-
-	<div class="divider"></div>
-
-	<!-- Stats grid -->
+	<!-- Stats grid (incl. wind tiles) -->
 	<div class="stats-grid">
+		{#if aws != null}
+		<div class="stat-item">
+			<div class="stat-val" style="color:{beaufortColor(aws)}">{aws}</div>
+			<div class="stat-key">kn AWS</div>
+		</div>
+		{/if}
+		{#if twd != null}
+		<div class="stat-item">
+			<div class="stat-val" style="color:{beaufortColor(aws)}">{cardinal(twd)} {fmt0(twd)}°</div>
+			<div class="stat-key">{awaRaw != null ? `AWA ${Math.abs(awaRaw).toFixed(0)}°${awaRaw < 0 ? 'P':'S'}` : 'wind dir'}</div>
+		</div>
+		{/if}
 		{#if baro != null}
 		<div class="stat-item">
 			<div class="stat-val">{baro}</div>
