@@ -14,7 +14,7 @@
 
 	let { children, data } = $props();
 
-	const isSuperAdmin = $derived(data.isSuperAdmin === true);
+	let isSuperAdmin = $state(false);
 
 	const tabs = [
 		{
@@ -145,8 +145,20 @@
 		goto('/login');
 	}
 
-	onMount(() => {
+	onMount(async () => {
 		updateClock();
+
+		// Check superadmin status directly on client — universal load runs server-side
+		// on Cloudflare Pages without a session, so we query here instead.
+		const { data: { session: s } } = await supabase.auth.getSession();
+		if (s) {
+			const { data: roleRow } = await supabase
+				.from('user_roles')
+				.select('is_superadmin')
+				.eq('user_id', s.user.id)
+				.single();
+			isSuperAdmin = roleRow?.is_superadmin === true;
+		}
 
 		// iOS PWA: JS timers are suspended in background, so autoRefreshToken may
 		// miss its scheduled refresh. When the app comes back to the foreground,
