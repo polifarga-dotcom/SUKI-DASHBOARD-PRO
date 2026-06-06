@@ -189,23 +189,21 @@
 		clearInterval(clockTimer);
 	});
 
-	// Superadmin check — runs client-side via auth state listener.
-	// onAuthStateChange fires immediately with INITIAL_SESSION so we always get
-	// the current user without worrying about getSession() timing issues.
-	onMount(() => {
-		const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-			if (session?.user) {
-				const { data: roleRow } = await supabase
-					.from('user_roles')
-					.select('is_superadmin')
-					.eq('user_id', session.user.id)
-					.single();
-				isSuperAdmin = roleRow?.is_superadmin === true;
-			} else {
-				isSuperAdmin = false;
-			}
-		});
-		return () => subscription.unsubscribe();
+	// Superadmin check — watches authStore (set by root layout's onAuthStateChange).
+	// $effect re-runs whenever $authStore.session changes, which covers the initial
+	// session load as well as sign-in/sign-out transitions.
+	$effect(() => {
+		const uid = $authStore.session?.user?.id ?? null;
+		if (uid) {
+			supabase
+				.from('user_roles')
+				.select('is_superadmin')
+				.eq('user_id', uid)
+				.single()
+				.then(({ data }) => { isSuperAdmin = data?.is_superadmin === true; });
+		} else {
+			isSuperAdmin = false;
+		}
 	});
 
 	const currentPath = $derived(page.url.pathname);
