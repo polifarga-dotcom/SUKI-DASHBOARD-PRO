@@ -7,7 +7,6 @@
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { authStore } from '$lib/stores/auth.js';
 	import { myBoats, currentBoat, boatRole, boatRoles } from '$lib/stores/boat.js';
-	import { isSuperAdminStore } from '$lib/stores/superadmin.js';
 	import { dataAge, fmtLatLon, ms2knNum } from '$lib/utils/units.js';
 	import StatusBar from '$lib/components/layout/StatusBar.svelte';
 	import VRMFetcher from '$lib/services/VRMFetcher.svelte';
@@ -15,7 +14,7 @@
 
 	let { children, data } = $props();
 
-	const isSuperAdmin = $derived($isSuperAdminStore);
+	let isSuperAdmin = $state(false);
 
 	const tabs = [
 		{
@@ -190,21 +189,23 @@
 		clearInterval(clockTimer);
 	});
 
-	// Superadmin check — watches authStore (set by root layout's onAuthStateChange).
-	// $effect re-runs whenever $authStore.session changes, which covers the initial
-	// session load as well as sign-in/sign-out transitions.
-	$effect(() => {
-		const uid = $authStore.session?.user?.id ?? null;
-		if (uid) {
-			supabase
-				.from('user_roles')
-				.select('is_superadmin')
-				.eq('user_id', uid)
-				.single()
-				.then(({ data }) => { isSuperAdminStore.set(data?.is_superadmin === true); });
-		} else {
-			isSuperAdminStore.set(false);
-		}
+	// Superadmin check via direct store subscription — most reliable approach.
+	// authStore is populated by root layout's onAuthStateChange.
+	onMount(() => {
+		const unsub = authStore.subscribe(async (state) => {
+			const uid = state.session?.user?.id;
+			if (uid) {
+				const { data: roleRow } = await supabase
+					.from('user_roles')
+					.select('is_superadmin')
+					.eq('user_id', uid)
+					.single();
+				isSuperAdmin = roleRow?.is_superadmin === true;
+			} else {
+				isSuperAdmin = false;
+			}
+		});
+		return unsub;
 	});
 
 	const currentPath = $derived(page.url.pathname);

@@ -2,9 +2,9 @@
 	import { supabase } from '$lib/supabase.js';
 	import { onMount } from 'svelte';
 	import { PUBLIC_SUPABASE_URL } from '$env/static/public';
-	import { isSuperAdminStore } from '$lib/stores/superadmin.js';
 
-	const isSuperAdmin = $derived($isSuperAdminStore);
+	let isSuperAdmin = $state(false);
+	let checking = $state(true);
 
 	type AdminUser = {
 		id: string;
@@ -126,12 +126,28 @@
 		return Object.entries(map).map(([id, v]) => ({ id, ...v }));
 	});
 
-	onMount(() => { if (isSuperAdmin) loadUsers(); });
+	onMount(async () => {
+		// Self-contained superadmin check — no dependency on shared stores or load().
+		// getSession() reads from localStorage which is always available in onMount.
+		const { data: { session } } = await supabase.auth.getSession();
+		if (session?.user?.id) {
+			const { data: roleRow } = await supabase
+				.from('user_roles')
+				.select('is_superadmin')
+				.eq('user_id', session.user.id)
+				.single();
+			isSuperAdmin = roleRow?.is_superadmin === true;
+		}
+		checking = false;
+		if (isSuperAdmin) loadUsers();
+	});
 </script>
 
 <svelte:head><title>Admin · SUKI PRO</title></svelte:head>
 
-{#if !isSuperAdmin}
+{#if checking}
+<div class="denied"><p style="color:var(--muted)">Loading…</p></div>
+{:else if !isSuperAdmin}
 <div class="denied">
 	<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
 	<p>Access denied</p>
