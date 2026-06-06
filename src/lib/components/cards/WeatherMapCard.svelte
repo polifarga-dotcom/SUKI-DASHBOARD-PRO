@@ -441,10 +441,10 @@
 		mix-blend-mode: screen;
 	}
 
-	/* Center button — bottom-left so it doesn't clash with zoom (bottom-right) */
+	/* Center button — top-right */
 	.wx-center-btn {
 		position: absolute;
-		bottom: 42px; left: 10px;
+		top: 10px; right: 10px;
 		z-index: 10;
 		width: 28px; height: 28px;
 		display: flex; align-items: center; justify-content: center;
