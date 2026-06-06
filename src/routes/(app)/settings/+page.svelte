@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { version } from '$app/environment';
 	import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
 	import { supabase } from '$lib/supabase.js';
@@ -16,7 +17,7 @@
 	const currentUid   = $derived($authStore.session?.user?.id ?? '');
 	const userRole     = $derived($boatRole ?? '—');
 	const isAdmin      = $derived($isBoatAdmin);
-	const isSuperAdmin = $derived(userEmail === 'polifarga@gmail.com');
+	const isSuperAdmin = $derived((page.data as { isSuperAdmin?: boolean }).isSuperAdmin === true);
 	const cfg        = $derived($anchorConfig);
 
 	// ── Unit & Time Format Settings ───────────────────────────────────────────

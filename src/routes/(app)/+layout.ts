@@ -11,7 +11,7 @@ export const load: LayoutLoad = async () => {
 
 	const { data: roleData } = await supabase
 		.from('user_roles')
-		.select('role, force_password_change')
+		.select('role, force_password_change, is_superadmin')
 		.eq('user_id', session.user.id)
 		.single();
 
@@ -32,7 +32,8 @@ export const load: LayoutLoad = async () => {
 
 	return {
 		session,
-		role:        roleData?.role ?? 'viewer',
-		memberships: memberships   ?? [],
+		role:          roleData?.role ?? 'viewer',
+		isSuperAdmin:  roleData?.is_superadmin ?? false,
+		memberships:   memberships ?? [],
 	};
 };

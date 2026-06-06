@@ -217,6 +217,7 @@ export type UserRole = {
 	user_id: string;
 	role: 'admin' | 'viewer';
 	force_password_change: boolean;
+	is_superadmin: boolean;
 	created_at: string;
 };
 

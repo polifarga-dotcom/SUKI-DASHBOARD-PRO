@@ -14,6 +14,8 @@
 
 	let { children, data } = $props();
 
+	const isSuperAdmin = $derived(data.isSuperAdmin === true);
+
 	const tabs = [
 		{
 			href: '/vessel', label: 'Vessel',
@@ -278,6 +280,18 @@
 				<span class="tab-icon">{@html tab.icon}</span>
 			</a>
 		{/each}
+		{#if isSuperAdmin}
+		<a href="/admin" class="tab-item" class:active={currentPath.startsWith('/admin')} title="Admin">
+			<span class="tab-icon">
+				<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+					<circle cx="7" cy="6" r="2.5"/>
+					<path d="M2 17c0-3 2.2-5 5-5s5 2 5 5"/>
+					<circle cx="15" cy="8" r="2"/>
+					<path d="M13 17c0-2 .9-3.5 2-4"/>
+				</svg>
+			</span>
+		</a>
+		{/if}
 		<button class="tab-item tab-signout" onclick={signOut} title="Sign out">
 			<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
 				<path d="M13 3h3a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-3"/>
