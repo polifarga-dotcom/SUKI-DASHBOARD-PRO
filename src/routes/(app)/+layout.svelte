@@ -248,6 +248,17 @@
 			{/if}
 		</div>
 		<div class="header-right">
+			{#if isSuperAdmin}
+			<a href="/admin" class="admin-btn" class:active={currentPath.startsWith('/admin')} title="Admin">
+				<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+					<circle cx="7" cy="6" r="2.2"/>
+					<path d="M2 16.5c0-2.8 2-4.5 5-4.5s5 1.7 5 4.5"/>
+					<circle cx="15" cy="7.5" r="1.8"/>
+					<path d="M13 16.5c0-1.8 .8-3 2-3.5"/>
+				</svg>
+				<span class="admin-label">Admin</span>
+			</a>
+			{/if}
 			<span class="clock">{clockStr}</span>
 			<span class="conn-dot" class:stale title={stale ? 'No data' : 'Live'}></span>
 		</div>
@@ -292,18 +303,6 @@
 				<span class="tab-icon">{@html tab.icon}</span>
 			</a>
 		{/each}
-		{#if isSuperAdmin}
-		<a href="/admin" class="tab-item" class:active={currentPath.startsWith('/admin')} title="Admin">
-			<span class="tab-icon">
-				<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-					<circle cx="7" cy="6" r="2.5"/>
-					<path d="M2 17c0-3 2.2-5 5-5s5 2 5 5"/>
-					<circle cx="15" cy="8" r="2"/>
-					<path d="M13 17c0-2 .9-3.5 2-4"/>
-				</svg>
-			</span>
-		</a>
-		{/if}
 		<button class="tab-item tab-signout" onclick={signOut} title="Sign out">
 			<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
 				<path d="M13 3h3a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-3"/>
@@ -387,8 +386,17 @@
 	}
 	.gps-val { font-size: 11px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 	.sog-val { font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; }
-	.header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
-	.clock { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+	.header-right { display: flex; flex-direction: row; align-items: center; gap: 10px; flex-shrink: 0; }
+	.admin-btn {
+		display: flex; align-items: center; gap: 4px;
+		color: var(--muted); text-decoration: none;
+		background: var(--card2); border: 1px solid var(--border);
+		border-radius: 7px; padding: 4px 8px; font-size: 11px; font-weight: 600;
+		transition: color 0.15s, border-color 0.15s;
+	}
+	.admin-btn:hover, .admin-btn.active { color: var(--accent); border-color: rgba(0,200,255,.4); }
+	.admin-label { letter-spacing: 0.3px; }
+	.clock { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 	.conn-dot {
 		width: 8px; height: 8px; border-radius: 50%;
 		background: var(--green); animation: pulse-live 2s ease-in-out infinite;
