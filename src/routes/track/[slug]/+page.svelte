@@ -732,12 +732,41 @@
 		.glass-panel {
 			left: 0; right: 0; top: auto; bottom: 0;
 			transform: none;
-			width: 100%; border-radius: 20px 20px 0 0;
-			max-height: 52dvh;
-			padding: 16px;
+			width: 100%; border-radius: 16px 16px 0 0;
+			max-height: 42dvh;
+			padding: 12px 14px 10px;
+			gap: 0;
 		}
-		.speed-num { font-size: 40px; }
-		.wind-big  { font-size: 30px; }
+
+		/* Speed + Wind side-by-side on one row */
+		.speed-block {
+			display: flex; align-items: baseline; gap: 18px;
+			padding-bottom: 8px; flex-wrap: wrap;
+		}
+		.speed-block-main { display: flex; flex-direction: column; }
+		.speed-num { font-size: 32px; }
+		.speed-unit { font-size: 11px; }
+		.speed-meta { font-size: 10px; margin-top: 2px; }
+		.status-badge { margin-top: 4px; font-size: 10px; padding: 2px 8px; }
+
+		.wind-block { padding-bottom: 8px; }
+		.wind-big  { font-size: 24px; }
+		.wind-nums { gap: 12px; margin-bottom: 5px; }
+		.wind-meta-row { gap: 5px; font-size: 10px; }
+
+		.divider { margin: 0 0 8px; }
+
+		/* 3-column stats grid — much more compact */
+		.stats-grid {
+			grid-template-columns: repeat(3, 1fr);
+			gap: 5px; padding-bottom: 8px;
+		}
+		.stat-item { padding: 5px 7px; border-radius: 8px; }
+		.stat-val  { font-size: 13px; }
+		.stat-key  { font-size: 8px; margin-top: 2px; }
+
+		.panel-footer { display: none; }
+
 		.pill-bar  { top: 12px; }
 		.pill-trip { display: none; }
 	}
