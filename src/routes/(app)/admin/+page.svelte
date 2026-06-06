@@ -5,7 +5,6 @@
 
 	let isSuperAdmin = $state(false);
 	let checking = $state(true);
-	let debugInfo = $state('');
 
 	type AdminUser = {
 		id: string;
@@ -128,33 +127,21 @@
 	});
 
 	onMount(async () => {
-		// Use getUser() — makes a live network request, most reliable
-		const { data: { user }, error: userErr } = await supabase.auth.getUser();
-		if (userErr) { debugInfo = `getUser error: ${userErr.message}`; checking = false; return; }
-		if (!user) { debugInfo = 'no user returned'; checking = false; return; }
-
-		debugInfo = `user: ${user.email}`;
-
-		const { data: roleRow, error: roleErr } = await supabase
-			.from('user_roles')
-			.select('is_superadmin')
-			.eq('user_id', user.id)
-			.single();
-
-		if (roleErr) { debugInfo += ` | query error: ${roleErr.message} (code: ${roleErr.code})`; }
-		else { debugInfo += ` | is_superadmin: ${roleRow?.is_superadmin}`; }
-
-		isSuperAdmin = roleRow?.is_superadmin === true;
+		const { data: { user } } = await supabase.auth.getUser();
+		if (user?.id) {
+			const { data: roleRow } = await supabase
+				.from('user_roles')
+				.select('is_superadmin')
+				.eq('user_id', user.id)
+				.single();
+			isSuperAdmin = roleRow?.is_superadmin === true;
+		}
 		checking = false;
 		if (isSuperAdmin) loadUsers();
 	});
 </script>
 
 <svelte:head><title>Admin · SUKI PRO</title></svelte:head>
-
-{#if debugInfo}
-<div style="background:#1a1a2e;border:1px solid #444;border-radius:8px;padding:10px 14px;font-size:11px;font-family:monospace;color:#aaa;margin-bottom:12px;word-break:break-all">{debugInfo}</div>
-{/if}
 
 {#if checking}
 <div class="denied"><p style="color:var(--muted)">Loading…</p></div>
