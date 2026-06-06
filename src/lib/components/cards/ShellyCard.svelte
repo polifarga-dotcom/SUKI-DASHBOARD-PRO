@@ -129,20 +129,16 @@
 	{:else}
 		<div class="grid">
 			{#each devices as dev (dev.id)}
-				<div class="cell">
-					<div class="cell-top">
-						<span class="dot" class:online={dev.online}></span>
-						<span class="label">{dev.name}</span>
-					</div>
-					<button
-						class="toggle"
-						class:on={dev.state === 1}
-						aria-label="{dev.name} {dev.state === 1 ? 'turn off' : 'turn on'}"
-						onclick={() => toggle(dev)}
-					>
-						<span class="knob"></span>
-					</button>
-				</div>
+				<button
+					class="tile"
+					class:on={dev.state === 1}
+					class:offline={!dev.online}
+					aria-label="{dev.name} {dev.state === 1 ? 'turn off' : 'turn on'}"
+					onclick={() => toggle(dev)}
+				>
+					<span class="dot" class:online={dev.online}></span>
+					<span class="name">{dev.name}</span>
+				</button>
 			{/each}
 		</div>
 	{/if}
@@ -150,36 +146,37 @@
 {/if}
 
 <style>
-	.title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
-	.empty { font-size: 13px; color: var(--muted); line-height: 1.5; }
+	.title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+	.empty { font-size: 13px; color: var(--muted); }
 	.grid {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 8px;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 6px;
 	}
-	.cell {
-		background: var(--card2);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		padding: 10px 12px;
-		display: flex; flex-direction: column; gap: 8px;
+	.tile {
+		display: flex; flex-direction: column; align-items: center; justify-content: center;
+		gap: 6px; padding: 10px 6px;
+		background: var(--card2); border: 1px solid var(--border);
+		border-radius: 10px; cursor: pointer;
+		transition: background 0.18s, border-color 0.18s;
+		min-height: 62px;
 	}
-	.cell-top { display: flex; align-items: center; gap: 6px; overflow: hidden; }
+	.tile:active { transform: scale(0.96); }
+	.tile.on {
+		background: rgba(0, 200, 100, 0.15);
+		border-color: rgba(0, 200, 100, 0.5);
+	}
+	.tile.offline { opacity: 0.45; cursor: default; }
 	.dot {
 		width: 7px; height: 7px; border-radius: 50%;
-		background: var(--muted); flex-shrink: 0; opacity: 0.4;
+		background: #444; flex-shrink: 0;
 	}
-	.dot.online { background: var(--green); opacity: 1; }
-	.label { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	.toggle {
-		width: 44px; height: 26px; background: var(--card2); border: 1px solid var(--border);
-		border-radius: 13px; position: relative; transition: background 0.2s, border-color 0.2s, opacity 0.2s;
-		padding: 0; cursor: pointer; flex-shrink: 0;
+	.dot.online { background: var(--green); }
+	.tile.on .dot.online { background: var(--green); box-shadow: 0 0 5px var(--green); }
+	.name {
+		font-size: 11px; font-weight: 600; text-align: center;
+		color: var(--text); line-height: 1.2;
+		word-break: break-word;
 	}
-	.toggle.on { background: var(--green); border-color: var(--green); }
-	.knob {
-		position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
-		background: var(--text); border-radius: 50%; transition: transform 0.2s; display: block;
-	}
-	.toggle.on .knob { transform: translateX(18px); }
+	.tile.on .name { color: var(--green); }
 </style>
