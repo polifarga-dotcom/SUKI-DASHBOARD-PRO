@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { supabase } from '$lib/supabase.js';
+	import { boatIconSettingsSvg, BOAT_ICON_LABELS } from '$lib/utils/boatIcons.js';
 
 	// ── Step: 1 = name boat, 2 = configure APIs ───────────────────────────────
 	let step = $state(1);
@@ -9,6 +10,7 @@
 	let boatName     = $state('');
 	let unitSystem   = $state<'metric' | 'imperial'>('metric');
 	let timeFormat   = $state<'24h' | '12h'>('24h');
+	let boatIcon     = $state('monohull');
 	let s1Loading    = $state(false);
 	let s1Error      = $state('');
 	let createdBoatId = $state('');
@@ -32,6 +34,7 @@
 				name: boatName.trim(),
 				unit_system: unitSystem,
 				time_format: timeFormat,
+				boat_icon: boatIcon,
 			},
 		});
 
@@ -129,6 +132,24 @@
 					<input type="radio" name="time" value="12h" bind:group={timeFormat} />
 					12-hour (2:30 PM)
 				</label>
+			</div>
+		</div>
+
+		<!-- Boat icon -->
+		<div class="pref-section">
+			<h2>Boat Type</h2>
+			<div class="icon-grid">
+				{#each Object.entries(BOAT_ICON_LABELS) as [key, label]}
+				<button
+					class="icon-btn"
+					class:selected={boatIcon === key}
+					onclick={() => boatIcon = key}
+					type="button"
+				>
+					<span class="icon-svg">{@html boatIconSettingsSvg(key)}</span>
+					<span class="icon-label">{label}</span>
+				</button>
+				{/each}
 			</div>
 		</div>
 
@@ -334,4 +355,31 @@
 		height: 14px;
 		margin: 0;
 	}
+
+	.icon-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 8px;
+	}
+	.icon-btn {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 6px;
+		padding: 10px 4px 8px;
+		border-radius: 10px;
+		border: 1px solid var(--border);
+		background: var(--card2);
+		cursor: pointer;
+		color: var(--muted);
+		transition: border-color 0.15s, color 0.15s, background 0.15s;
+	}
+	.icon-btn:hover { border-color: var(--accent); color: var(--text); }
+	.icon-btn.selected {
+		border-color: var(--accent);
+		background: rgba(0, 200, 255, 0.08);
+		color: var(--accent);
+	}
+	.icon-svg { display: flex; align-items: center; line-height: 0; }
+	.icon-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
 </style>

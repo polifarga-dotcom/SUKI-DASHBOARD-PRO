@@ -39,7 +39,7 @@ Deno.serve(async (req: Request) => {
   const { data: { user }, error: authErr } = await admin.auth.getUser(token);
   if (!user || authErr) return json({ error: 'Unauthorized' }, 403);
 
-  let body: { name?: string; unit_system?: string; time_format?: string } = {};
+  let body: { name?: string; unit_system?: string; time_format?: string; boat_icon?: string } = {};
   try { body = await req.json(); } catch { /* empty */ }
 
   const name = (body.name ?? '').trim();
@@ -48,6 +48,8 @@ Deno.serve(async (req: Request) => {
   // Validate unit preferences (with defaults)
   const unitSystem = body.unit_system === 'imperial' ? 'imperial' : 'metric';
   const timeFormat = body.time_format === '12h' ? '12h' : '24h';
+  const validIcons = ['monohull', 'catamaran', 'trimaran', 'motorboat'];
+  const boatIcon = validIcons.includes(body.boat_icon ?? '') ? body.boat_icon : 'monohull';
 
   try {
     // Create boat with service role (bypasses RLS)
@@ -58,6 +60,7 @@ Deno.serve(async (req: Request) => {
         created_by: user.id,
         unit_system: unitSystem,
         time_format: timeFormat,
+        boat_icon: boatIcon,
       })
       .select('id')
       .single();
