@@ -285,52 +285,8 @@
 	<!-- Solar / Battery / Load tiles removed — shown in VictronCard instead -->
 
 	<!-- ══════════════════════════════════════════════════════════
-	     SOLAR CHARGERS — Detailed MPPT breakdown (VRM only)
+	     Tanks & Temperatures → moved to EnvironmentCard
 	═══════════════════════════════════════════════════════════════ -->
-	<!-- ══════════════════════════════════════════════════════════
-	     TANKS  (directly below energy flow)
-	═══════════════════════════════════════════════════════════════ -->
-	{#if hasTanks}
-	<div class="section">
-		<div class="section-title">Tanks</div>
-		{#each data.tanks as tank}
-		{@const lvl = Math.round(tank.level)}
-		{@const tc  = lvl > 60 ? 'var(--green)' : lvl > 30 ? 'var(--amber)' : 'var(--red)'}
-		<div class="tank-row">
-			<span class="tank-name">{tank.name}</span>
-			<div class="tank-track"><div class="tank-fill" style="width:{lvl}%; background:{tc}"></div></div>
-			<span class="tank-pct" style="color:{tc}">{lvl} %</span>
-		</div>
-		{/each}
-	</div>
-	{/if}
-
-	<!-- ══════════════════════════════════════════════════════════
-	     TEMPERATUREN & LUFTFEUCHTIGKEIT
-	═══════════════════════════════════════════════════════════════ -->
-	{#if hasTemps}
-	<div class="section">
-		<div class="section-title">Temperatures</div>
-		<div class="temp-grid">
-			{#each data.temperatures as t}
-			<div class="temp-cell">
-				<div class="temp-header">
-					<div class="temp-name">{sensorNames[t.instance] ?? t.name}</div>
-					<div class="temp-val" style="color:{tempColor(t.celsius)}">{fmtTemp(t.celsius, $unitSystem)}</div>
-				</div>
-				<div class="temp-bar-track">
-					<div class="temp-bar-fill"
-						style="width:{tempGaugeWidth(t.celsius)}%; background:{tempColor(t.celsius)}">
-					</div>
-				</div>
-				{#if t.humidity != null}
-				<div class="temp-hum">💧 {Math.round(t.humidity)} % RH</div>
-				{/if}
-			</div>
-			{/each}
-		</div>
-	</div>
-	{/if}
 
 	<!-- ══════════════════════════════════════════════════════════
 	     WEITERE BATTERIEN  (engine, starter …)

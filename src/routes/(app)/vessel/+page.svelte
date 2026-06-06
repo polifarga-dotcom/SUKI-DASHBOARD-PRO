@@ -11,6 +11,11 @@
 	import VRMCard from '$lib/components/cards/VRMCard.svelte';
 	import VictronCard from '$lib/components/cards/VictronCard.svelte';
 	import WakespeedCard from '$lib/components/cards/WakespeedCard.svelte';
+
+	// RigCard: only visible when live rig sensor data is present
+	const hasRig = $derived(
+		$telemetry?.rig_port != null || $telemetry?.rig_sb != null
+	);
 </script>
 
 <svelte:head><title>Vessel · SUKI PRO</title></svelte:head>
@@ -23,10 +28,10 @@
 	<BatteryCard vrm={$vrmData} t={$telemetry} />
 	<ShellyCard />
 	<SolarCard t={$telemetry} />
-	<EnvironmentCard t={$telemetry} />
+	<EnvironmentCard t={$telemetry} vrm={$vrmData} />
 	<EngineCard t={$telemetry} boatId={$currentBoat?.id} engineCount={($currentBoat?.engine_count ?? 1) as 1|2} />
 	<WakespeedCard t={$telemetry} />
-	<RigCard t={$telemetry} />
+	{#if hasRig}<RigCard t={$telemetry} />{/if}
 	<div class="full-width"><VictronCard /></div>
 	<div class="full-width"><VRMCard /></div>
 </div>
