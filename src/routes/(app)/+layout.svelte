@@ -145,20 +145,8 @@
 		goto('/login');
 	}
 
-	onMount(async () => {
+	onMount(() => {
 		updateClock();
-
-		// Check superadmin status directly on client — universal load runs server-side
-		// on Cloudflare Pages without a session, so we query here instead.
-		const { data: { session: s } } = await supabase.auth.getSession();
-		if (s) {
-			const { data: roleRow } = await supabase
-				.from('user_roles')
-				.select('is_superadmin')
-				.eq('user_id', s.user.id)
-				.single();
-			isSuperAdmin = roleRow?.is_superadmin === true;
-		}
 
 		// iOS PWA: JS timers are suspended in background, so autoRefreshToken may
 		// miss its scheduled refresh. When the app comes back to the foreground,
@@ -199,6 +187,25 @@
 	onDestroy(() => {
 		clearInterval(pollTimer);
 		clearInterval(clockTimer);
+	});
+
+	// Superadmin check — runs client-side via auth state listener.
+	// onAuthStateChange fires immediately with INITIAL_SESSION so we always get
+	// the current user without worrying about getSession() timing issues.
+	onMount(() => {
+		const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+			if (session?.user) {
+				const { data: roleRow } = await supabase
+					.from('user_roles')
+					.select('is_superadmin')
+					.eq('user_id', session.user.id)
+					.single();
+				isSuperAdmin = roleRow?.is_superadmin === true;
+			} else {
+				isSuperAdmin = false;
+			}
+		});
+		return () => subscription.unsubscribe();
 	});
 
 	const currentPath = $derived(page.url.pathname);
