@@ -395,14 +395,12 @@
 	.sog-val { font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; }
 	.header-right { display: flex; flex-direction: row; align-items: center; gap: 10px; flex-shrink: 0; }
 	.admin-btn {
-		display: flex; align-items: center; gap: 4px;
-		color: var(--muted); text-decoration: none;
-		background: var(--card2); border: 1px solid var(--border);
-		border-radius: 7px; padding: 4px 8px; font-size: 11px; font-weight: 600;
-		transition: color 0.15s, border-color 0.15s;
+		display: flex; align-items: center;
+		color: #444; text-decoration: none;
+		opacity: 0.5; transition: opacity 0.15s, color 0.15s;
 	}
-	.admin-btn:hover, .admin-btn.active { color: var(--accent); border-color: rgba(0,200,255,.4); }
-	.admin-label { letter-spacing: 0.3px; }
+	.admin-btn:hover, .admin-btn.active { opacity: 1; color: var(--accent); }
+	.admin-label { display: none; }
 	.clock { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 	.conn-dot {
 		width: 8px; height: 8px; border-radius: 50%;
