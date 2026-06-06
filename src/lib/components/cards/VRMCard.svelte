@@ -104,7 +104,7 @@
 	$effect(() => {
 		if (!apiReady()) return;
 		lastKnownTs = null;
-		polling     = false;
+		vrmPolling.set(false);
 		fetchVRM();
 		return () => { if (nextTimer) { clearTimeout(nextTimer); nextTimer = null; } };
 	});
