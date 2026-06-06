@@ -3,7 +3,7 @@
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { supabase } from '$lib/supabase.js';
 	import { currentBoat } from '$lib/stores/boat.js';
-	import { vrmData as vrmDataStore, vrmError as vrmErrorStore } from '$lib/stores/vrm.js';
+	import { vrmData as vrmDataStore, vrmError as vrmErrorStore, vrmPolling, vrmLastFetchAt } from '$lib/stores/vrm.js';
 	import { parseVRMDiagnostics, MPPT_STATE } from '$lib/utils/vrm.js';
 	import type { VRMData, TemperatureSensor } from '$lib/types.js';
 	import { fmtTemp } from '$lib/utils/units.js';
@@ -12,9 +12,7 @@
 	let data         = $derived($vrmDataStore);
 	let error        = $derived($vrmErrorStore);
 	let now          = $state(Math.floor(Date.now() / 1000));
-	let lastFetchAt  = $state<number | null>(null);  // epoch-s of our last successful API call
 	let lastKnownTs  = $state<number | null>(null);  // last_ts we've confirmed from the API
-	let polling      = $state(false);                // true = hot-window (waiting for new upload)
 	let sensorNames  = $state<Record<number, string>>({});  // Load custom sensor names
 
 	let nextTimer: ReturnType<typeof setTimeout> | null = null;
@@ -73,22 +71,18 @@
 
 			const parsed = parseVRMDiagnostics(json?.records ?? []);
 			vrmDataStore.set(parsed);
-			lastFetchAt = Math.floor(Date.now() / 1000);
+			vrmLastFetchAt.set(Math.floor(Date.now() / 1000));
 			vrmErrorStore.set('');
 
 			const newTs = parsed.last_ts;
 
 			if (newTs && newTs !== lastKnownTs) {
-				// ✓ Fresh upload from Cerbo detected
-				// Schedule next fetch for 5 s before the expected next upload (upload every ~60 s)
 				lastKnownTs = newTs;
-				polling     = false;
+				vrmPolling.set(false);
 				const msUntilHotWindow = Math.max(5_000, (newTs + 55) * 1000 - Date.now());
 				schedule(msUntilHotWindow);
 			} else {
-				// Same timestamp — Cerbo hasn't pushed new data yet
-				// Enter / stay in hot-window mode: retry every 5 s
-				polling = true;
+				vrmPolling.set(true);
 				schedule(5_000);
 			}
 		} catch (e) {
@@ -254,20 +248,6 @@
 	<!-- ── Header ──────────────────────────────────────────────── -->
 	<div class="hdr">
 		<span class="card-title">Victron VRM</span>
-		<div class="hdr-right">
-			{#if polling}
-			<span class="poll-spin" title="Waiting for new VRM upload…">⟳</span>
-			{/if}
-			{#if data?.last_ts}
-			<!-- Data age: how old is the Cerbo's last upload to VRM cloud -->
-			<span class="data-age" class:age-warn={data.last_ts != null && (now - data.last_ts) > 300}>
-				{dataAgeStr(data.last_ts)}
-			</span>
-			{/if}
-			{#if lastFetchAt}
-			<span class="fetch-dot" title="Fetched {fetchAgeStr(lastFetchAt)} ago">●</span>
-			{/if}
-		</div>
 	</div>
 
 	{#if error}
@@ -319,36 +299,7 @@
 	</div>
 	{/if}
 
-	<!-- ══════════════════════════════════════════════════════════
-	     GPS  —  live age counter (mm:ss after 60 s)
-	═══════════════════════════════════════════════════════════════ -->
-	{#if hasGps}
-	{@const gpsAge = gpsAgeStr(data.gps_ts)}
-	<div class="section">
-		<div class="section-title">
-			<span>GPS Position</span>
-			{#if gpsAge}
-			<span class="gps-age" class:gps-stale={gpsStale(data.gps_ts)}>⟳ {gpsAge}</span>
-			{/if}
-		</div>
-		<div class="gps-row">
-			<svg width="11" height="11" viewBox="0 0 24 24" fill="none"
-				stroke="var(--muted)" stroke-width="2" stroke-linecap="round">
-				<path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/>
-				<circle cx="12" cy="10" r="3"/>
-			</svg>
-			<span class="gps-val">{Math.abs(data.gps_lat!).toFixed(5)}° {data.gps_lat! >= 0 ? 'N' : 'S'}</span>
-			<span class="c-muted">·</span>
-			<span class="gps-val">{Math.abs(data.gps_lon!).toFixed(5)}° {data.gps_lon! >= 0 ? 'E' : 'W'}</span>
-		</div>
-		{#if data.gps_speed_ms != null || data.gps_course_deg != null}
-		<div class="gps-row gps-sog">
-			{#if data.gps_speed_ms != null}<span class="c-muted">SOG</span><span class="gps-val">{fmtKnots(data.gps_speed_ms)}</span>{/if}
-			{#if data.gps_course_deg != null}<span class="c-muted">COG</span><span class="gps-val">{Math.round(data.gps_course_deg)}°</span>{/if}
-		</div>
-		{/if}
-	</div>
-	{/if}
+	<!-- GPS → moved to VictronCard -->
 
 	{/if}<!-- /data -->
 </div>

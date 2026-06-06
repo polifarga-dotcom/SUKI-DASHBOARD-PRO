@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { vrmData } from '$lib/stores/vrm.js';
+	import { onMount, onDestroy } from 'svelte';
+	import { vrmData, vrmPolling, vrmLastFetchAt } from '$lib/stores/vrm.js';
 
 	const data = $derived($vrmData);
 
@@ -47,6 +48,35 @@
 	);
 
 	let solarExpanded = $state(false);
+	let now = $state(Math.floor(Date.now() / 1000));
+	let tickTimer: ReturnType<typeof setInterval>;
+	onMount(() => { tickTimer = setInterval(() => { now = Math.floor(Date.now() / 1000); }, 1000); });
+	onDestroy(() => clearInterval(tickTimer));
+
+	const hasGps  = $derived(!!data && data.gps_lat != null && data.gps_lon != null);
+
+	function dataAgeStr(ts: number | null): string {
+		if (!ts) return '';
+		const s = now - ts;
+		if (s < 90)   return 'Just now';
+		if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+		return `${Math.floor(s / 3600)} h ago`;
+	}
+	function fetchAgeStr(ts: number | null): string {
+		if (!ts) return '';
+		const s = now - ts;
+		if (s < 10)  return 'Now';
+		if (s < 90)  return `${s} s`;
+		return `${Math.floor(s / 60)} min`;
+	}
+	function gpsAgeStr(ts: number | null): string {
+		if (!ts) return '';
+		const s = Math.max(0, now - ts);
+		const m = Math.floor(s / 60), sec = s % 60;
+		return m > 0 ? `${m}:${String(sec).padStart(2, '0')} min` : `${sec} s`;
+	}
+	function gpsStale(ts: number | null) { return ts ? (now - ts) > 120 : false; }
+	function fmtKnots(ms: number) { return `${(ms * 1.944).toFixed(1)} kn`; }
 
 	function fmtTTG(s: number | null): string {
 		if (!s || s <= 0) return '';
@@ -60,7 +90,22 @@
 </script>
 
 <div class="vic">
-	<div class="vic-hdr">Victron</div>
+	<div class="vic-hdr">
+		<span>Victron</span>
+		<div class="vic-hdr-right">
+			{#if $vrmPolling}
+			<span class="poll-spin" title="Waiting for new VRM upload…">⟳</span>
+			{/if}
+			{#if data?.last_ts}
+			<span class="data-age" class:age-warn={(now - data.last_ts) > 300}>
+				{dataAgeStr(data.last_ts)}
+			</span>
+			{/if}
+			{#if $vrmLastFetchAt}
+			<span class="fetch-dot" title="Fetched {fetchAgeStr($vrmLastFetchAt)} ago">●</span>
+			{/if}
+		</div>
+	</div>
 
 	<!--
 	  LAYOUT STRATEGY
@@ -248,12 +293,62 @@
 		</div>
 
 	</div>
+
+	<!-- GPS Position (from VRM data) -->
+	{#if hasGps}
+	{@const gpsAge = gpsAgeStr(data!.gps_ts)}
+	<div class="gps-section">
+		<div class="gps-label">
+			GPS
+			{#if gpsAge}<span class="gps-age" class:gps-stale={gpsStale(data!.gps_ts)}>⟳ {gpsAge}</span>{/if}
+		</div>
+		<div class="gps-row">
+			<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round">
+				<path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+			</svg>
+			<span class="gps-val">{Math.abs(data!.gps_lat!).toFixed(5)}° {data!.gps_lat! >= 0 ? 'N' : 'S'}</span>
+			<span class="gps-sep">·</span>
+			<span class="gps-val">{Math.abs(data!.gps_lon!).toFixed(5)}° {data!.gps_lon! >= 0 ? 'E' : 'W'}</span>
+			{#if data!.gps_speed_ms != null}<span class="gps-sep">·</span><span class="gps-meta">SOG {fmtKnots(data!.gps_speed_ms)}</span>{/if}
+			{#if data!.gps_course_deg != null}<span class="gps-meta">COG {Math.round(data!.gps_course_deg)}°</span>{/if}
+		</div>
+	</div>
+	{/if}
 </div>
 
 <style>
 	/* ── Card ── */
 	.vic { background:#081c2e; border-radius:var(--r,10px); border:1px solid rgba(255,255,255,.07); padding:12px 14px; }
-	.vic-hdr { font-size:11px; font-weight:700; color:rgba(255,255,255,.3); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; }
+	.vic-hdr {
+		font-size:11px; font-weight:700; color:rgba(255,255,255,.3);
+		text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;
+		display:flex; align-items:center; justify-content:space-between;
+	}
+	.vic-hdr-right { display:flex; align-items:center; gap:6px; }
+	.data-age { font-size:11px; color:rgba(255,255,255,.3); text-transform:none; letter-spacing:0; }
+	.data-age.age-warn { color:var(--amber); }
+	.fetch-dot { font-size:8px; color:var(--green); opacity:0.7; }
+	.poll-spin { font-size:11px; color:var(--accent); opacity:0.8; display:inline-block;
+		animation:vic-spin 1.2s linear infinite; text-transform:none; }
+	@keyframes vic-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+
+	/* ── GPS ── */
+	.gps-section {
+		border-top:1px solid rgba(255,255,255,.06);
+		margin-top:10px; padding-top:8px;
+		display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+	}
+	.gps-label {
+		font-size:10px; color:rgba(255,255,255,.3);
+		text-transform:uppercase; letter-spacing:.5px;
+		display:flex; align-items:center; gap:5px; flex-shrink:0;
+	}
+	.gps-age { font-size:10px; font-weight:600; color:var(--green); font-variant-numeric:tabular-nums; }
+	.gps-age.gps-stale { color:var(--amber); }
+	.gps-row { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+	.gps-val  { font-size:11px; font-variant-numeric:tabular-nums; color:rgba(255,255,255,.8); }
+	.gps-sep  { font-size:11px; color:rgba(255,255,255,.25); }
+	.gps-meta { font-size:11px; color:rgba(255,255,255,.45); font-variant-numeric:tabular-nums; }
 
 	/* ── Desktop grid ─────────────────────────────────────────────────────── */
 	.vic-grid {
