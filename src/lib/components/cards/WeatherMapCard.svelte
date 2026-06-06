@@ -4,11 +4,14 @@
 	import { vrmData } from '$lib/stores/vrm.js';
 	import { inreachPoints } from '$lib/stores/inreach.js';
 	import { weatherForecast } from '$lib/stores/weather.js';
+	import { currentBoat } from '$lib/stores/boat.js';
+	import { boatIconSvg } from '$lib/utils/boatIcons.js';
 
-	// ── GPS (same priority as WeatherCard) ────────────────────────────────────
+	// ── GPS + heading (same priority as WeatherCard) ──────────────────────────
 	const t   = $derived($telemetry);
 	const vrm = $derived($vrmData);
 	const pts = $derived($inreachPoints);
+	const boat = $derived($currentBoat);
 
 	const posLat = $derived(
 		t?.nav_lat   != null ? t.nav_lat   :
@@ -22,6 +25,15 @@
 	);
 	const pos = $derived(
 		posLat != null && posLon != null ? { lat: posLat, lon: posLon } : null
+	);
+
+	// Heading: COG from telemetry (degrees true), fallback 0
+	const heading = $derived(t?.nav_cog ?? t?.nav_heading ?? 0);
+
+	// Boat icon type from boat profile
+	const boatIconType = $derived(
+		// boat_icon not in typed Boat but present in DB row
+		(boat as (typeof boat & { boat_icon?: string }))?.boat_icon ?? 'monohull'
 	);
 
 	const hours = $derived($weatherForecast);
@@ -155,41 +167,60 @@
 		if (ctx) ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 	});
 
-	// Update marker when GPS changes
+	// Build the DivIcon HTML for the boat at a given heading + icon type
+	function makeBoatIcon(L: typeof import('leaflet'), iconType: string, hdg: number) {
+		const svg = boatIconSvg(iconType, '#00e5ff');
+		// Wrap in a div that rotates around centre; bow points up (0°) = north
+		const html = `<div style="
+			width:40px;height:60px;
+			transform:rotate(${hdg}deg);
+			transform-origin:20px 30px;
+			filter:drop-shadow(0 0 5px #00e5ff) drop-shadow(0 0 10px #00e5ff66);
+		">${svg}</div>`;
+		return L.divIcon({
+			className: '',
+			html,
+			iconSize:   [40, 60],
+			iconAnchor: [20, 30],   // centre of icon at GPS point
+		});
+	}
+
+	// Update marker position + heading whenever they change
+	let _L: typeof import('leaflet') | null = null;
 	$effect(() => {
-		const p = pos;
-		if (!boatMarker || !p) return;
+		const p   = pos;
+		const hdg = heading;
+		const typ = boatIconType;
+		if (!boatMarker || !_L || !p) return;
 		boatMarker.setLatLng([p.lat, p.lon]);
+		boatMarker.setIcon(makeBoatIcon(_L, typ, hdg));
 	});
 
-	// Re-center map when boat moves significantly
-	let lastCenteredPos: { lat: number; lon: number } | null = null;
+	// Center map on first GPS fix
+	let mapCentered = false;
 	$effect(() => {
 		const p = pos;
-		if (!mapInstance || !p) return;
-		if (!lastCenteredPos) {
-			mapInstance.setView([p.lat, p.lon], 9);
-			lastCenteredPos = p;
-		}
+		if (!mapInstance || !p || mapCentered) return;
+		mapInstance.setView([p.lat, p.lon], 10);
+		mapCentered = true;
 	});
 
 	// ── Map init ──────────────────────────────────────────────────────────────
 	onMount(async () => {
-		// Dynamic import so Leaflet only runs in browser
 		const [{ default: L }] = await Promise.all([
 			import('leaflet'),
 			import('leaflet/dist/leaflet.css' as string),
 		]);
+		_L = L;
 
-		// Wait for DOM + layout
 		await tick();
 		if (!mapEl) return;
 
-		const center: [number, number] = pos ? [pos.lat, pos.lon] : [43.0, 6.0]; // fallback: Med
+		const center: [number, number] = pos ? [pos.lat, pos.lon] : [43.0, 6.0];
 
 		const map = L.map(mapEl, {
 			center,
-			zoom: 9,
+			zoom: 10,               // zoom 10 ≈ 30 NM visible width
 			zoomControl: false,
 			attributionControl: false,
 		});
@@ -200,36 +231,30 @@
 			{ subdomains: 'abcd', maxZoom: 19 }
 		).addTo(map);
 
-		// Boat marker
+		// Boat marker — sized SVG icon with heading rotation
 		if (pos) {
-			const icon = L.divIcon({
-				className: '',
-				html: `<div style="width:10px;height:10px;border-radius:50%;
-					background:#00e5ff;border:2px solid rgba(255,255,255,.9);
-					box-shadow:0 0 10px #00e5ff,0 0 20px #00e5ff44;"></div>`,
-				iconSize:   [10, 10],
-				iconAnchor: [5, 5],
-			});
-			boatMarker = L.marker([pos.lat, pos.lon], { icon }).addTo(map);
+			boatMarker = L.marker([pos.lat, pos.lon], {
+				icon: makeBoatIcon(L, boatIconType, heading),
+				zIndexOffset: 1000,
+			}).addTo(map);
+			mapCentered = true;
 		}
 
 		// Zoom control (bottom right)
 		L.control.zoom({ position: 'bottomright' }).addTo(map);
 
 		mapInstance = map;
-		lastCenteredPos = pos;
 
-		// Force Leaflet to recalculate size after mount
+		// Leaflet needs a tick to measure the container, then size the canvas
 		setTimeout(() => {
 			map.invalidateSize();
-			// Size the canvas to match
 			if (canvasEl && mapEl) {
 				canvasEl.width  = mapEl.clientWidth;
 				canvasEl.height = mapEl.clientHeight;
 				initParticles(canvasEl.width, canvasEl.height);
 				startAnimation();
 			}
-		}, 100);
+		}, 120);
 	});
 
 	onDestroy(() => {
@@ -239,7 +264,7 @@
 
 	function centerOnBoat() {
 		if (!mapInstance || !pos) return;
-		mapInstance.setView([pos.lat, pos.lon], 9, { animate: true });
+		mapInstance.setView([pos.lat, pos.lon], 10, { animate: true });
 	}
 </script>
 
