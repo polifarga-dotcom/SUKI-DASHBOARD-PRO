@@ -141,6 +141,11 @@
 						{#if batt.v != null}
 							<span class="sec-v">{batt.v.toFixed(2)} V</span>
 						{/if}
+						{#if batt.a != null}
+							<span class="sec-a" class:c-charge={batt.a > 0.5} class:c-discharge={batt.a < -0.5}>
+								{batt.a >= 0 ? '+' : ''}{batt.a.toFixed(1)} A
+							</span>
+						{/if}
 					</div>
 				</div>
 			{/each}
@@ -256,6 +261,14 @@
 		color: var(--muted);
 		flex-shrink: 0;
 	}
+	.sec-a {
+		font-size: 11px;
+		color: var(--muted);
+		flex-shrink: 0;
+		font-variant-numeric: tabular-nums;
+	}
+	.sec-a.c-charge    { color: var(--green); }
+	.sec-a.c-discharge { color: var(--amber); }
 
 	.no-data {
 		font-size: 13px;

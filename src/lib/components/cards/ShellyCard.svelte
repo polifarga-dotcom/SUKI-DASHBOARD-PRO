@@ -8,11 +8,14 @@
 
 	const cfg = $derived($anchorConfig);
 
+	// Derived credential strings — $effect only re-runs when these actually change,
+	// not on every anchorConfig poll tick (which would restart fetchDevices repeatedly)
+	const shellySrv = $derived(cfg?.shelly_cloud_server  ?? null);
+	const shellyKey = $derived(cfg?.shelly_cloud_auth_key ?? null);
+
 	function apiBase() {
-		const srv = cfg?.shelly_cloud_server;
-		const key = cfg?.shelly_cloud_auth_key;
-		if (!srv || !key) return null;
-		return { srv, key };
+		if (!shellySrv || !shellyKey) return null;
+		return { srv: shellySrv, key: shellyKey };
 	}
 
 	/** Extract On/Off state from any Shelly status object (Gen1 + Gen2). */
@@ -107,16 +110,18 @@
 		}
 	}
 
-	// ── Reactive start: fetch as soon as credentials are ready ───────────────
+	// ── Reactive start: only re-run when the credential strings change ───────
+	// Reading shellySrv + shellyKey (not the whole cfg object) means this effect
+	// won't restart on every anchorConfig poll tick — only on actual cred changes.
 	$effect(() => {
-		if (!apiBase()) return;
-		fetchDevices(); // immediate first fetch
+		if (!shellySrv || !shellyKey) return;
+		fetchDevices();
 		const timer = setInterval(fetchDevices, 30_000);
 		return () => clearInterval(timer);
 	});
 </script>
 
-{#if cfg?.shelly_cloud_server && (!loaded || devices.length > 0)}
+{#if shellySrv && shellyKey}
 <div class="card">
 	<div class="title">Shelly</div>
 	{#if !loaded}
