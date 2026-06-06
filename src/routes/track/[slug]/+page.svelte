@@ -476,12 +476,7 @@
 			<div class="stat-key">hPa</div>
 		</div>
 		{/if}
-		{#if depth != null}
-		<div class="stat-item">
-			<div class="stat-val">{depth.toFixed(1)}</div>
-			<div class="stat-key">m depth</div>
-		</div>
-		{/if}
+
 		{#if battSoc != null}
 		<div class="stat-item">
 			<div class="stat-val" style="color:{battSoc>50?'#4ade80':battSoc>20?'#facc15':'#f87171'}">{battSoc}%</div>
