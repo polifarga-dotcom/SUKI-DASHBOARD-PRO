@@ -236,10 +236,9 @@
 		const lon = data?.telemetry?.nav_lon ?? data?.track?.at(-1)?.lon ?? 20;
 		map = L.map(mapEl, { center: [lat, lon], zoom: 11, zoomControl: false });
 
-		// Standard OSM tiles — always reliable, no CORS, no rate limit
-		// Dark appearance achieved via CSS filter on .leaflet-tile-pane
-		L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-			attribution: '© OpenStreetMap contributors',
+		L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+			attribution: '© OpenStreetMap contributors © CARTO',
+			subdomains: 'abcd',
 			maxZoom: 19,
 		}).addTo(map);
 
@@ -515,15 +514,7 @@
 <style>
 	:global(html,body) { margin:0; padding:0; height:100%; background:#080c14; overflow:hidden; }
 
-	/* Dark map effect via CSS filter on OSM tiles:
-	   invert → hue-rotate compensates colour inversion → slightly desaturate */
-	:global(.leaflet-tile-pane) {
-		filter: invert(1) hue-rotate(200deg) brightness(0.85) saturate(0.55) contrast(0.9);
-	}
-	/* Keep OpenSeaMap sea marks readable on dark background */
-	:global(.leaflet-tile-pane > .leaflet-layer:last-child) {
-		filter: invert(1) hue-rotate(200deg) brightness(1.4);
-	}
+	/* CartoDB Voyager — no filter needed, tiles render naturally */
 
 	/* ── Root ── */
 	.root {
