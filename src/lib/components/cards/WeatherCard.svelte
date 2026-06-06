@@ -3,7 +3,7 @@
 	import { vrmData } from '$lib/stores/vrm.js';
 	import { anchorConfig } from '$lib/stores/anchor.js';
 	import { inreachPoints } from '$lib/stores/inreach.js';
-	import { latestWave } from '$lib/stores/weather.js';
+	import { latestWave, weatherForecast } from '$lib/stores/weather.js';
 	import { unitSystem, timeFormat } from '$lib/stores/userSettings.js';
 	import { fmtTemp, fmtWaveHeight, fmtTime } from '$lib/utils/units.js';
 
@@ -382,6 +382,9 @@
 					return ms >= cutoff && hr % 3 === 0;
 				})
 				.slice(0, 25);   // current slot + 24 × 3h = 72 h
+
+			// Publish forecast to shared store (WeatherMapCard reads it)
+			weatherForecast.set(hours);
 
 			// Publish current wave snapshot to shared store (logbook reads it)
 			if (hours.length > 0) {

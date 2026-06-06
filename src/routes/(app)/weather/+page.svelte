@@ -1,4 +1,5 @@
 <script lang="ts">
+	import WeatherMapCard from '$lib/components/cards/WeatherMapCard.svelte';
 	import WeatherCard from '$lib/components/cards/WeatherCard.svelte';
 	import InReachCard from '$lib/components/cards/InReachCard.svelte';
 </script>
@@ -6,6 +7,7 @@
 <svelte:head><title>Weather · SUKI PRO</title></svelte:head>
 
 <div class="grid">
+	<WeatherMapCard />
 	<WeatherCard />
 	<div class="inreach-wrap"><InReachCard /></div>
 </div>
