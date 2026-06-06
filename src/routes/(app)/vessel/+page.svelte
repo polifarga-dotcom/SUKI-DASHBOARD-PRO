@@ -8,7 +8,6 @@
 	import EngineCard from '$lib/components/cards/EngineCard.svelte';
 	import RigCard from '$lib/components/cards/RigCard.svelte';
 	import ShellyCard from '$lib/components/cards/ShellyCard.svelte';
-	import VRMCard from '$lib/components/cards/VRMCard.svelte';
 	import VictronCard from '$lib/components/cards/VictronCard.svelte';
 	import WakespeedCard from '$lib/components/cards/WakespeedCard.svelte';
 
@@ -33,7 +32,6 @@
 	<WakespeedCard t={$telemetry} />
 	{#if hasRig}<RigCard t={$telemetry} />{/if}
 	<div class="full-width"><VictronCard /></div>
-	<div class="full-width"><VRMCard /></div>
 </div>
 
 <style>

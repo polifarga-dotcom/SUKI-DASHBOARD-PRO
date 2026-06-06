@@ -9,6 +9,7 @@
 	import { myBoats, currentBoat, boatRole, boatRoles } from '$lib/stores/boat.js';
 	import { dataAge, fmtLatLon, ms2knNum } from '$lib/utils/units.js';
 	import StatusBar from '$lib/components/layout/StatusBar.svelte';
+	import VRMFetcher from '$lib/services/VRMFetcher.svelte';
 	import type { Boat } from '$lib/types.js';
 
 	let { children, data } = $props();
@@ -205,6 +206,8 @@
 		return kn.toFixed(1) + ' kn';
 	});
 </script>
+
+<VRMFetcher />
 
 <div class="app-shell">
 	<!-- Header -->
