@@ -429,12 +429,6 @@ module.exports = function (app) {
           title:       'API Key',
           description: 'From SUKI Dashboard → Settings → SignalK Bridge → Copy',
         },
-        endpoint: {
-          type:        'string',
-          title:       'Ingest URL',
-          description: 'From SUKI Dashboard → Settings → SignalK Bridge → Copy (pre-filled)',
-          default:     'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/signalk-ingest',
-        },
         interval_ms: {
           type:        'number',
           title:       'Send interval (ms)',
@@ -445,8 +439,8 @@ module.exports = function (app) {
     },
 
     start (config) {
-      const { api_key, endpoint, interval_ms = 5000 } = config || {};
-      const url = endpoint || 'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/signalk-ingest';
+      const { api_key, interval_ms = 5000 } = config || {};
+      const url = 'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/signalk-ingest';
       // Offline log buffer endpoint — same base URL, different function
       const logUrl = url.replace('/signalk-ingest', '/ingest-log-entries');
 

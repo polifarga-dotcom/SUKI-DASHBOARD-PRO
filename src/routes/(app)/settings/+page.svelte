@@ -289,9 +289,7 @@
 	}
 
 	// ── SignalK Bridge ────────────────────────────────────────────────────────
-	const SIGNALK_INGEST_URL = 'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/signalk-ingest';
 	let skKeyVisible   = $state(false);
-	let skUrlCopied    = $state(false);
 	let skKeyCopied    = $state(false);
 	let skKeyRegenBusy = $state(false);
 	let skKeyRegenDone = $state(false);
@@ -1060,21 +1058,10 @@
 		<h2>SignalK Bridge</h2>
 		<div class="setup-hint">
 			Install <code>signalk-plugin-suki-bridge</code> from your SignalK server's Appstore,
-			then paste the values below into the plugin configuration.
+			then paste the API Key below into the plugin configuration.
 			The plugin streams live NMEA data (GPS, wind, depth, battery, engine) directly to this dashboard.
 		</div>
 		<div class="form-fields">
-			<div class="field">
-				<label for="sk-ingest-url">Ingest URL</label>
-				<div class="sk-copy-row">
-					<input id="sk-ingest-url" type="text" readonly class="settings-input sk-copy-input"
-						value={SIGNALK_INGEST_URL} />
-					<button class="btn btn-ghost sk-copy-btn"
-						onclick={() => copyToClipboard(SIGNALK_INGEST_URL, 'url')}>
-						{skUrlCopied ? '✓' : 'Copy'}
-					</button>
-				</div>
-			</div>
 			<div class="field">
 				<label for="sk-api-key">API Key</label>
 				<div class="sk-copy-row">
