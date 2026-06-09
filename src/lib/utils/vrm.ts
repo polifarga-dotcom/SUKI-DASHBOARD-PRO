@@ -161,9 +161,19 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		mpptMap.set(key, entry);
 	});
 
+	// Active MPPTs — for live power display (current production, state, etc.)
+	// Filtered to real chargers that have shown some activity. NOT used for
+	// historical yield totals (a nighttime MPPT has zero power but valid history).
 	const mpptsArr = Array.from(mpptMap.values())
-		.filter(m => m.yield_today_wh > 0 || m.power_w > 0 || m.pv_v != null)
+		.filter(m => m.yield_today_wh > 0 || m.power_w > 0 || m.pv_v != null
+		          || m.yield_yesterday_wh > 0 || m.yield_total_kwh != null)
 		.sort((a, b) => b.power_w - a.power_w);
+
+	// All charger entries — for energy totals that must survive zero-production
+	// periods (night, overcast). Excludes ghost entries that have NO yield data at all.
+	const allMpptsArr = Array.from(mpptMap.values())
+		.filter(m => m.yield_today_wh > 0 || m.yield_yesterday_wh > 0
+		          || m.yield_total_kwh != null || m.power_w > 0 || m.pv_v != null);
 
 	// ── Battery monitors — exclude MPPT chargers ──────────────────────────────
 	// MPPTs share /Dc/0/Voltage & /Dc/0/Current with battery monitors,
@@ -180,17 +190,20 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 	const battery_w   = primary?.w   ?? null;
 
 	// ── Solar totals ──────────────────────────────────────────────────────────
+	// Live power + current amps from active MPPTs only (zero at night = correct)
 	const solar_w = mpptsArr.length > 0
 		? mpptsArr.reduce((s, m) => s + m.power_w, 0)
 		: null;
-	const solar_yield_today_wh = mpptsArr.length > 0
-		? mpptsArr.reduce((s, m) => s + m.yield_today_wh, 0)
-		: null;
-	const solar_yield_yesterday_wh = mpptsArr.length > 0
-		? mpptsArr.reduce((s, m) => s + m.yield_yesterday_wh, 0)
-		: null;
 	const solar_a = mpptsArr.length > 0
 		? mpptsArr.reduce((s, m) => s + (m.batt_i ?? 0), 0)
+		: null;
+	// Energy yields from ALL known chargers — prevents nighttime filter from
+	// dropping real MPPTs that have zero current production but valid history.
+	const solar_yield_today_wh = allMpptsArr.length > 0
+		? allMpptsArr.reduce((s, m) => s + m.yield_today_wh, 0)
+		: null;
+	const solar_yield_yesterday_wh = allMpptsArr.length > 0
+		? allMpptsArr.reduce((s, m) => s + m.yield_yesterday_wh, 0)
 		: null;
 
 	// ── VE.Bus DC current (for DC loads calculation) ─────────────────────────
