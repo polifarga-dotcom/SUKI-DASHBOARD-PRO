@@ -71,6 +71,7 @@ async function fetchGPSFromVRM(
     const url = `https://vrmapi.victronenergy.com/v2/installations/${installationId}/diagnostics?count=1000`;
     const res = await fetch(url, {
       headers: { 'X-Authorization': `Token ${token}` },
+      signal: AbortSignal.timeout(8_000),   // never hang more than 8 s
     });
     if (!res.ok) {
       console.error('[log-position] VRM fetch failed', res.status);
@@ -158,7 +159,8 @@ async function reverseGeocode(lat: number, lon: number): Promise<string> {
   try {
     const r = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10&accept-language=en`,
-      { headers: { 'User-Agent': 'SUKI-Dashboard-Pro/1.0 sailing@suki.boat', 'Accept-Language': 'en' } }
+      { headers: { 'User-Agent': 'SUKI-Dashboard-Pro/1.0 sailing@suki.boat', 'Accept-Language': 'en' },
+        signal: AbortSignal.timeout(6_000) }  // never hang more than 6 s
     );
     if (!r.ok) throw new Error('nominatim error');
     const j = await r.json();
@@ -310,6 +312,7 @@ Deno.serve(async (req: Request) => {
 
     for (const ac of autoCfgs ?? []) {
       const boatId = ac.boat_id as string;
+      try {  // ── per-boat isolation: one boat's error never blocks others ──
 
       // Anchor watch active → don't auto-start
       if (ac.active) {
@@ -478,6 +481,10 @@ Deno.serve(async (req: Request) => {
           console.log(`[log-position] auto-trip: boat ${boatId} slow/null — miss tick ${newMiss}/${MAX_MISS_TICKS}`);
         }
       }
+
+      } catch (err) {
+        console.error(`[log-position] auto-trip: boat ${boatId} error — ${(err as Error)?.message ?? err}`);
+      }
     }
   }
 
@@ -497,6 +504,7 @@ Deno.serve(async (req: Request) => {
 
   for (const trip of (trips ?? []) as Trip[]) {
     const boatId = trip.boat_id;
+    try {  // ── per-trip isolation: one trip's error never blocks others ──
 
     const { data: cfg } = await supabase
       .from('anchor_config')
@@ -597,6 +605,11 @@ Deno.serve(async (req: Request) => {
     }
 
     results.push({ trip: trip.id, boat: boatId, status: 'logged' });
+
+    } catch (err) {
+      console.error(`[log-position] trip ${trip.id} boat ${boatId} error — ${(err as Error)?.message ?? err}`);
+      results.push({ trip: trip.id, boat: boatId, status: 'error' });
+    }
   }
 
   return json({ processed: results.length, results });

@@ -28,8 +28,7 @@
 	let showTripModal   = $state(false);
 	let showEntryModal  = $state(false);
 	let saving          = $state(false);
-	let autoLogTimer:    ReturnType<typeof setInterval>;
-	let autoCheckTimer:  ReturnType<typeof setInterval>;
+	let autoLogTimer: ReturnType<typeof setInterval>;
 
 	// ── Realtime subscription (receives server-inserted entries) ──────────────
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -61,29 +60,13 @@
 		}
 	}
 
-	// ── Auto-trip engine state ────────────────────────────────────────────────
-	const SOG_TRIP_KN      = 1.5;
-	const CONFIRM_START_MS = 1  * 60_000;
-	const CONFIRM_STOP_MS  = 15 * 60_000;
-
-	type AutoMode = 'idle' | 'watching' | 'recording' | 'countdown';
-	// localStorage provides a fast initial value; DB (cfg.auto_trip_enabled) overrides it below
+	// ── Auto-trip toggle (server handles all detection + start/stop) ─────────
+	// localStorage provides a fast initial value; DB (cfg.auto_trip_enabled) overrides it.
 	let autoEnabled = $state(
 		typeof localStorage !== 'undefined'
 			? localStorage.getItem('autoTripEnabled') !== 'false'
 			: true
 	);
-	let autoMode         = $state<AutoMode>('idle');
-	let fastSince        = $state<number | null>(null);
-	let slowSince        = $state<number | null>(null);
-	let isAutoTrip       = $state(false);
-	let countdownMinutes = $state(15);
-
-	// ── Cerbo-offline VRM fallback ────────────────────────────────────────────
-	let cerboLossTime: number | null = null;
-	let vrmPosAtLoss: { lat: number; lon: number } | null = null;
-	const VRM_FALLBACK_WAIT_MS = 90_000;
-	const VRM_MOVE_THRESHOLD_M = 100;
 
 	// ── Terminal log ──────────────────────────────────────────────────────────
 	const MAX_LOG = 10;
@@ -110,13 +93,10 @@
 		}
 	});
 
-	// Persist the toggle to Supabase + update local anchorConfig store
+	// Persist the toggle to Supabase — server reads this to enable/disable auto-trip
 	async function setAutoEnabled(val: boolean) {
 		autoEnabled = val;
-		if (!val) autoMode = 'idle';
-		// Update store immediately so the DB sync $effect doesn't flip us back
 		anchorConfig.update(c => c ? { ...c, auto_trip_enabled: val } : c);
-		// Write to DB (server reads this for server-side auto-trip)
 		const boatId = cfg?.boat_id ?? boat?.id;
 		if (boatId) {
 			await supabase
@@ -124,7 +104,6 @@
 				.update({ auto_trip_enabled: val })
 				.eq('boat_id', boatId);
 		}
-		if (val) checkAutoTrip();
 	}
 
 	// ── Past trips filter + sort ──────────────────────────────────────────────
@@ -893,10 +872,6 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		activeTrip.set(active);
 
 		if (active) {
-			// Sync is_auto flag from DB (important after app restart)
-			isAutoTrip = active.is_auto;
-			autoMode   = 'recording';
-
 			const { data: entries } = await supabase
 				.from('log_entries').select('*').eq('trip_id', active.id)
 				.order('logged_at', { ascending: false }).limit(200);
@@ -1073,8 +1048,6 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		}).select().single();
 		if (data) {
 			const trip = data as LogTrip;
-			isAutoTrip = false;
-			autoMode   = 'recording';
 			activeTrip.set(trip);
 			allTrips.update(ts => [trip, ...ts]);
 			tripEntries.set([]); lastEntryPos = null;
@@ -1112,8 +1085,6 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		const finished = { ...(at as LogTrip), ...patch };
 		allTrips.update(ts => ts.map(t => t.id === at.id ? finished : t));
 		activeTrip.set(null); tripEntries.set([]); unsubscribeTrip();
-		isAutoTrip = false; autoMode = 'idle';
-		fastSince = null; slowSince = null; countdownMinutes = 15;
 		saving = false;
 	}
 
@@ -1159,175 +1130,13 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		return parts.join(' · ');
 	}
 
-	// ── Auto-trip: start ──────────────────────────────────────────────────────
-	async function autoStartTrip() {
-		if ($activeTrip || !boat) return;
-		const lat = liveLat(); const lon = liveLon();
-		const place = (lat != null && lon != null) ? await reverseGeocode(lat, lon) : null;
-		const wx    = buildWeatherSummary();
-		const { data } = await supabase.from('log_trips').insert({
-			boat_id: boat.id, name: place ?? 'Auto trip', from_port: place,
-			started_at: new Date().toISOString(), notes: wx || null, is_auto: true,
-			engine_hours_start: await resolveEngH(),
-		}).select().single();
-		if (data) {
-			const trip = data as LogTrip;
-			isAutoTrip = true; autoMode = 'recording';
-			terminalLines = [];
-			pushLog(`>> Auto-trip started - ${place ?? 'position recorded'}`);
-			activeTrip.set(trip); allTrips.update(ts => [trip, ...ts]);
-			tripEntries.set([]); lastEntryPos = null;
-			subscribeToActiveTrip(trip.id);
-			await insertEntry({
-				source: 'auto',
-				notes: [place ? `Departure from ${place}` : 'Departure', wx].filter(Boolean).join(' - '),
-			});
-		}
-	}
-
-	// ── Auto-trip: stop ───────────────────────────────────────────────────────
-	async function autoStopTrip(reason: string) {
-		const at = $activeTrip;
-		if (!at) return;
-		const lat = liveLat(); const lon = liveLon();
-		const place = (lat != null && lon != null) ? await reverseGeocode(lat, lon) : null;
-		pushLog(`[stop] ${place ?? 'unknown'} - ${reason}`);
-		const wx = buildWeatherSummary();
-		await insertEntry({
-			source: 'auto',
-			notes: [[place ? `Arrival at ${place}` : 'Arrival', wx].filter(Boolean).join(' - '), `(${reason})`].join(' '),
-		});
-		const stats = await recalcFromDB(at.id);
-		// Prefer start-snapshot delta (most accurate); fall back to entry-based calc
-		const engNow2   = await resolveEngH(at.id);
-		const engDelta2 = (engNow2 != null && at.engine_hours_start != null)
-			? +Math.max(0, engNow2 - at.engine_hours_start).toFixed(2)
-			: (stats?.engHours ?? null);
-		const patch: Partial<LogTrip> = {
-			ended_at: new Date().toISOString(), to_port: place,
-			name: at.from_port && place ? `${at.from_port} → ${place}` : (at.name ?? 'Auto trip'),
-			total_nm: stats?.totalNm ?? at.total_nm, sail_nm:  stats?.sailNm  ?? at.sail_nm,
-			motor_nm: stats?.motorNm ?? at.motor_nm, avg_sog_kn: stats?.avgSog ?? null,
-			engine_hours: engDelta2,
-		};
-		await supabase.from('log_trips').update(patch).eq('id', at.id);
-		const finished = { ...(at as LogTrip), ...patch };
-		allTrips.update(ts => ts.map(t => t.id === at.id ? finished : t));
-		activeTrip.set(null); tripEntries.set([]); unsubscribeTrip();
-		isAutoTrip = false; autoMode = 'idle';
-		slowSince = null; fastSince = null; countdownMinutes = 15;
-		cerboLossTime = null; vrmPosAtLoss = null;
-	}
-
-	// ── Auto-trip: check (runs every 30 s) ────────────────────────────────────
-	// Applies auto-stop logic to ALL active trips, not just is_auto ones.
-	async function checkAutoTrip() {
-		// Skip until logbook is loaded (prevents false auto-start before active trip is known)
-		if (!autoEnabled || !boat || !$logLoaded) return;
-
-		const now      = Date.now();
-		const sog      = liveSog();
-		const anchorOn = $anchorConfig?.active ?? false;
-		const trip     = $activeTrip;
-		const v        = vrm;
-
-		// Anchor alarm → stop any active trip immediately
-		if (anchorOn && trip) {
-			pushLog(`[anchor] Alarm active - stopping trip`);
-			await autoStopTrip('anchor alarm set');
-			return;
-		}
-
-		// ── Determine movement ────────────────────────────────────────────────
-		let moving = sog != null && sog >= SOG_TRIP_KN;
-
-		// Cerbo offline fallback for any active trip
-		if (sog === null && trip) {
-			if (v?.gps_lat != null && v?.gps_lon != null) {
-				if (cerboLossTime === null) {
-					cerboLossTime = now; vrmPosAtLoss = { lat: v.gps_lat, lon: v.gps_lon };
-					pushLog(`[sat] Cerbo offline - monitoring VRM GPS`);
-					moving = true;
-				} else if (now - cerboLossTime < VRM_FALLBACK_WAIT_MS) {
-					moving = true;
-				} else {
-					const dist = haversine(vrmPosAtLoss!.lat, vrmPosAtLoss!.lon, v.gps_lat, v.gps_lon);
-					vrmPosAtLoss = { lat: v.gps_lat, lon: v.gps_lon }; cerboLossTime = now;
-					if (dist > VRM_MOVE_THRESHOLD_M) {
-						moving = true;
-						pushLog(`[sat] VRM GPS +${Math.round(dist)} m - underway`);
-					} else {
-						pushLog(`[sat] VRM GPS +${Math.round(dist)} m - possibly stopped`);
-					}
-				}
-			} else {
-				if (cerboLossTime === null) pushLog(`[sat] Cerbo offline - no VRM GPS`);
-				cerboLossTime ??= now;
-			}
-		} else if (sog !== null && cerboLossTime !== null) {
-			cerboLossTime = null; vrmPosAtLoss = null;
-			pushLog(`[ok] Cerbo back online`);
-		}
-
-		// ── State machine ─────────────────────────────────────────────────────
-		if (moving) {
-			slowSince = null; countdownMinutes = 15;
-
-			if (!trip) {
-				// No active trip — watch for auto-start
-				if (fastSince == null) {
-					fastSince = now;
-					const sogStr = sog != null ? `${sog.toFixed(1)} kn` : 'VRM GPS';
-					pushLog(`> ${sogStr} - confirming movement...`);
-				}
-				autoMode = 'watching';
-				if (now - fastSince >= CONFIRM_START_MS) {
-					autoMode = 'recording'; fastSince = null;
-					pushLog(`>> Confirmed - launching auto-trip`);
-					await autoStartTrip();
-				}
-			} else {
-				// Active trip (auto or manual) + moving = recording
-				autoMode = 'recording';
-				if (isAutoTrip) {
-					const lat     = liveLat(); const lon = liveLon();
-					const wind    = liveWind(); const windDir = liveWindDir();
-					const sogDisp = sog != null ? `${sog.toFixed(1)} kn` : 'VRM GPS';
-					pushLog(
-						`[rec] ${sogDisp}  ${lat?.toFixed(4) ?? '?'} ${lon?.toFixed(4) ?? '?'}` +
-						(wind != null ? `  ${wind.toFixed(0)} kn ${windDir != null ? dirAbbr(windDir) : ''}` : '')
-					);
-				}
-			}
-		} else {
-			fastSince = null;
-
-			if (trip) {
-				// Slow / stopped — countdown for ALL trips
-				if (slowSince == null) {
-					slowSince = now;
-					pushLog(`[!] Speed < ${SOG_TRIP_KN} kn - auto-stop in ${countdownMinutes} min`);
-				}
-				const elapsed = now - slowSince;
-				countdownMinutes = Math.max(0, Math.ceil((CONFIRM_STOP_MS - elapsed) / 60_000));
-				autoMode = 'countdown';
-				if (isAutoTrip) pushLog(`[T-${countdownMinutes}] ${sog?.toFixed(1) ?? '0.0'} kn`);
-				if (elapsed >= CONFIRM_STOP_MS) {
-					await autoStopTrip('< 1.5 kn for 15 min');
-				}
-			} else {
-				autoMode = 'idle'; fastSince = null;
-			}
-		}
-	}
-
-	// ── Auto-log every 120 s ──────────────────────────────────────────────────
+	// ── Auto-log every 120 s (browser supplements server when tab is open) ──────
+	// Trip creation + auto-stop is handled entirely server-side (log-position Edge Function).
+	// The browser only logs extra entries when the tab is open, and shows the toggle.
 	function startAutoLog() {
 		autoLogTimer = setInterval(() => {
 			if ($activeTrip) insertEntry({ source: 'auto' });
 		}, 120_000);
-		autoCheckTimer = setInterval(checkAutoTrip, 30_000);
-		checkAutoTrip();
 	}
 
 	// ── All-time statistics ───────────────────────────────────────────────────
@@ -1350,7 +1159,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			loadLogbook();
 			untrack(() => startAutoLog());
 		}
-		return () => { clearInterval(autoLogTimer); clearInterval(autoCheckTimer); };
+		return () => { clearInterval(autoLogTimer); };
 	});
 
 	// ── Offline listener + sync ──────────────────────────────────────────────────
@@ -1389,7 +1198,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	});
 
 	onDestroy(() => {
-		clearInterval(autoLogTimer); clearInterval(autoCheckTimer);
+		clearInterval(autoLogTimer);
 		unsubscribeTrip();
 		expandedMapInst?.remove();
 	});
@@ -1499,20 +1308,21 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	<!-- ── Auto-trip status bar ────────────────────────────────────────────── -->
 	{#if isAdmin}
 	{#if autoEnabled}
+	{@const srvConfirming = !!(cfg?.auto_fast_since)}
 	<div class="auto-bar"
-		class:auto-watching={autoMode === 'watching'}
-		class:auto-recording={autoMode === 'recording'}
-		class:auto-countdown={autoMode === 'countdown'}>
+		class:auto-watching={!$activeTrip}
+		class:auto-recording={!!$activeTrip}>
 		<div class="auto-bar-left">
-			<span class="auto-dot" class:dot-idle={autoMode === 'idle'} class:dot-watching={autoMode === 'watching'} class:dot-recording={autoMode === 'recording'} class:dot-countdown={autoMode === 'countdown'}></span>
-			{#if autoMode === 'idle'}
-				<span class="auto-status">Auto-trip: watching for movement ≥ {SOG_TRIP_KN} kn</span>
-			{:else if autoMode === 'watching'}
-				<span class="auto-status">Moving · auto-start in ~{CONFIRM_START_MS / 60_000} min…</span>
-			{:else if autoMode === 'recording'}
-				<span class="auto-status">{isAutoTrip ? 'Auto-trip recording' : 'Trip active · speed monitoring on'}</span>
-			{:else if autoMode === 'countdown'}
-				<span class="auto-status">Speed below {SOG_TRIP_KN} kn · auto-stop in {countdownMinutes} min</span>
+			<span class="auto-dot"
+				class:dot-idle={!$activeTrip && !srvConfirming}
+				class:dot-watching={!$activeTrip && srvConfirming}
+				class:dot-recording={!!$activeTrip}></span>
+			{#if $activeTrip}
+				<span class="auto-status">Auto-trip recording · server stops after 15 min below 1.5 kn</span>
+			{:else if srvConfirming}
+				<span class="auto-status">Movement detected · confirming…</span>
+			{:else}
+				<span class="auto-status">Watching for movement ≥ 1.5 kn</span>
 			{/if}
 		</div>
 		<button class="auto-toggle-btn" onclick={() => setAutoEnabled(false)}>Off</button>
@@ -1525,11 +1335,11 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	{/if}
 	{/if}
 
-	<!-- ── Auto-log terminal (visible while auto-recording) ──────────────────── -->
-	{#if autoEnabled && isAutoTrip && terminalLines.length > 0}
+	<!-- ── Server-entry terminal (shows realtime entries logged by the server) ── -->
+	{#if autoEnabled && $activeTrip && terminalLines.length > 0}
 	<div class="terminal">
 		<div class="terminal-hdr">
-			<span class="terminal-title"><span class="terminal-dot"></span>AUTO LOG</span>
+			<span class="terminal-title"><span class="terminal-dot"></span>SERVER LOG</span>
 			<span class="terminal-meta">{terminalLines.length} / {MAX_LOG}</span>
 		</div>
 		<div class="terminal-body">
