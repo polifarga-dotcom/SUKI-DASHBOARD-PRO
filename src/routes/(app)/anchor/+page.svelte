@@ -556,18 +556,81 @@
 		L = await import('leaflet') as typeof import('leaflet');
 		await import('leaflet/dist/leaflet.css');
 
-		map = L.map(mapInnerEl, { zoomControl: false, attributionControl: false });
+		// dragging: false — we replace Leaflet's north-up drag with a heading-aware
+		// custom pan handler below. touchZoom stays enabled for pinch-to-zoom.
+		map = L.map(mapInnerEl, { zoomControl: false, attributionControl: false, dragging: false });
 
 		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxNativeZoom: 19, maxZoom: 22 }).addTo(map);
 		L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
 			maxNativeZoom: 18, maxZoom: 22, opacity: 0.9
 		}).addTo(map);
 
-		map.on('dragstart', () => { followMode = false; });
 		map.on('zoomend moveend resize', () => {
 			const r = mapBoxEl?.getBoundingClientRect();
 			if (r && r.width > 80) { mapBoxW = r.width; mapBoxH = r.height; }
 		});
+
+		// ── Heading-aware custom pan ─────────────────────────────────────────────
+		// The map wrapper is CSS-rotated by -hdgDeg for heading-up display.
+		// Leaflet's native drag doesn't know about the CSS rotation and always pans
+		// in north-up screen coordinates. This causes "dragging up = pan north"
+		// regardless of heading.
+		//
+		// Fix: capture raw screen-space delta (dx, dy) and rotate it by +heading
+		// before calling panBy — this maps screen-up to the boat's forward direction.
+		//
+		//   map_dx = dx·cos(h) - dy·sin(h)
+		//   map_dy = dx·sin(h) + dy·cos(h)
+		//
+		// Single-finger / mouse → custom pan. Two-finger pinch → Leaflet TouchZoom.
+		let _panning = false, _lx = 0, _ly = 0, _touchCount = 0;
+
+		function _applyPan(dx: number, dy: number) {
+			const h = hdgDeg * Math.PI / 180;
+			const c = Math.cos(h), s = Math.sin(h);
+			map.panBy([-(dx * c - dy * s), -(dx * s + dy * c)], { animate: false, noMoveStart: true });
+		}
+		function _onMouseDown(e: MouseEvent) {
+			if (e.button !== 0) return;
+			_panning = true; _lx = e.clientX; _ly = e.clientY;
+			followMode = false;
+			e.preventDefault();
+		}
+		function _onMouseMove(e: MouseEvent) {
+			if (!_panning) return;
+			_applyPan(e.clientX - _lx, e.clientY - _ly);
+			_lx = e.clientX; _ly = e.clientY;
+		}
+		function _onMouseUp() { _panning = false; }
+		function _onTouchStart(e: TouchEvent) {
+			_touchCount = e.touches.length;
+			if (_touchCount === 1) {
+				_panning = true; _lx = e.touches[0].clientX; _ly = e.touches[0].clientY;
+				followMode = false;
+			} else { _panning = false; } // 2-finger: Leaflet TouchZoom handles pinch
+		}
+		function _onTouchMove(e: TouchEvent) {
+			_touchCount = e.touches.length;
+			if (!_panning || _touchCount !== 1) { _panning = false; return; }
+			const dx = e.touches[0].clientX - _lx;
+			const dy = e.touches[0].clientY - _ly;
+			_lx = e.touches[0].clientX; _ly = e.touches[0].clientY;
+			_applyPan(dx, dy);
+		}
+		function _onTouchEnd(e: TouchEvent) { if (e.touches.length === 0) _panning = false; }
+
+		mapInnerEl.addEventListener('mousedown',  _onMouseDown);
+		document  .addEventListener('mousemove',  _onMouseMove);
+		document  .addEventListener('mouseup',    _onMouseUp);
+		mapInnerEl.addEventListener('touchstart', _onTouchStart, { passive: true });
+		mapInnerEl.addEventListener('touchmove',  _onTouchMove,  { passive: true });
+		mapInnerEl.addEventListener('touchend',   _onTouchEnd,   { passive: true });
+
+		// Store refs for cleanup
+		(map as any)._customPanCleanup = () => {
+			document.removeEventListener('mousemove', _onMouseMove);
+			document.removeEventListener('mouseup',   _onMouseUp);
+		};
 
 		const lat = boatLat ?? cfg?.lat ?? 54.0;
 		const lon = boatLon ?? cfg?.lon ?? 10.0;
@@ -578,7 +641,10 @@
 		mapReady = true;
 	});
 
-	onDestroy(() => { map?.remove(); });
+	onDestroy(() => {
+		(map as any)?._customPanCleanup?.();
+		map?.remove();
+	});
 </script>
 
 <svelte:head><title>Anchor · SUKI PRO</title></svelte:head>
