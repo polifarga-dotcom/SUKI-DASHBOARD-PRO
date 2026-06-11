@@ -953,10 +953,6 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		const sogsVal = data.filter(e => e.sog_kn != null).map(e => e.sog_kn as number);
 		const avgSog  = sogsVal.length
 			? +(sogsVal.reduce((a, b) => a + b, 0) / sogsVal.length).toFixed(2) : null;
-		const withEng  = data.filter(e => e.engine_hours != null);
-		const engHours = withEng.length >= 2
-			? +Math.max(0, (withEng.at(-1)!.engine_hours as number) - (withEng[0].engine_hours as number)).toFixed(2)
-			: null;
 		// Time under motor/sail: sum intervals between consecutive entries
 		let motorTimeSec = 0, sailTimeSec = 0;
 		for (let i = 1; i < data.length; i++) {
@@ -967,6 +963,11 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			if (data[i].engine_on) motorTimeSec += intervalSec;
 			else sailTimeSec += intervalSec;
 		}
+		// Prefer absolute VRM engine-hours counter delta; fall back to time-based calc
+		const withEng  = data.filter(e => e.engine_hours != null);
+		const engHours = withEng.length >= 2
+			? +Math.max(0, (withEng.at(-1)!.engine_hours as number) - (withEng[0].engine_hours as number)).toFixed(2)
+			: motorTimeSec > 0 ? +(motorTimeSec / 3600).toFixed(2) : null;
 		return { totalNm, sailNm, motorNm, avgSog, engHours, motorTimeSec, sailTimeSec };
 	}
 

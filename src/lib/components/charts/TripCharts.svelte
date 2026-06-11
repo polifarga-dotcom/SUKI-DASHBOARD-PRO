@@ -148,25 +148,6 @@
 	}
 
 	// Engine-on background segments (orange shading)
-	const engineBg = $derived((() => {
-		let rects = '';
-		let start: number | null = null;
-		for (let i = 0; i < points.length; i++) {
-			const on = points[i].eng_on;
-			if (on && start == null) start = tx(points[i].t);
-			else if (!on && start != null) {
-				const w = tx(points[i].t) - start;
-				rects += `<rect x="${start}" y="${PT}" width="${Math.max(w,1)}" height="${IH}" fill="rgba(251,146,60,0.14)"/>`;
-				start = null;
-			}
-		}
-		if (start != null) {
-			const w = tx(points.at(-1)!.t) - start;
-			rects += `<rect x="${start}" y="${PT}" width="${Math.max(w,1)}" height="${IH}" fill="rgba(251,146,60,0.14)"/>`;
-		}
-		return rects;
-	})());
-
 	// ── Per-track derived data ───────────────────────────────────────────────
 	const sogM   = $derived(meta(p => p.sog));
 	const twsM   = $derived(meta(p => p.tws));
@@ -446,6 +427,7 @@
 	{/if}
 
 	{#if hasRpm && rpmM}
+	{@const area = areaPath(rpmM)}
 	{@const line = smoothPath(rpmM)}
 	{@const cy   = curY(rpmM, cur?.eng_rpm ?? cur?.eng_sb_rpm ?? null)}
 	<div class="track">
@@ -456,7 +438,7 @@
 			onpointermove={onPointerMove}
 			onpointerup={onPointerUp}
 			onpointercancel={onPointerUp}>
-			{@html engineBg}
+			<path d={area} fill="rgba(251,146,60,0.15)"/>
 			<path d={line} stroke="#fb923c" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
 			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
 			{#if cy != null}<circle cx={cursorX} cy={cy} r="3" fill="#fb923c"/>{/if}
