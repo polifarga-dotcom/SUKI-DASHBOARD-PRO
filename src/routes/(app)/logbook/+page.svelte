@@ -1750,13 +1750,37 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			</div>
 			<div class="past-stats">
 				<span class="past-chip past-chip-dur">{fmtDuration(trip.started_at, trip.ended_at)}</span>
-				{#if trip.total_nm != null && trip.total_nm > 0}<span class="past-chip">{trip.total_nm.toFixed(1)} nm</span>{/if}
 				{#if trip.avg_sog_kn != null}<span class="past-chip">avg {trip.avg_sog_kn.toFixed(1)} kn</span>{/if}
 				{#if trip.max_sog_kn != null}<span class="past-chip">max {trip.max_sog_kn.toFixed(1)} kn</span>{/if}
-				{#if trip.sail_nm != null && trip.sail_nm > 0}<span class="past-chip past-chip-sail">⛵ {trip.sail_nm.toFixed(1)} nm</span>{/if}
-				{#if trip.motor_nm != null && trip.motor_nm > 0}<span class="past-chip past-chip-eng">⚙ {trip.motor_nm.toFixed(1)} nm</span>{/if}
+				{#if trip.sail_nm != null && trip.sail_nm > 0}
+				<span class="past-chip past-chip-sail">
+					<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;flex-shrink:0">
+						<path d="M7 2 L7 11 L2 11 Q7 8 7 2Z"/>
+						<line x1="2" y1="11" x2="12" y2="11"/>
+					</svg>
+					{trip.sail_nm.toFixed(1)} nm
+				</span>
+				{/if}
+				{#if trip.motor_nm != null && trip.motor_nm > 0}
+				<span class="past-chip past-chip-eng">
+					<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;flex-shrink:0">
+						<circle cx="7" cy="7" r="3"/>
+						<line x1="7" y1="1" x2="7" y2="3.5"/>
+						<line x1="7" y1="10.5" x2="7" y2="13"/>
+						<line x1="1" y1="7" x2="3.5" y2="7"/>
+						<line x1="10.5" y1="7" x2="13" y2="7"/>
+					</svg>
+					{trip.motor_nm.toFixed(1)} nm
+				</span>
+				{/if}
 				{#if trip.engine_hours != null && trip.engine_hours > 0}
-					<span class="past-chip past-chip-eng">🕐 {trip.engine_hours.toFixed(1)} h</span>
+				<span class="past-chip past-chip-eng">
+					<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="vertical-align:-1px;flex-shrink:0">
+						<circle cx="7" cy="7" r="5.5"/>
+						<polyline points="7,3.5 7,7 9.5,7"/>
+					</svg>
+					{trip.engine_hours.toFixed(1)} h
+				</span>
 				{/if}
 			</div>
 			{#if trip.notes}<p class="past-trip-notes">{trip.notes}</p>{/if}
@@ -1794,7 +1818,9 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 				     re-triggering CSS animations cleanly -->
 				{#key expandedTripId}
 				{#if chartPoints.length >= 2}
-				<TripCharts points={chartPoints} />
+				<div class="charts-bleed">
+					<TripCharts points={chartPoints} />
+				</div>
 				{/if}
 				{/key}
 
@@ -2226,6 +2252,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	.past-trip-card {
 		background: var(--card); border: 1px solid var(--border); border-radius: 8px;
 		padding: 12px; transition: border-color 0.2s;
+		overflow: hidden;  /* clip charts to rounded card border */
 	}
 	.past-trip-card.expanded { border-color: rgba(0,200,255,.2); }
 	.past-trip-card.selected { border-color: rgba(0,200,255,.4); background: rgba(0,200,255,.04); }
@@ -2515,6 +2542,10 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	.expanded-entries {
 		margin-top: 10px; padding-top: 10px;
 		border-top: 1px solid var(--border);
+	}
+	/* Break TripCharts out of the 12px card padding so charts span full width */
+	.charts-bleed {
+		margin: 0 -12px;
 	}
 	.expanded-header {
 		display: flex; justify-content: space-between; align-items: center;
