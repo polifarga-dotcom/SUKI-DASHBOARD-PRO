@@ -1,5 +1,5 @@
 /**
- * log-position — Supabase Edge Function
+ * log-position — Supabase Edge Function  (v9)
  *
  * Called every 2 minutes via pg_cron + pg_net.
  * For every active trip that has VRM credentials configured:
@@ -9,8 +9,13 @@
  *   4. Increment trip totals (distance, max SOG)
  *   5. Auto-stop detection for is_auto=true trips (15 min < 1.5 kn)
  *
- * Multi-boat: every query is scoped by boat_id — no cross-boat access.
- * Authentication: Bearer SUPABASE_SERVICE_ROLE_KEY (sent by pg_cron via vault).
+ * Server-side auto-trip detection (bulletproof, 3 layers):
+ *   Fix 1 — Pre-trip logging: log orphan 'pre-trip' entries while confirming movement.
+ *            On trip creation, backdate started_at + link all pre-trip entries retroactively.
+ *   Fix 2 — Outage tolerance: don't reset confirmation on a single bad tick.
+ *            auto_miss_ticks counts consecutive bad ticks; reset only after ≥ 2.
+ *   Fix 3 — Position-delta fallback: when SOG is null (VRM path), compare current
+ *            position to auto_last_lat/lon. Movement > 150 m in 2 min → underway.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -48,14 +53,14 @@ type GPSData = {
   course_deg: number | null;
   source?: string;
   // Telemetry enrichment (null on VRM path)
-  tws_kn: number | null;          // True Wind Speed (env_tws_ms → kn)
-  aws_kn: number | null;          // Apparent Wind Speed (env_aws_ms → kn)
-  awa_deg: number | null;         // Apparent Wind Angle (env_awa_rad → deg)
-  baro_hpa: number | null;        // Barometric pressure (env_pressure_pa → hPa)
-  depth_m: number | null;         // Water depth (env_depth_m)
-  batt_soc: number | null;        // Battery SOC % (batt_main_soc)
-  water_temp_c: number | null;    // Water temperature (temp_water)
-  engine_rpm: number | null;      // Engine RPM (eng_rpm → int)
+  tws_kn: number | null;
+  aws_kn: number | null;
+  awa_deg: number | null;
+  baro_hpa: number | null;
+  depth_m: number | null;
+  batt_soc: number | null;
+  water_temp_c: number | null;
+  engine_rpm: number | null;
 };
 
 async function fetchGPSFromVRM(
@@ -80,10 +85,10 @@ async function fetchGPSFromVRM(
     let course: number | null = null;
 
     for (const r of records) {
-      if (r.dbusPath === '/Position/Latitude'  && lat      == null) lat      = r.rawValue;
-      if (r.dbusPath === '/Position/Longitude' && lon      == null) lon      = r.rawValue;
-      if (r.dbusPath === '/Position/Speed'     && speedMs  == null) speedMs  = r.rawValue;
-      if (r.dbusPath === '/Position/Course'    && course   == null) course   = r.rawValue;
+      if (r.dbusPath === '/Position/Latitude'  && lat     == null) lat     = r.rawValue;
+      if (r.dbusPath === '/Position/Longitude' && lon     == null) lon     = r.rawValue;
+      if (r.dbusPath === '/Position/Speed'     && speedMs == null) speedMs = r.rawValue;
+      if (r.dbusPath === '/Position/Course'    && course  == null) course  = r.rawValue;
       if (lat != null && lon != null && speedMs != null && course != null) break;
     }
 
@@ -95,7 +100,6 @@ async function fetchGPSFromVRM(
       speed_kn:   speedMs != null ? +(speedMs * 1.94384).toFixed(2) : null,
       course_deg: course  != null ? +course.toFixed(1)              : null,
       source:     'vrm',
-      // VRM path: no telemetry enrichment
       tws_kn: null, aws_kn: null, awa_deg: null,
       baro_hpa: null, depth_m: null, batt_soc: null,
       water_temp_c: null, engine_rpm: null,
@@ -107,8 +111,6 @@ async function fetchGPSFromVRM(
 }
 
 // ── Resolve GPS: telemetry table first (5 s cadence), VRM as fallback ─────────
-// Telemetry is fed by the signalk-plugin-suki-bridge plugin. Staleness threshold
-// is 120 s — if the plugin is offline, fall back to VRM API.
 async function resolveGPS(
   // deno-lint-ignore no-explicit-any
   supabase: any,
@@ -116,7 +118,6 @@ async function resolveGPS(
   vrmToken: string | null,
   vrmInstallId: number | null
 ): Promise<GPSData | null> {
-  // 1. Try fresh telemetry (plugin updates every ~5 s)
   const { data: tel } = await supabase
     .from('telemetry')
     .select('nav_lat, nav_lon, nav_sog_ms, nav_cog_rad, updated_at, env_tws_ms, env_aws_ms, env_awa_rad, env_pressure_pa, env_depth_m, batt_main_soc, temp_water, eng_rpm')
@@ -127,26 +128,24 @@ async function resolveGPS(
     const ageSec = (Date.now() - new Date(tel.updated_at).getTime()) / 1000;
     if (ageSec < 120) {
       return {
-        lat:        tel.nav_lat,
-        lon:        tel.nav_lon,
-        speed_kn:   tel.nav_sog_ms  != null ? +(tel.nav_sog_ms  * 1.94384).toFixed(2) : null,
-        course_deg: tel.nav_cog_rad != null ? +(tel.nav_cog_rad * 180 / Math.PI).toFixed(1) : null,
-        source:     'telemetry',
-        // Enrichment with unit conversions
+        lat:          tel.nav_lat,
+        lon:          tel.nav_lon,
+        speed_kn:     tel.nav_sog_ms  != null ? +(tel.nav_sog_ms  * 1.94384).toFixed(2) : null,
+        course_deg:   tel.nav_cog_rad != null ? +(tel.nav_cog_rad * 180 / Math.PI).toFixed(1) : null,
+        source:       'telemetry',
         tws_kn:       tel.env_tws_ms      != null ? +(tel.env_tws_ms      * 1.94384).toFixed(1) : null,
         aws_kn:       tel.env_aws_ms      != null ? +(tel.env_aws_ms      * 1.94384).toFixed(1) : null,
         awa_deg:      tel.env_awa_rad     != null ? +(tel.env_awa_rad     * 180 / Math.PI).toFixed(1) : null,
         baro_hpa:     tel.env_pressure_pa != null ? +(tel.env_pressure_pa / 100).toFixed(1) : null,
-        depth_m:      tel.env_depth_m     != null ? +tel.env_depth_m.toFixed(1)   : null,
-        batt_soc:     tel.batt_main_soc   != null ? +(tel.batt_main_soc * 100).toFixed(1)    : null,  // fraction → %
-        water_temp_c: tel.temp_water      != null ? +(tel.temp_water - 273.15).toFixed(1)   : null,  // K → °C
-        engine_rpm:   tel.eng_rpm         != null ? Math.round(tel.eng_rpm)       : null,
+        depth_m:      tel.env_depth_m     != null ? +tel.env_depth_m.toFixed(1) : null,
+        batt_soc:     tel.batt_main_soc   != null ? +(tel.batt_main_soc * 100).toFixed(1) : null,
+        water_temp_c: tel.temp_water      != null ? +(tel.temp_water - 273.15).toFixed(1) : null,
+        engine_rpm:   tel.eng_rpm         != null ? Math.round(tel.eng_rpm) : null,
       };
     }
     console.log(`[log-position] telemetry stale (${Math.round(ageSec)}s) — falling back to VRM`);
   }
 
-  // 2. Fallback: VRM API (no telemetry enrichment available)
   if (vrmToken && vrmInstallId) {
     return await fetchGPSFromVRM(vrmToken, vrmInstallId);
   }
@@ -210,26 +209,22 @@ async function serverAutoStop(
   gps: GPSData
 ): Promise<void> {
   const boatId = trip.boat_id;
+  const place  = await reverseGeocode(gps.lat, gps.lon);
 
-  // Geocode current position
-  const place = await reverseGeocode(gps.lat, gps.lon);
-
-  // Insert final arrival entry (scoped to this boat)
   await supabase.from('log_entries').insert({
-    trip_id:    trip.id,
-    boat_id:    boatId,
-    logged_at:  new Date().toISOString(),
-    lat:        gps.lat,
-    lon:        gps.lon,
-    sog_kn:     gps.speed_kn,
-    cog_deg:    gps.course_deg,
-    engine_on:  gps.engine_rpm != null ? gps.engine_rpm > 200 : false,
-    source:     'auto',
-    notes:      `Arrival at ${place} (auto-stop: < 1.5 kn for 15 min)`,
+    trip_id:   trip.id,
+    boat_id:   boatId,
+    logged_at: new Date().toISOString(),
+    lat:       gps.lat,
+    lon:       gps.lon,
+    sog_kn:    gps.speed_kn,
+    cog_deg:   gps.course_deg,
+    engine_on: gps.engine_rpm != null ? gps.engine_rpm > 200 : false,
+    source:    'auto',
+    notes:     `Arrival at ${place} (auto-stop: < 1.5 kn for 15 min)`,
     ...telemetryFields(gps),
   });
 
-  // Recalculate all stats from DB entries for this trip (this boat only)
   const { data: rows } = await supabase
     .from('log_entries')
     .select('distance_nm, engine_on, sog_kn, engine_hours, logged_at')
@@ -239,21 +234,31 @@ async function serverAutoStop(
 
   let totalNm = 0, sailNm = 0, motorNm = 0;
   let sumSog = 0, sogCount = 0, maxSog = 0;
+  let motorTimeSec = 0;
   const withEng: number[] = [];
 
-  for (const row of rows ?? []) {
+  for (let i = 0; i < (rows ?? []).length; i++) {
+    const row = rows[i];
     const d = row.distance_nm ?? 0;
     totalNm += d;
     if (row.engine_on) motorNm += d; else sailNm += d;
     if (row.sog_kn != null) { sumSog += row.sog_kn; sogCount++; if (row.sog_kn > maxSog) maxSog = row.sog_kn; }
     if (row.engine_hours != null) withEng.push(row.engine_hours);
+    if (i > 0 && row.engine_on) {
+      const intv = Math.min(
+        (new Date(row.logged_at).getTime() - new Date(rows[i - 1].logged_at).getTime()) / 1000,
+        7200
+      );
+      motorTimeSec += intv;
+    }
   }
 
-  const avgSog    = sogCount > 0 ? +(sumSog / sogCount).toFixed(2) : null;
-  const engHours  = withEng.length >= 2
+  const avgSog   = sogCount > 0 ? +(sumSog / sogCount).toFixed(2) : null;
+  // Prefer VRM absolute counter delta; fall back to time-based calc
+  const engHours = withEng.length >= 2
     ? +Math.max(0, withEng[withEng.length - 1] - withEng[0]).toFixed(2)
-    : null;
-  const tripName  = trip.from_port && place
+    : motorTimeSec > 0 ? +(motorTimeSec / 3600).toFixed(2) : null;
+  const tripName = trip.from_port && place
     ? `${trip.from_port} → ${place}`
     : (trip.name ?? 'Auto trip');
 
@@ -267,7 +272,7 @@ async function serverAutoStop(
     avg_sog_kn:      avgSog,
     max_sog_kn:      maxSog > 0 ? +maxSog.toFixed(2) : null,
     engine_hours:    engHours,
-    is_auto:         false,        // trip is now closed
+    is_auto:         false,
     auto_slow_since: null,
   }).eq('id', trip.id).eq('boat_id', boatId);
 
@@ -280,93 +285,161 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { headers: CORS });
   }
 
-  // Called internally by pg_cron — no external JWT verification needed.
-  // The function uses service_role for all DB access; the worst an unauthenticated
-  // caller can do is trigger one position snapshot (blocked by the 110 s duplicate guard).
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
-    serviceKey,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  // ── Server-side auto-trip: start trips when boat moves ───────────────────────
-  // Mirrors the browser's checkAutoTrip() / autoStartTrip() but works when the
-  // app is closed. Runs BEFORE the active-trip loop so a freshly created trip
-  // isn't immediately processed in the same tick.
+  // ── Server-side auto-trip detection ─────────────────────────────────────────
   //
-  // State machine (per boat, stored in anchor_config):
-  //   SOG ≥ 1.5 kn → set auto_fast_since (if not already set)
-  //   SOG ≥ 1.5 kn + auto_fast_since ≥ 60 s ago → create trip, clear auto_fast_since
-  //   SOG < 1.5 kn, anchor alarming, or no GPS → clear auto_fast_since
+  // Three-layer bulletproof detection:
+  //   Fix 1 — Pre-trip logging + backdating
+  //   Fix 2 — Outage tolerance (miss counter, reset only after ≥ 2 consecutive bad ticks)
+  //   Fix 3 — Position-delta fallback when SOG is null
   {
-    const SOG_START_KN = 1.5;
-    const CONFIRM_MS   = 60_000; // 1 min at speed → auto-start
+    const SOG_START_KN      = 1.5;
+    const CONFIRM_MS        = 60_000;  // 1 min confirmed movement → start trip
+    const MOVE_THRESHOLD_M  = 150;     // ~2.4 kn equivalent over 2-min interval
+    const MAX_MISS_TICKS    = 2;       // tolerate this many consecutive bad ticks
 
     const { data: autoCfgs } = await supabase
       .from('anchor_config')
-      .select('boat_id, auto_trip_enabled, auto_fast_since, active, vrm_api_token, vrm_installation_id')
+      .select('boat_id, auto_trip_enabled, auto_fast_since, auto_miss_ticks, auto_last_lat, auto_last_lon, active, vrm_api_token, vrm_installation_id')
       .eq('auto_trip_enabled', true)
       .not('boat_id', 'is', null);
 
     for (const ac of autoCfgs ?? []) {
       const boatId = ac.boat_id as string;
 
-      // Don't auto-start while the anchor is actively being held (regardless of alarm state)
+      // Anchor watch active → don't auto-start
       if (ac.active) {
         if (ac.auto_fast_since) {
-          await supabase.from('anchor_config').update({ auto_fast_since: null }).eq('boat_id', boatId);
+          await supabase.from('anchor_config')
+            .update({ auto_fast_since: null, auto_miss_ticks: 0 })
+            .eq('boat_id', boatId);
         }
         continue;
       }
 
-      // Skip if this boat already has an active trip (the active-trip loop below will handle it)
+      // Already has an active trip
       const { data: existingTrip } = await supabase
         .from('log_trips').select('id').eq('boat_id', boatId).is('ended_at', null).maybeSingle();
       if (existingTrip) continue;
 
-      // Resolve GPS + SOG
+      // Resolve GPS
       const gps = await resolveGPS(supabase, boatId, ac.vrm_api_token ?? null, ac.vrm_installation_id ?? null);
+
       if (!gps) {
-        if (ac.auto_fast_since) {
-          await supabase.from('anchor_config').update({ auto_fast_since: null }).eq('boat_id', boatId);
+        // GPS unavailable — treat as bad tick (Fix 2)
+        const newMiss = (ac.auto_miss_ticks ?? 0) + 1;
+        if (newMiss >= MAX_MISS_TICKS && ac.auto_fast_since) {
+          await supabase.from('log_entries')
+            .delete().eq('boat_id', boatId).is('trip_id', null).eq('source', 'pre-trip');
+          await supabase.from('anchor_config')
+            .update({ auto_fast_since: null, auto_miss_ticks: 0 }).eq('boat_id', boatId);
+          console.log(`[log-position] auto-trip: boat ${boatId} GPS gone (${newMiss} ticks) — reset`);
+        } else {
+          await supabase.from('anchor_config')
+            .update({ auto_miss_ticks: newMiss }).eq('boat_id', boatId);
         }
         continue;
       }
 
-      const underway = (gps.speed_kn ?? 0) >= SOG_START_KN;
+      // Fix 3: position-delta fallback when SOG is null
+      let underway = (gps.speed_kn ?? 0) >= SOG_START_KN;
+      if (!underway && gps.speed_kn == null && ac.auto_last_lat != null && ac.auto_last_lon != null) {
+        const dist = haversine(ac.auto_last_lat, ac.auto_last_lon, gps.lat, gps.lon);
+        if (dist >= MOVE_THRESHOLD_M) {
+          underway = true;
+          console.log(`[log-position] auto-trip: boat ${boatId} pos-delta ${Math.round(dist)} m → underway (no SOG)`);
+        }
+      }
+
+      // Always persist latest known position for next tick's delta check
+      const posUpdate = { auto_last_lat: gps.lat, auto_last_lon: gps.lon };
 
       if (underway) {
+        // Fix 2: good tick → reset miss counter
+        const nowIso = new Date().toISOString();
+
+        // Fix 1: log a pre-trip orphan entry on every underway tick before trip starts
+        await supabase.from('log_entries').insert({
+          boat_id:   boatId,
+          trip_id:   null,
+          logged_at: nowIso,
+          lat:       gps.lat,
+          lon:       gps.lon,
+          sog_kn:    gps.speed_kn,
+          cog_deg:   gps.course_deg,
+          engine_on: gps.engine_rpm != null ? gps.engine_rpm > 200 : false,
+          source:    'pre-trip',
+          ...telemetryFields(gps),
+        });
+
         if (!ac.auto_fast_since) {
-          // First tick above threshold — record timestamp, wait for confirmation
+          // First underway tick — start confirmation timer
           await supabase.from('anchor_config')
-            .update({ auto_fast_since: new Date().toISOString() })
+            .update({ ...posUpdate, auto_fast_since: nowIso, auto_miss_ticks: 0 })
             .eq('boat_id', boatId);
-          console.log(`[log-position] auto-trip: boat ${boatId} ${gps.speed_kn} kn — confirming...`);
+          console.log(`[log-position] auto-trip: boat ${boatId} ${gps.speed_kn ?? 'delta'} kn — confirming...`);
         } else {
           const fastMs = Date.now() - new Date(ac.auto_fast_since).getTime();
-          console.log(`[log-position] auto-trip: boat ${boatId} ${gps.speed_kn} kn fast for ${Math.round(fastMs / 1000)} s`);
+          await supabase.from('anchor_config')
+            .update({ ...posUpdate, auto_miss_ticks: 0 })
+            .eq('boat_id', boatId);
+          console.log(`[log-position] auto-trip: boat ${boatId} ${gps.speed_kn ?? 'delta'} kn for ${Math.round(fastMs / 1000)} s`);
 
           if (fastMs >= CONFIRM_MS) {
-            // Confirmed underway — create the trip
-            const place = await reverseGeocode(gps.lat, gps.lon);
+            // ── Confirmed underway: create trip, backdate, link pre-trip entries ──
+
+            // Fix 1: load all orphan pre-trip entries (last 3 h only, avoid stale)
+            const cutoff = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+            const { data: preTripRows } = await supabase
+              .from('log_entries')
+              .select('id, logged_at, lat, lon')
+              .eq('boat_id', boatId)
+              .is('trip_id', null)
+              .eq('source', 'pre-trip')
+              .gte('logged_at', cutoff)
+              .order('logged_at', { ascending: true });
+
+            const earliest = preTripRows?.[0];
+            const departureAt = earliest?.logged_at ?? nowIso;
+            const depLat = earliest?.lat ?? gps.lat;
+            const depLon = earliest?.lon ?? gps.lon;
+            const place  = await reverseGeocode(depLat, depLon);
+
             const { data: newTrip } = await supabase
               .from('log_trips')
               .insert({
                 boat_id:    boatId,
                 name:       place ?? 'Auto trip',
                 from_port:  place,
-                started_at: new Date().toISOString(),
+                started_at: departureAt,   // ← backdated to first pre-trip entry
                 is_auto:    true,
               })
               .select('id')
               .single();
 
             if (newTrip) {
+              // Link pre-trip entries to new trip + fill in distance_nm
+              if (preTripRows?.length) {
+                for (let i = 0; i < preTripRows.length; i++) {
+                  const e   = preTripRows[i];
+                  const prv = i > 0 ? preTripRows[i - 1] : null;
+                  const distNm = prv
+                    ? +(haversine(prv.lat, prv.lon, e.lat, e.lon) / 1852).toFixed(3)
+                    : 0;
+                  await supabase.from('log_entries')
+                    .update({ trip_id: newTrip.id, distance_nm: distNm > 0 ? distNm : null })
+                    .eq('id', e.id);
+                }
+              }
+              // Add current position as first confirmed entry
               await supabase.from('log_entries').insert({
                 trip_id:   newTrip.id,
                 boat_id:   boatId,
-                logged_at: new Date().toISOString(),
+                logged_at: nowIso,
                 lat:       gps.lat,
                 lon:       gps.lon,
                 sog_kn:    gps.speed_kn,
@@ -376,24 +449,39 @@ Deno.serve(async (req: Request) => {
                 notes:     `Departure from ${place ?? 'unknown'} (server auto-start)`,
                 ...telemetryFields(gps),
               });
-              console.log(`[log-position] auto-trip: started trip ${newTrip.id} for boat ${boatId} from "${place}"`);
+              console.log(`[log-position] auto-trip: started trip ${newTrip.id} for boat ${boatId} from "${place}" (backdated ${preTripRows?.length ?? 0} entries)`);
             }
 
-            // Clear confirm timer regardless of insert success
-            await supabase.from('anchor_config').update({ auto_fast_since: null }).eq('boat_id', boatId);
+            // Clear confirmation state
+            await supabase.from('anchor_config')
+              .update({ auto_fast_since: null, auto_miss_ticks: 0, ...posUpdate })
+              .eq('boat_id', boatId);
           }
         }
       } else {
-        // Slow or stopped — clear confirm timer
-        if (ac.auto_fast_since) {
-          await supabase.from('anchor_config').update({ auto_fast_since: null }).eq('boat_id', boatId);
-          console.log(`[log-position] auto-trip: boat ${boatId} stopped — reset confirm timer`);
+        // Fix 2: bad tick — increment miss counter, only reset after threshold
+        const newMiss = (ac.auto_miss_ticks ?? 0) + 1;
+        if (newMiss >= MAX_MISS_TICKS) {
+          if (ac.auto_fast_since) {
+            // Clean up stale pre-trip entries
+            await supabase.from('log_entries')
+              .delete().eq('boat_id', boatId).is('trip_id', null).eq('source', 'pre-trip');
+            console.log(`[log-position] auto-trip: boat ${boatId} stopped (${newMiss} bad ticks) — reset`);
+          }
+          await supabase.from('anchor_config')
+            .update({ auto_fast_since: null, auto_miss_ticks: 0, ...posUpdate })
+            .eq('boat_id', boatId);
+        } else {
+          await supabase.from('anchor_config')
+            .update({ auto_miss_ticks: newMiss, ...posUpdate })
+            .eq('boat_id', boatId);
+          console.log(`[log-position] auto-trip: boat ${boatId} slow/null — miss tick ${newMiss}/${MAX_MISS_TICKS}`);
         }
       }
     }
   }
 
-  // Load all active trips (across all boats)
+  // ── Load all active trips ────────────────────────────────────────────────────
   const { data: trips, error: tripsErr } = await supabase
     .from('log_trips')
     .select('id, boat_id, name, from_port, is_auto, auto_slow_since, total_nm, sail_nm, motor_nm, max_sog_kn, engine_hours')
@@ -410,16 +498,13 @@ Deno.serve(async (req: Request) => {
   for (const trip of (trips ?? []) as Trip[]) {
     const boatId = trip.boat_id;
 
-    // ── Get VRM credentials for this specific boat (used as GPS fallback) ───────
     const { data: cfg } = await supabase
       .from('anchor_config')
       .select('vrm_api_token, vrm_installation_id')
       .eq('boat_id', boatId)
       .maybeSingle();
 
-    // ── Duplicate guard ───────────────────────────────────────────────────────
-    // Skip if the browser was active and inserted an entry within the last 110 s
-    // (logging interval is 120 s; 110 s = safe margin)
+    // ── Duplicate guard: skip if browser was active within 110 s ─────────────
     const { data: lastEntry } = await supabase
       .from('log_entries')
       .select('logged_at, lat, lon')
@@ -439,26 +524,26 @@ Deno.serve(async (req: Request) => {
       continue;
     }
 
-    // ── Resolve GPS + telemetry (telemetry first, VRM fallback) ──────────────
+    // ── Resolve GPS ───────────────────────────────────────────────────────────
     const gps = await resolveGPS(
       supabase, boatId,
       cfg?.vrm_api_token ?? null,
       cfg?.vrm_installation_id ?? null
     );
     if (!gps) {
-      console.log(`[log-position] trip ${trip.id}: GPS unavailable (no telemetry or VRM)`);
+      console.log(`[log-position] trip ${trip.id}: GPS unavailable`);
       results.push({ trip: trip.id, boat: boatId, status: 'gps_unavailable' });
       continue;
     }
 
-    console.log(`[log-position] trip ${trip.id}: GPS ${gps.lat.toFixed(5)},${gps.lon.toFixed(5)} ${gps.speed_kn ?? '?'} kn [${gps.source ?? 'unknown'}]`);
+    console.log(`[log-position] trip ${trip.id}: ${gps.lat.toFixed(5)},${gps.lon.toFixed(5)} ${gps.speed_kn ?? '?'} kn [${gps.source ?? '?'}]`);
 
     // ── Distance since last entry ─────────────────────────────────────────────
     const distNm = (lastEntry?.lat != null && lastEntry?.lon != null)
       ? +(haversine(lastEntry.lat, lastEntry.lon, gps.lat, gps.lon) / 1852).toFixed(3)
       : 0;
 
-    // ── Insert position + telemetry entry (scoped to this boat) ──────────────
+    // ── Insert entry ──────────────────────────────────────────────────────────
     await supabase.from('log_entries').insert({
       trip_id:     trip.id,
       boat_id:     boatId,
@@ -478,33 +563,26 @@ Deno.serve(async (req: Request) => {
       const engineOn = gps.engine_rpm != null ? gps.engine_rpm > 200 : false;
       const patch: Record<string, unknown> = {
         total_nm: +((trip.total_nm ?? 0) + distNm).toFixed(3),
-        sail_nm:  !engineOn ? +((trip.sail_nm  ?? 0) + distNm).toFixed(3) : undefined,
-        motor_nm:  engineOn ? +((trip.motor_nm ?? 0) + distNm).toFixed(3) : undefined,
       };
-      // Remove undefined keys
-      if (patch.sail_nm  === undefined) delete patch.sail_nm;
-      if (patch.motor_nm === undefined) delete patch.motor_nm;
-
+      if (engineOn)  patch.motor_nm = +((trip.motor_nm ?? 0) + distNm).toFixed(3);
+      else           patch.sail_nm  = +((trip.sail_nm  ?? 0) + distNm).toFixed(3);
       const newMax = gps.speed_kn ?? 0;
       if (newMax > (trip.max_sog_kn ?? 0)) patch.max_sog_kn = +newMax.toFixed(2);
-
       await supabase.from('log_trips').update(patch).eq('id', trip.id).eq('boat_id', boatId);
     }
 
-    // ── Auto-stop check (all active trips — auto or manual) ──────────────────
+    // ── Auto-stop check ───────────────────────────────────────────────────────
     {
       const underway = (gps.speed_kn ?? 0) >= 1.5;
-
       if (!underway) {
         if (!trip.auto_slow_since) {
-          // First time below threshold — record timestamp
           await supabase.from('log_trips')
             .update({ auto_slow_since: new Date().toISOString() })
             .eq('id', trip.id).eq('boat_id', boatId);
-          console.log(`[log-position] trip ${trip.id}: slow — starting 15-min countdown`);
+          console.log(`[log-position] trip ${trip.id}: slow — 15-min countdown started`);
         } else {
           const slowMs = Date.now() - new Date(trip.auto_slow_since).getTime();
-          console.log(`[log-position] trip ${trip.id}: slow for ${Math.round(slowMs / 60_000)} min`);
+          console.log(`[log-position] trip ${trip.id}: slow ${Math.round(slowMs / 60_000)} min`);
           if (slowMs > 15 * 60_000) {
             await serverAutoStop(supabase, trip, gps);
             results.push({ trip: trip.id, boat: boatId, status: 'auto_stopped' });
@@ -512,7 +590,6 @@ Deno.serve(async (req: Request) => {
           }
         }
       } else if (trip.auto_slow_since) {
-        // Back underway — clear the countdown
         await supabase.from('log_trips')
           .update({ auto_slow_since: null })
           .eq('id', trip.id).eq('boat_id', boatId);
