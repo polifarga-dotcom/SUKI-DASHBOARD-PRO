@@ -347,7 +347,6 @@
 			onpointermove={onPointerMove}
 			onpointerup={onPointerUp}
 			onpointercancel={onPointerUp}>
-			{@html engineBg}
 			<path d={area} fill="rgba(34,211,238,0.15)"/>
 			<path d={line} stroke="#22d3ee" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
 			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
