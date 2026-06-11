@@ -18,10 +18,9 @@
 	// Step 2 — API credentials (optional, skippable)
 	let vrmToken      = $state('');
 	let vrmSiteId     = $state('');
-	let shellyServer  = $state('');
-	let shellyKey     = $state('');
 	let s2Loading     = $state(false);
 	let s2Error       = $state('');
+	let skApiKey      = $state('');  // fetched after boat creation
 
 	async function createBoat() {
 		s1Error = '';
@@ -45,6 +44,13 @@
 		}
 
 		createdBoatId = result.boatId;
+		// Fetch the auto-generated SignalK API key so the user can copy it immediately
+		const { data: cfgRow } = await supabase
+			.from('anchor_config')
+			.select('plugin_api_key')
+			.eq('boat_id', result.boatId)
+			.maybeSingle();
+		skApiKey = cfgRow?.plugin_api_key ?? '';
 		s1Loading = false;
 		step = 2;
 	}
@@ -53,15 +59,12 @@
 		if (!createdBoatId) { goto('/vessel'); return; }
 		s2Error = '';
 
-		// Only save if at least one API credential was entered
-		const hasCreds = vrmToken || shellyServer;
-		if (hasCreds) {
+		// Only save if VRM credentials were entered
+		if (vrmToken) {
 			s2Loading = true;
 			const patch: Record<string, unknown> = {};
-			if (vrmToken)     patch.vrm_api_token       = vrmToken;
-			if (vrmSiteId)    patch.vrm_installation_id = Number(vrmSiteId) || null;
-			if (shellyServer) patch.shelly_cloud_server  = shellyServer;
-			if (shellyKey)    patch.shelly_cloud_auth_key = shellyKey;
+			if (vrmToken)   patch.vrm_api_token       = vrmToken;
+			if (vrmSiteId)  patch.vrm_installation_id = Number(vrmSiteId) || null;
 
 			const { error } = await supabase
 				.from('anchor_config')
@@ -73,6 +76,14 @@
 		}
 
 		goto('/vessel');
+	}
+
+	let skKeyCopied = $state(false);
+	async function copySkKey() {
+		if (!skApiKey) return;
+		await navigator.clipboard.writeText(skApiKey);
+		skKeyCopied = true;
+		setTimeout(() => { skKeyCopied = false; }, 2000);
 	}
 </script>
 
@@ -158,16 +169,47 @@
 		</button>
 
 		{:else}
-		<!-- ── Step 2: Optional API credentials ───────────────── -->
-		<h1 class="ob-title">Connect data sources</h1>
-		<p class="ob-sub">Optional — you can configure these later in Settings.</p>
+		<!-- ── Step 2: Connect data sources ───────────────────── -->
+		<h1 class="ob-title">Connect your boat</h1>
+		<p class="ob-sub">You can configure all of this later in Settings.</p>
 
 		{#if s2Error}
 			<div class="ob-error">{s2Error}</div>
 		{/if}
 
+		<!-- SignalK — primary data source -->
 		<div class="api-section">
-			<div class="api-label">Victron VRM</div>
+			<div class="api-label-row">
+				<div class="api-label">SignalK Bridge</div>
+				<div class="api-badge primary">Primary</div>
+			</div>
+			<p class="api-desc">
+				SignalK streams live data from your boat — GPS, speed, wind, depth, battery and engine.
+				Install <code>signalk-plugin-suki-bridge</code> from your SignalK Appstore and paste this API Key into the plugin settings.
+			</p>
+			{#if skApiKey}
+			<div class="field">
+				<label>API Key</label>
+				<div class="sk-copy-row">
+					<input type="password" readonly value={skApiKey} class="sk-copy-input" />
+					<button class="btn btn-ghost sk-copy-btn" onclick={copySkKey} type="button">
+						{skKeyCopied ? '✓' : 'Copy'}
+					</button>
+				</div>
+				<span class="field-hint-sm">Paste this into the signalk-plugin-suki-bridge settings</span>
+			</div>
+			{/if}
+		</div>
+
+		<!-- VRM — optional complement -->
+		<div class="api-section">
+			<div class="api-label-row">
+				<div class="api-label">Victron VRM</div>
+				<div class="api-badge optional">Optional</div>
+			</div>
+			<p class="api-desc">
+				Cloud fallback for GPS when SignalK is offline. Only needed if you have a Cerbo GX linked to vrm.victronenergy.com.
+			</p>
 			<div class="field">
 				<label for="vrm-token">API Token</label>
 				<input id="vrm-token" type="password" bind:value={vrmToken}
@@ -177,20 +219,6 @@
 				<label for="vrm-site">Installation ID</label>
 				<input id="vrm-site" type="text" bind:value={vrmSiteId}
 					placeholder="e.g. 123456" inputmode="numeric" autocomplete="off" />
-			</div>
-		</div>
-
-		<div class="api-section">
-			<div class="api-label">Shelly Cloud</div>
-			<div class="field">
-				<label for="sh-server">Server URL</label>
-				<input id="sh-server" type="text" bind:value={shellyServer}
-					placeholder="shelly-12-eu.shelly.cloud" autocomplete="off" />
-			</div>
-			<div class="field">
-				<label for="sh-key">Auth Key</label>
-				<input id="sh-key" type="password" bind:value={shellyKey}
-					placeholder="Authorization cloud key" autocomplete="off" />
 			</div>
 		</div>
 
@@ -298,12 +326,75 @@
 		border-radius: 10px;
 		padding: 14px;
 	}
+	.api-label-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
 	.api-label {
 		font-size: 11px;
 		font-weight: 600;
 		color: var(--muted);
 		text-transform: uppercase;
 		letter-spacing: 0.8px;
+	}
+	.api-badge {
+		font-size: 9px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		padding: 2px 6px;
+		border-radius: 4px;
+	}
+	.api-badge.primary {
+		background: rgba(0,200,255,.12);
+		color: var(--accent);
+		border: 1px solid rgba(0,200,255,.25);
+	}
+	.api-badge.optional {
+		background: var(--card2);
+		color: var(--muted);
+		border: 1px solid var(--border);
+	}
+	.api-desc {
+		font-size: 12px;
+		color: var(--muted);
+		margin: 0;
+		line-height: 1.5;
+	}
+	.api-desc code {
+		font-size: 11px;
+		background: var(--card2);
+		padding: 1px 4px;
+		border-radius: 3px;
+		color: var(--text);
+	}
+	.sk-copy-row {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+	.sk-copy-input {
+		flex: 1;
+		height: 38px;
+		background: var(--card2);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 0 10px;
+		font-size: 13px;
+		color: var(--text);
+		font-family: monospace;
+	}
+	.sk-copy-btn {
+		height: 38px;
+		padding: 0 14px;
+		font-size: 13px;
+		white-space: nowrap;
+	}
+	.field-hint-sm {
+		font-size: 11px;
+		color: var(--muted);
+		margin-top: 2px;
 	}
 
 	.ob-actions {

@@ -848,6 +848,103 @@
 	</div>
 	{/if}
 
+	<!-- ── SignalK Bridge ── -->
+	<section class="card">
+		<h2>SignalK Bridge</h2>
+		<div class="setup-hint">
+			SignalK is the primary data source — it streams live NMEA data (GPS, speed, wind, depth, battery, engine) directly from your boat's network to this dashboard.<br><br>
+			<strong>1. Install the plugin:</strong> Open your SignalK server's Appstore → search <code>signalk-plugin-suki-bridge</code> → install it.<br>
+			<strong>2. Configure it:</strong> In the plugin settings, paste the API Key shown below.<br>
+			<strong>3. Done.</strong> Live data will appear in the dashboard within seconds. The connection status below confirms when the plugin is active.
+		</div>
+		<div class="form-fields">
+			<div class="field">
+				<label for="sk-api-key">API Key</label>
+				<div class="sk-copy-row">
+					<input
+						id="sk-api-key"
+						type={skKeyVisible ? 'text' : 'password'}
+						readonly
+						class="settings-input sk-copy-input"
+						value={cfg?.plugin_api_key ?? '—'} />
+					<button class="btn btn-ghost sk-copy-btn"
+						onclick={() => { skKeyVisible = !skKeyVisible; }}>
+						{skKeyVisible ? 'Hide' : 'Show'}
+					</button>
+					<button class="btn btn-ghost sk-copy-btn"
+						onclick={() => copyToClipboard(cfg?.plugin_api_key, 'key')}>
+						{skKeyCopied ? '✓' : 'Copy'}
+					</button>
+				</div>
+				<span class="field-hint">Keep this secret — anyone with this key can write data to your boat</span>
+			</div>
+		</div>
+		<div class="shelly-actions">
+			<button class="btn btn-ghost" onclick={regenerateSignalKKey}
+				disabled={skKeyRegenBusy || !isAdmin}>
+				{skKeyRegenBusy ? 'Generating…' : skKeyRegenDone ? '✓ New key saved' : 'Regenerate key'}
+			</button>
+		</div>
+		{#if skConnected}
+			<div class="sk-status sk-ok">✓ Plugin connected — last data {skLastSeen}s ago</div>
+		{:else if cfg?.plugin_api_key}
+			<div class="sk-status sk-pending">No live data received yet — install and configure the plugin</div>
+		{/if}
+	</section>
+
+	<!-- ── Victron VRM ── -->
+	<section class="card">
+		<h2>Victron VRM <span class="optional-badge">optional</span></h2>
+		<div class="setup-hint">
+			VRM is a useful complement to SignalK — it provides a cloud fallback for GPS position when the SignalK plugin is offline. If you have a Cerbo GX connected to <strong>vrm.victronenergy.com</strong>, add your credentials here.<br><br>
+			<strong>API Token:</strong> top-right avatar menu → <em>Preferences</em> → <em>API Tokens</em> → <em>Add token</em> → copy immediately (shown only once).<br>
+			<strong>Installation ID:</strong> visible in the page URL after <code>/installation/</code> — e.g. <code>vrm.victronenergy.com/installation/<em>123456</em>/dashboard</code>. Or click <strong>Discover</strong> to find it automatically after entering the token.
+		</div>
+		<div class="form-fields">
+			<div class="field">
+				<label for="vrm-token">API Token</label>
+				<input id="vrm-token" type="password" bind:value={vrmToken}
+					placeholder="VRM Portal → Preferences → API Tokens" autocomplete="off" />
+				<span class="field-hint">Paste immediately after generating — it cannot be retrieved again</span>
+			</div>
+			<div class="field">
+				<label for="vrm-site">Installation ID</label>
+				<div class="vrm-site-row">
+					{#if vrmInstallations.length > 1}
+						<select id="vrm-site" class="vrm-select" bind:value={vrmInstallationId}>
+							<option value="">— Select —</option>
+							{#each vrmInstallations as inst}
+								<option value={String(inst.idSite)}>{inst.name} ({inst.idSite})</option>
+							{/each}
+						</select>
+					{:else}
+						<input id="vrm-site" type="text" bind:value={vrmInstallationId}
+							placeholder="e.g. 123456" inputmode="numeric" autocomplete="off" />
+					{/if}
+					<button class="btn btn-ghost vrm-discover-btn" onclick={discoverVRMInstallations}
+						disabled={vrmDiscovering || !vrmToken}>
+						{vrmDiscovering ? '…' : 'Discover'}
+					</button>
+				</div>
+				{#if vrmInstallations.length === 1}
+					<span class="vrm-found">{vrmInstallations[0].name}</span>
+				{/if}
+			</div>
+		</div>
+		<div class="shelly-actions">
+			<button class="btn btn-ghost test-btn shelly-test" onclick={testVRM}
+				disabled={vrmTest === 'sending' || !vrmToken || !vrmInstallationId}>
+				{vrmTest === 'sending' ? 'Testing…'
+				 : vrmTest === 'ok'    ? `✓ ${vrmTestMsg}`
+				 : vrmTest === 'err'   ? `✗ ${vrmTestMsg}`
+				 : 'Test connection'}
+			</button>
+			<button class="btn btn-primary" onclick={saveVRM} disabled={vrmSaving}>
+				{vrmSaving ? 'Saving…' : vrmSaved ? '✓ Saved' : 'Save'}
+			</button>
+		</div>
+	</section>
+
 	<!-- ── Alarm ── -->
 	<section class="card">
 		<h2>Alarm</h2>
@@ -873,9 +970,9 @@
 		<h2>Telegram Notifications</h2>
 		<div class="setup-hint">
 			<strong>1. Create a bot:</strong> Open Telegram → search <code>@BotFather</code> → send <code>/newbot</code> → follow the steps → copy the token.<br>
-			<strong>2. Find your Chat ID:</strong> Start a chat with your bot, then open<br>
-			<code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser. Your Chat ID appears as <code>"id": 123456789</code>.<br>
-			For a <strong>group</strong>: add the bot to the group first, send a message, then check getUpdates — group IDs start with <code>-100…</code>.
+			<strong>2. Activate your bot:</strong> Open a chat with your new bot and send <code>/start</code> — this is required before the bot can send you messages.<br>
+			<strong>3. Find your Chat ID:</strong> Open <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser after sending a message. Your Chat ID appears as <code>"id": 123456789</code>.<br>
+			For a <strong>group</strong>: add the bot to the group, send a message, then check getUpdates — group IDs start with <code>-100…</code>.
 		</div>
 		<div class="form-fields">
 			<div class="field">
@@ -926,96 +1023,6 @@
 		{notifSaving ? 'Saving…' : notifSaved ? '✓ Saved' : 'Save notification settings'}
 	</button>
 
-	<!-- ── Shelly Cloud ── -->
-	<section class="card">
-		<h2>Shelly Cloud</h2>
-		<div class="setup-hint">
-			Log in at <strong>home.shelly.cloud</strong> (same account as the Shelly app).<br>
-			Click your <strong>name / avatar</strong> in the top-right corner → <em>Settings</em>:<br>
-			<strong>Server URL:</strong> listed under <em>Cloud server</em> — copy only the hostname (e.g. <code>shelly-12-eu.shelly.cloud</code>).<br>
-			<strong>Auth Key:</strong> same Settings page → <em>Authorization cloud key</em> → click <em>Generate key</em> if empty, then copy it.
-		</div>
-		<div class="form-fields">
-			<div class="field">
-				<label for="sh-server">Server URL</label>
-				<input id="sh-server" type="text" bind:value={shellyServer}
-					placeholder="shelly-12-eu.shelly.cloud" autocomplete="off" spellcheck="false" />
-				<span class="field-hint">Hostname only — no https:// prefix</span>
-			</div>
-			<div class="field">
-				<label for="sh-key">Auth Key</label>
-				<input id="sh-key" type="password" bind:value={shellyKey}
-					placeholder="Authorization cloud key" autocomplete="off" />
-				<span class="field-hint">Long alphanumeric key from home.shelly.cloud → Settings</span>
-			</div>
-		</div>
-		<div class="shelly-actions">
-			<button class="btn btn-ghost test-btn shelly-test" onclick={testShelly}
-				disabled={shellyTest === 'sending' || !shellyServer || !shellyKey}>
-				{shellyTest === 'sending' ? 'Testing…'
-				 : shellyTest === 'ok'      ? `✓ ${shellyTestMsg}`
-				 : shellyTest === 'err'     ? `✗ ${shellyTestMsg}`
-				 : 'Test connection'}
-			</button>
-			<button class="btn btn-primary" onclick={saveShelly} disabled={shellySaving}>
-				{shellySaving ? 'Saving…' : shellySaved ? '✓ Saved' : 'Save'}
-			</button>
-		</div>
-	</section>
-
-	<!-- ── Victron VRM ── -->
-	<section class="card">
-		<h2>Victron VRM</h2>
-		<div class="setup-hint">
-			Log in at <strong>vrm.victronenergy.com</strong> — your Cerbo GX must be connected and visible there.<br>
-			<strong>API Token:</strong> top-right avatar menu → <em>Preferences</em> → <em>API Tokens</em> → <em>Add token</em> → copy immediately (shown only once).<br>
-			<strong>Installation ID:</strong> visible in the page URL after <code>/installation/</code> — e.g. <code>vrm.victronenergy.com/installation/<em>123456</em>/dashboard</code>. Or click <strong>Discover</strong> to find it automatically after entering the token.
-		</div>
-		<div class="form-fields">
-			<div class="field">
-				<label for="vrm-token">API Token</label>
-				<input id="vrm-token" type="password" bind:value={vrmToken}
-					placeholder="VRM Portal → Preferences → API Tokens" autocomplete="off" />
-				<span class="field-hint">Paste immediately after generating — it cannot be retrieved again</span>
-			</div>
-			<div class="field">
-				<label for="vrm-site">Installation ID</label>
-				<div class="vrm-site-row">
-					{#if vrmInstallations.length > 1}
-						<select id="vrm-site" class="vrm-select" bind:value={vrmInstallationId}>
-							<option value="">— Select —</option>
-							{#each vrmInstallations as inst}
-								<option value={String(inst.idSite)}>{inst.name} ({inst.idSite})</option>
-							{/each}
-						</select>
-					{:else}
-						<input id="vrm-site" type="text" bind:value={vrmInstallationId}
-							placeholder="e.g. 123456" inputmode="numeric" autocomplete="off" />
-					{/if}
-					<button class="btn btn-ghost vrm-discover-btn" onclick={discoverVRMInstallations}
-						disabled={vrmDiscovering || !vrmToken}>
-						{vrmDiscovering ? '…' : 'Discover'}
-					</button>
-				</div>
-				{#if vrmInstallations.length === 1}
-					<span class="vrm-found">{vrmInstallations[0].name}</span>
-				{/if}
-			</div>
-		</div>
-		<div class="shelly-actions">
-			<button class="btn btn-ghost test-btn shelly-test" onclick={testVRM}
-				disabled={vrmTest === 'sending' || !vrmToken || !vrmInstallationId}>
-				{vrmTest === 'sending' ? 'Testing…'
-				 : vrmTest === 'ok'    ? `✓ ${vrmTestMsg}`
-				 : vrmTest === 'err'   ? `✗ ${vrmTestMsg}`
-				 : 'Test connection'}
-			</button>
-			<button class="btn btn-primary" onclick={saveVRM} disabled={vrmSaving}>
-				{vrmSaving ? 'Saving…' : vrmSaved ? '✓ Saved' : 'Save'}
-			</button>
-		</div>
-	</section>
-
 	<!-- ── Garmin InReach ── -->
 	<section class="card">
 		<h2>Garmin InReach</h2>
@@ -1052,49 +1059,6 @@
 				{inreachSaving ? 'Saving…' : inreachSaved ? '✓ Saved' : 'Save'}
 			</button>
 		</div>
-	</section>
-
-	<!-- ── SignalK Bridge ── -->
-	<section class="card">
-		<h2>SignalK Bridge</h2>
-		<div class="setup-hint">
-			Install <code>signalk-plugin-suki-bridge</code> from your SignalK server's Appstore,
-			then paste the API Key below into the plugin configuration.
-			The plugin streams live NMEA data (GPS, wind, depth, battery, engine) directly to this dashboard.
-		</div>
-		<div class="form-fields">
-			<div class="field">
-				<label for="sk-api-key">API Key</label>
-				<div class="sk-copy-row">
-					<input
-						id="sk-api-key"
-						type={skKeyVisible ? 'text' : 'password'}
-						readonly
-						class="settings-input sk-copy-input"
-						value={cfg?.plugin_api_key ?? '—'} />
-					<button class="btn btn-ghost sk-copy-btn"
-						onclick={() => { skKeyVisible = !skKeyVisible; }}>
-						{skKeyVisible ? 'Hide' : 'Show'}
-					</button>
-					<button class="btn btn-ghost sk-copy-btn"
-						onclick={() => copyToClipboard(cfg?.plugin_api_key, 'key')}>
-						{skKeyCopied ? '✓' : 'Copy'}
-					</button>
-				</div>
-				<span class="field-hint">Keep this secret — anyone with this key can write data to your boat</span>
-			</div>
-		</div>
-		<div class="shelly-actions">
-			<button class="btn btn-ghost" onclick={regenerateSignalKKey}
-				disabled={skKeyRegenBusy || !isAdmin}>
-				{skKeyRegenBusy ? 'Generating…' : skKeyRegenDone ? '✓ New key saved' : 'Regenerate key'}
-			</button>
-		</div>
-		{#if skConnected}
-			<div class="sk-status sk-ok">✓ Plugin connected — last data {skLastSeen}s ago</div>
-		{:else if cfg?.plugin_api_key}
-			<div class="sk-status sk-pending">No live data received yet — install and configure the plugin</div>
-		{/if}
 	</section>
 
 	<!-- ── Public Tracking ── -->
@@ -1163,6 +1127,43 @@
 		<button class="btn btn-primary mt" onclick={saveTracking} disabled={trackingSaving}>
 			{trackingSaving ? 'Saving…' : 'Save tracking settings'}
 		</button>
+	</section>
+
+	<!-- ── Shelly Cloud ── -->
+	<section class="card">
+		<h2>Shelly Cloud</h2>
+		<div class="setup-hint">
+			Log in at <strong>home.shelly.cloud</strong> (same account as the Shelly app).<br>
+			Click your <strong>name / avatar</strong> in the top-right corner → <em>Settings</em>:<br>
+			<strong>Server URL:</strong> listed under <em>Cloud server</em> — copy only the hostname (e.g. <code>shelly-12-eu.shelly.cloud</code>).<br>
+			<strong>Auth Key:</strong> same Settings page → <em>Authorization cloud key</em> → click <em>Generate key</em> if empty, then copy it.
+		</div>
+		<div class="form-fields">
+			<div class="field">
+				<label for="sh-server">Server URL</label>
+				<input id="sh-server" type="text" bind:value={shellyServer}
+					placeholder="shelly-12-eu.shelly.cloud" autocomplete="off" spellcheck="false" />
+				<span class="field-hint">Hostname only — no https:// prefix</span>
+			</div>
+			<div class="field">
+				<label for="sh-key">Auth Key</label>
+				<input id="sh-key" type="password" bind:value={shellyKey}
+					placeholder="Authorization cloud key" autocomplete="off" />
+				<span class="field-hint">Long alphanumeric key from home.shelly.cloud → Settings</span>
+			</div>
+		</div>
+		<div class="shelly-actions">
+			<button class="btn btn-ghost test-btn shelly-test" onclick={testShelly}
+				disabled={shellyTest === 'sending' || !shellyServer || !shellyKey}>
+				{shellyTest === 'sending' ? 'Testing…'
+				 : shellyTest === 'ok'      ? `✓ ${shellyTestMsg}`
+				 : shellyTest === 'err'     ? `✗ ${shellyTestMsg}`
+				 : 'Test connection'}
+			</button>
+			<button class="btn btn-primary" onclick={saveShelly} disabled={shellySaving}>
+				{shellySaving ? 'Saving…' : shellySaved ? '✓ Saved' : 'Save'}
+			</button>
+		</div>
 	</section>
 
 	<!-- ── Account ── -->
@@ -1353,6 +1354,24 @@
 	.build-ver { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 	code { font-size: 12px; color: var(--accent); }
 	.mt  { margin-top: 12px; }
+
+	/* ── Optional badge ── */
+	.optional-badge {
+		display: inline-block;
+		font-size: 9px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		color: var(--muted);
+		background: var(--card2);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 1px 5px;
+		vertical-align: middle;
+		margin-left: 6px;
+		position: relative;
+		top: -1px;
+	}
 
 	/* ── VRM ── */
 	.vrm-site-row { display: flex; gap: 6px; }
