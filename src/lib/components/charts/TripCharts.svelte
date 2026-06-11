@@ -116,18 +116,35 @@
 	}
 
 	function areaPath(m: ChartMeta): string {
-		const line = smoothPath(m);
-		if (!line) return '';
+		// Build closed area polygons independently (don't reuse smoothPath which has
+		// multiple M-segments that cause diagonal triangles when closed naively).
+		// Each contiguous run of non-null values becomes its own closed shape:
+		//   M(x0, base) L(x0, y0) ... L(xN, yN) L(xN, base) Z
 		const base = PT + IH;
-		// Find first and last index that have a valid value — no non-null assertions
-		let firstIdx = -1, lastIdx = -1;
+		const result: string[] = [];
+		let seg = '';
+		let inSeg = false;
+		let lastX = 0;
+
 		for (let i = 0; i < points.length; i++) {
-			if (m.vals[i] != null) { if (firstIdx < 0) firstIdx = i; lastIdx = i; }
+			const v = m.vals[i];
+			if (v != null) {
+				const x = tx(points[i].t);
+				const y = vy(v, m.min, m.range);
+				if (!inSeg) {
+					seg  = `M${x.toFixed(2)} ${base} L${x.toFixed(2)} ${y.toFixed(2)}`;
+					inSeg = true;
+				} else {
+					seg += ` L${x.toFixed(2)} ${y.toFixed(2)}`;
+				}
+				lastX = x;
+			} else if (inSeg) {
+				result.push(`${seg} L${lastX.toFixed(2)} ${base} Z`);
+				seg = ''; inSeg = false;
+			}
 		}
-		if (firstIdx < 0) return '';
-		const fx = tx(points[firstIdx].t);
-		const lx = tx(points[lastIdx].t);
-		return `${line} L${lx} ${base} L${fx} ${base} Z`;
+		if (inSeg) result.push(`${seg} L${lastX.toFixed(2)} ${base} Z`);
+		return result.join(' ');
 	}
 
 	// Engine-on background segments (orange shading)
@@ -429,6 +446,30 @@
 	</div>
 	{/if}
 
+	{#if hasRpm && rpmM}
+	{@const line = smoothPath(rpmM)}
+	{@const cy   = curY(rpmM, cur?.eng_rpm ?? cur?.eng_sb_rpm ?? null)}
+	<div class="track">
+		<span class="track-lbl">RPM</span>
+		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
+			role="img"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerUp}>
+			{@html engineBg}
+			<path d={line} stroke="#fb923c" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
+			{#if cy != null}<circle cx={cursorX} cy={cy} r="3" fill="#fb923c"/>{/if}
+		</svg>
+		<span class="track-val" style="color:#fb923c">
+			{#if cur?.eng_rpm != null && cur.eng_rpm > 0}P {cur.eng_rpm.toFixed(0)}{/if}
+			{#if cur?.eng_sb_rpm != null && cur.eng_sb_rpm > 0} S {cur.eng_sb_rpm.toFixed(0)}{/if}
+			{#if (cur?.eng_rpm ?? 0) === 0 && (cur?.eng_sb_rpm ?? 0) === 0}OFF{/if}
+		</span>
+	</div>
+	{/if}
+
 	{#if hasBaro && baroM}
 	{@const line = smoothPath(baroM)}
 	{@const cy   = curY(baroM, cur?.baro ?? null)}
@@ -545,30 +586,6 @@
 			{#if cy != null}<circle cx={cursorX} cy={cy} r="3" fill="#6366f1"/>{/if}
 		</svg>
 		<span class="track-val" style="color:#6366f1">{fmtV(cur?.wave_h ?? null, 1, 'm')}{cur?.wave_period_s != null ? ` · ${cur.wave_period_s.toFixed(0)}s` : ''}</span>
-	</div>
-	{/if}
-
-	{#if hasRpm && rpmM}
-	{@const line = smoothPath(rpmM)}
-	{@const cy   = curY(rpmM, cur?.eng_rpm ?? cur?.eng_sb_rpm ?? null)}
-	<div class="track">
-		<span class="track-lbl">RPM</span>
-		<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" class="track-svg"
-			role="img"
-			onpointerdown={onPointerDown}
-			onpointermove={onPointerMove}
-			onpointerup={onPointerUp}
-			onpointercancel={onPointerUp}>
-			{@html engineBg}
-			<path d={line} stroke="#fb923c" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
-			<line class="cursor-line" x1={cursorX} y1={PT} x2={cursorX} y2={PT+IH}/>
-			{#if cy != null}<circle cx={cursorX} cy={cy} r="3" fill="#fb923c"/>{/if}
-		</svg>
-		<span class="track-val" style="color:#fb923c">
-			{#if cur?.eng_rpm != null && cur.eng_rpm > 0}P {cur.eng_rpm.toFixed(0)}{/if}
-			{#if cur?.eng_sb_rpm != null && cur.eng_sb_rpm > 0} S {cur.eng_sb_rpm.toFixed(0)}{/if}
-			{#if (cur?.eng_rpm ?? 0) === 0 && (cur?.eng_sb_rpm ?? 0) === 0}OFF{/if}
-		</span>
 	</div>
 	{/if}
 

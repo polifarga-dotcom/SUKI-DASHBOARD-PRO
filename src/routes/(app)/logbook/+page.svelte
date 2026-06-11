@@ -1750,10 +1750,13 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 			</div>
 			<div class="past-stats">
 				<span class="past-chip past-chip-dur">{fmtDuration(trip.started_at, trip.ended_at)}</span>
+				{#if trip.total_nm != null && trip.total_nm > 0}<span class="past-chip">{trip.total_nm.toFixed(1)} nm</span>{/if}
 				{#if trip.avg_sog_kn != null}<span class="past-chip">avg {trip.avg_sog_kn.toFixed(1)} kn</span>{/if}
 				{#if trip.max_sog_kn != null}<span class="past-chip">max {trip.max_sog_kn.toFixed(1)} kn</span>{/if}
+				{#if trip.sail_nm != null && trip.sail_nm > 0}<span class="past-chip past-chip-sail">⛵ {trip.sail_nm.toFixed(1)} nm</span>{/if}
+				{#if trip.motor_nm != null && trip.motor_nm > 0}<span class="past-chip past-chip-eng">⚙ {trip.motor_nm.toFixed(1)} nm</span>{/if}
 				{#if trip.engine_hours != null && trip.engine_hours > 0}
-					<span class="past-chip past-chip-eng">motor {trip.engine_hours.toFixed(1)} h</span>
+					<span class="past-chip past-chip-eng">🕐 {trip.engine_hours.toFixed(1)} h</span>
 				{/if}
 			</div>
 			{#if trip.notes}<p class="past-trip-notes">{trip.notes}</p>{/if}
@@ -2243,6 +2246,10 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	.past-chip-eng {
 		background: rgba(255,160,50,.08); border-color: rgba(255,160,50,.3);
 		color: #ffaa44;
+	}
+	.past-chip-sail {
+		background: rgba(34,197,94,.08); border-color: rgba(34,197,94,.3);
+		color: #4ade80;
 	}
 	.past-trip-notes { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
 

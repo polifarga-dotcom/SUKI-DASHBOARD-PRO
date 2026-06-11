@@ -3,9 +3,9 @@
  *
  * Called every 2 minutes via pg_cron + pg_net.
  * For every active trip that has VRM credentials configured:
- *   1. Fetch current GPS from VRM API
+ *   1. Fetch current GPS + telemetry from telemetry table (SignalK plugin)
  *   2. Skip if the browser inserted an entry within the last 110 s (it was active)
- *   3. Insert a lean position-only log_entry
+ *   3. Insert a full log_entry (GPS + wind/pressure/depth/battery/engine)
  *   4. Increment trip totals (distance, max SOG)
  *   5. Auto-stop detection for is_auto=true trips (15 min < 1.5 kn)
  *
@@ -40,13 +40,22 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number): numb
   return R * 2 * Math.asin(Math.sqrt(a));
 }
 
-// ── GPS + speed from VRM diagnostics ─────────────────────────────────────────
+// ── GPS + telemetry from VRM diagnostics ─────────────────────────────────────
 type GPSData = {
   lat: number;
   lon: number;
   speed_kn: number | null;
   course_deg: number | null;
   source?: string;
+  // Telemetry enrichment (null on VRM path)
+  tws_kn: number | null;          // True Wind Speed (env_tws_ms → kn)
+  aws_kn: number | null;          // Apparent Wind Speed (env_aws_ms → kn)
+  awa_deg: number | null;         // Apparent Wind Angle (env_awa_rad → deg)
+  baro_hpa: number | null;        // Barometric pressure (env_pressure_pa → hPa)
+  depth_m: number | null;         // Water depth (env_depth_m)
+  batt_soc: number | null;        // Battery SOC % (batt_main_soc)
+  water_temp_c: number | null;    // Water temperature (temp_water)
+  engine_rpm: number | null;      // Engine RPM (eng_rpm → int)
 };
 
 async function fetchGPSFromVRM(
@@ -86,6 +95,10 @@ async function fetchGPSFromVRM(
       speed_kn:   speedMs != null ? +(speedMs * 1.94384).toFixed(2) : null,
       course_deg: course  != null ? +course.toFixed(1)              : null,
       source:     'vrm',
+      // VRM path: no telemetry enrichment
+      tws_kn: null, aws_kn: null, awa_deg: null,
+      baro_hpa: null, depth_m: null, batt_soc: null,
+      water_temp_c: null, engine_rpm: null,
     };
   } catch (e) {
     console.error('[log-position] VRM error', e);
@@ -106,7 +119,7 @@ async function resolveGPS(
   // 1. Try fresh telemetry (plugin updates every ~5 s)
   const { data: tel } = await supabase
     .from('telemetry')
-    .select('nav_lat, nav_lon, nav_sog_ms, updated_at')
+    .select('nav_lat, nav_lon, nav_sog_ms, nav_cog_rad, updated_at, env_tws_ms, env_aws_ms, env_awa_rad, env_pressure_pa, env_depth_m, batt_main_soc, temp_water, eng_rpm')
     .eq('boat_id', boatId)
     .maybeSingle();
 
@@ -116,15 +129,24 @@ async function resolveGPS(
       return {
         lat:        tel.nav_lat,
         lon:        tel.nav_lon,
-        speed_kn:   tel.nav_sog_ms != null ? +(tel.nav_sog_ms * 1.94384).toFixed(2) : null,
-        course_deg: null,   // telemetry doesn't expose COG separately yet
+        speed_kn:   tel.nav_sog_ms  != null ? +(tel.nav_sog_ms  * 1.94384).toFixed(2) : null,
+        course_deg: tel.nav_cog_rad != null ? +(tel.nav_cog_rad * 180 / Math.PI).toFixed(1) : null,
         source:     'telemetry',
+        // Enrichment with unit conversions
+        tws_kn:       tel.env_tws_ms      != null ? +(tel.env_tws_ms      * 1.94384).toFixed(1) : null,
+        aws_kn:       tel.env_aws_ms      != null ? +(tel.env_aws_ms      * 1.94384).toFixed(1) : null,
+        awa_deg:      tel.env_awa_rad     != null ? +(tel.env_awa_rad     * 180 / Math.PI).toFixed(1) : null,
+        baro_hpa:     tel.env_pressure_pa != null ? +(tel.env_pressure_pa / 100).toFixed(1) : null,
+        depth_m:      tel.env_depth_m     != null ? +tel.env_depth_m.toFixed(1)   : null,
+        batt_soc:     tel.batt_main_soc   != null ? +(tel.batt_main_soc * 100).toFixed(1)    : null,  // fraction → %
+        water_temp_c: tel.temp_water      != null ? +(tel.temp_water - 273.15).toFixed(1)   : null,  // K → °C
+        engine_rpm:   tel.eng_rpm         != null ? Math.round(tel.eng_rpm)       : null,
       };
     }
     console.log(`[log-position] telemetry stale (${Math.round(ageSec)}s) — falling back to VRM`);
   }
 
-  // 2. Fallback: VRM API
+  // 2. Fallback: VRM API (no telemetry enrichment available)
   if (vrmToken && vrmInstallId) {
     return await fetchGPSFromVRM(vrmToken, vrmInstallId);
   }
@@ -166,6 +188,20 @@ type Trip = {
   engine_hours:     number | null;
 };
 
+// ── Build enriched insert payload from GPSData ────────────────────────────────
+function telemetryFields(gps: GPSData) {
+  return {
+    wind_speed_kn:           gps.tws_kn,
+    apparent_wind_speed_kn:  gps.aws_kn,
+    apparent_wind_angle_deg: gps.awa_deg,
+    baro_hpa:                gps.baro_hpa,
+    depth_m:                 gps.depth_m,
+    batt_soc:                gps.batt_soc,
+    water_temp_c:            gps.water_temp_c,
+    engine_rpm:              gps.engine_rpm,
+  };
+}
+
 // ── Auto-stop: compute final stats + close the trip ──────────────────────────
 async function serverAutoStop(
   // deno-lint-ignore no-explicit-any
@@ -187,9 +223,10 @@ async function serverAutoStop(
     lon:        gps.lon,
     sog_kn:     gps.speed_kn,
     cog_deg:    gps.course_deg,
-    engine_on:  false,
+    engine_on:  gps.engine_rpm != null ? gps.engine_rpm > 200 : false,
     source:     'auto',
     notes:      `Arrival at ${place} (auto-stop: < 1.5 kn for 15 min)`,
+    ...telemetryFields(gps),
   });
 
   // Recalculate all stats from DB entries for this trip (this boat only)
@@ -334,9 +371,10 @@ Deno.serve(async (req: Request) => {
                 lon:       gps.lon,
                 sog_kn:    gps.speed_kn,
                 cog_deg:   gps.course_deg,
-                engine_on: false,
+                engine_on: gps.engine_rpm != null ? gps.engine_rpm > 200 : false,
                 source:    'auto',
                 notes:     `Departure from ${place ?? 'unknown'} (server auto-start)`,
+                ...telemetryFields(gps),
               });
               console.log(`[log-position] auto-trip: started trip ${newTrip.id} for boat ${boatId} from "${place}"`);
             }
@@ -401,7 +439,7 @@ Deno.serve(async (req: Request) => {
       continue;
     }
 
-    // ── Resolve GPS (telemetry first, VRM fallback) ───────────────────────────
+    // ── Resolve GPS + telemetry (telemetry first, VRM fallback) ──────────────
     const gps = await resolveGPS(
       supabase, boatId,
       cfg?.vrm_api_token ?? null,
@@ -420,7 +458,7 @@ Deno.serve(async (req: Request) => {
       ? +(haversine(lastEntry.lat, lastEntry.lon, gps.lat, gps.lon) / 1852).toFixed(3)
       : 0;
 
-    // ── Insert position entry (scoped to this boat) ───────────────────────────
+    // ── Insert position + telemetry entry (scoped to this boat) ──────────────
     await supabase.from('log_entries').insert({
       trip_id:     trip.id,
       boat_id:     boatId,
@@ -430,17 +468,23 @@ Deno.serve(async (req: Request) => {
       sog_kn:      gps.speed_kn,
       cog_deg:     gps.course_deg,
       distance_nm: distNm > 0 ? distNm : null,
-      engine_on:   false,   // engine state unknown server-side
+      engine_on:   gps.engine_rpm != null ? gps.engine_rpm > 200 : false,
       source:      'auto',
+      ...telemetryFields(gps),
     });
 
     // ── Increment trip totals ─────────────────────────────────────────────────
     if (distNm > 0) {
+      const engineOn = gps.engine_rpm != null ? gps.engine_rpm > 200 : false;
       const patch: Record<string, unknown> = {
         total_nm: +((trip.total_nm ?? 0) + distNm).toFixed(3),
-        // engine unknown → credit as sail for now; recalcFromDB corrects at trip end
-        sail_nm:  +((trip.sail_nm ?? 0) + distNm).toFixed(3),
+        sail_nm:  !engineOn ? +((trip.sail_nm  ?? 0) + distNm).toFixed(3) : undefined,
+        motor_nm:  engineOn ? +((trip.motor_nm ?? 0) + distNm).toFixed(3) : undefined,
       };
+      // Remove undefined keys
+      if (patch.sail_nm  === undefined) delete patch.sail_nm;
+      if (patch.motor_nm === undefined) delete patch.motor_nm;
+
       const newMax = gps.speed_kn ?? 0;
       if (newMax > (trip.max_sog_kn ?? 0)) patch.max_sog_kn = +newMax.toFixed(2);
 
