@@ -816,12 +816,12 @@
 			<div class="slabel">Distance from Anchor <span class="sval">{$unitSystem === 'imperial' ? m2ft(localChain) : localChain.toFixed(1)} {$unitSystem === 'imperial' ? 'ft' : 'm'}</span></div>
 			<div class="sctrl">
 				<button class="sbtn" onclick={() => {
-					localChain = Math.max(0, localChain - 5);
+					localChain = Math.max(0, localChain - 1);
 					const patch: Record<string, unknown> = { chain_length_m: localChain };
 					if (cfg?.active && projAncLat != null) Object.assign(patch, { lat: projAncLat, lon: projAncLon });
 					saveConfig(patch);
 				}}>−</button>
-				<input type="range" min="0" max="120" step="5" value={localChain}
+				<input type="range" min="0" max="120" step="1" value={localChain}
 					oninput={(e) => { localChain = +(e.target as HTMLInputElement).value; isDragging = true; }}
 					onchange={() => {
 						isDragging = false;
@@ -830,7 +830,7 @@
 						saveConfig(patch);
 					}} />
 				<button class="sbtn" onclick={() => {
-					localChain = Math.min(120, localChain + 5);
+					localChain = Math.min(120, localChain + 1);
 					const patch: Record<string, unknown> = { chain_length_m: localChain };
 					if (cfg?.active && projAncLat != null) Object.assign(patch, { lat: projAncLat, lon: projAncLon });
 					saveConfig(patch);
@@ -841,11 +841,11 @@
 		<div class="srow">
 			<div class="slabel">Alarm radius <span class="sval">{$unitSystem === 'imperial' ? m2ft(localRadius) : localRadius.toFixed(1)} {$unitSystem === 'imperial' ? 'ft' : 'm'}</span></div>
 			<div class="sctrl">
-				<button class="sbtn" onclick={() => { localRadius = Math.max(10, localRadius - 10); saveConfig({ radius_m: localRadius }); }}>−</button>
-				<input type="range" min="10" max="500" step="10" value={localRadius}
+				<button class="sbtn" onclick={() => { localRadius = Math.max(10, localRadius - 5); saveConfig({ radius_m: localRadius }); }}>−</button>
+				<input type="range" min="10" max="500" step="5" value={localRadius}
 					oninput={(e) => { localRadius = +(e.target as HTMLInputElement).value; }}
 					onchange={() => saveConfig({ radius_m: localRadius })} />
-				<button class="sbtn" onclick={() => { localRadius = Math.min(500, localRadius + 10); saveConfig({ radius_m: localRadius }); }}>+</button>
+				<button class="sbtn" onclick={() => { localRadius = Math.min(500, localRadius + 5); saveConfig({ radius_m: localRadius }); }}>+</button>
 			</div>
 		</div>
 
@@ -860,7 +860,7 @@
 			</div>
 			<div class="sctrl">
 				<button class="sbtn" onclick={() => {
-					localBearing = ((localBearing - 10 + 360) % 360);
+					localBearing = ((localBearing - 1 + 360) % 360);
 					bearingManual = true;
 					const patch: Record<string, unknown> = { bearing_deg: localBearing };
 					if (cfg?.active && projAncLat != null) Object.assign(patch, { lat: projAncLat, lon: projAncLon });
@@ -875,7 +875,7 @@
 						saveConfig(patch);
 					}} />
 				<button class="sbtn" onclick={() => {
-					localBearing = ((localBearing + 10) % 360);
+					localBearing = ((localBearing + 1) % 360);
 					bearingManual = true;
 					const patch: Record<string, unknown> = { bearing_deg: localBearing };
 					if (cfg?.active && projAncLat != null) Object.assign(patch, { lat: projAncLat, lon: projAncLon });
