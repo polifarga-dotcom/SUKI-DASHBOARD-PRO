@@ -88,7 +88,35 @@ Deno.serve(async (req: Request) => {
       return tb - ta;
     });
 
-    return json({ users: result });
+    // ── Boat connection status ─────────────────────────────────────────────
+    // Collect all boat_ids across memberships
+    const allBoatIds = [...new Set((members ?? []).map((m: any) => m.boat_id))];
+
+    const [{ data: configs }, { data: telRows }] = await Promise.all([
+      admin.from('anchor_config').select(
+        'boat_id, plugin_api_key, vrm_api_token, vrm_installation_id, telegram_token, telegram_chat_ids, pushover_app_token, pushover_user_keys'
+      ).in('boat_id', allBoatIds),
+      admin.from('telemetry').select('boat_id, updated_at').in('boat_id', allBoatIds),
+    ]);
+
+    const cfgMap: Record<string, any> = Object.fromEntries((configs ?? []).map((c: any) => [c.boat_id, c]));
+    const telMap: Record<string, string> = Object.fromEntries((telRows ?? []).map((t: any) => [t.boat_id, t.updated_at]));
+
+    const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+    const boatStatus: Record<string, { signalk: boolean; vrm: boolean; telegram: boolean; pushover: boolean; telemetry_at: string | null }> = {};
+    for (const bid of allBoatIds) {
+      const c = cfgMap[bid] ?? {};
+      const telAt = telMap[bid] ?? null;
+      boatStatus[bid] = {
+        signalk:  !!(c.plugin_api_key) && !!(telAt) && new Date(telAt).getTime() > fiveMinAgo,
+        vrm:      !!(c.vrm_api_token) && !!(c.vrm_installation_id),
+        telegram: !!(c.telegram_token) && !!(c.telegram_chat_ids),
+        pushover: !!(c.pushover_app_token) && !!(c.pushover_user_keys),
+        telemetry_at: telAt,
+      };
+    }
+
+    return json({ users: result, boatStatus });
   }
 
   // ── POST: actions ────────────────────────────────────────────────────────

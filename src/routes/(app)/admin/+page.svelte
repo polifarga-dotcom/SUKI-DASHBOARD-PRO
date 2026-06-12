@@ -17,7 +17,10 @@
 		boats: { boat_id: string; boat_name: string; role: string }[];
 	};
 
+	type BoatStatus = { signalk: boolean; vrm: boolean; telegram: boolean; pushover: boolean; telemetry_at: string | null };
+
 	let users = $state<AdminUser[]>([]);
+	let boatStatus = $state<Record<string, BoatStatus>>({});
 	let loading = $state(true);
 	let error = $state('');
 	let expandedUser = $state<string | null>(null);
@@ -44,6 +47,7 @@
 			const json = await res.json();
 			if (!res.ok) throw new Error(json.error ?? 'Failed to load users');
 			users = json.users;
+			boatStatus = json.boatStatus ?? {};
 		} catch (e: unknown) {
 			error = (e as Error).message;
 		} finally {
@@ -265,9 +269,26 @@
 	<div class="section-title">Boats</div>
 	<div class="boats-grid">
 		{#each boatSummary() as b}
+		{@const st = boatStatus[b.id]}
 		<div class="boat-tile">
 			<div class="bt-name">{b.name}</div>
 			<div class="bt-count">{b.count} member{b.count !== 1 ? 's' : ''}</div>
+			{#if st}
+			<div class="bt-leds">
+				<div class="bt-led" class:on={st.signalk} class:off={!st.signalk} title={st.signalk ? `SignalK live · ${relTime(st.telemetry_at)}` : st.telemetry_at ? `SignalK offline · last seen ${relTime(st.telemetry_at)}` : 'SignalK — no data'}>
+					<span class="led-dot"></span><span class="led-lbl">SK</span>
+				</div>
+				<div class="bt-led" class:on={st.vrm} class:off={!st.vrm} title={st.vrm ? 'VRM configured' : 'VRM not configured'}>
+					<span class="led-dot"></span><span class="led-lbl">VRM</span>
+				</div>
+				<div class="bt-led" class:on={st.telegram} class:off={!st.telegram} title={st.telegram ? 'Telegram configured' : 'Telegram not configured'}>
+					<span class="led-dot"></span><span class="led-lbl">TG</span>
+				</div>
+				<div class="bt-led" class:on={st.pushover} class:off={!st.pushover} title={st.pushover ? 'Pushover configured' : 'Pushover not configured'}>
+					<span class="led-dot"></span><span class="led-lbl">PO</span>
+				</div>
+			</div>
+			{/if}
 		</div>
 		{/each}
 	</div>
@@ -397,5 +418,31 @@
 		padding: 12px 14px;
 	}
 	.bt-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-	.bt-count { font-size: 12px; color: var(--muted); }
+	.bt-count { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+
+	.bt-leds {
+		display: flex; gap: 6px; flex-wrap: wrap;
+	}
+	.bt-led {
+		display: flex; align-items: center; gap: 3px;
+		cursor: default;
+	}
+	.led-dot {
+		width: 7px; height: 7px; border-radius: 50%;
+		flex-shrink: 0;
+	}
+	.bt-led.on .led-dot {
+		background: #22c55e;
+		box-shadow: 0 0 5px rgba(34,197,94,0.7);
+	}
+	.bt-led.off .led-dot {
+		background: #374151;
+		border: 1px solid #4b5563;
+	}
+	.led-lbl {
+		font-size: 9px; font-weight: 700;
+		text-transform: uppercase; letter-spacing: 0.4px;
+	}
+	.bt-led.on  .led-lbl { color: #22c55e; }
+	.bt-led.off .led-lbl { color: var(--muted); }
 </style>
