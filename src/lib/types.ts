@@ -114,6 +114,7 @@ export type Boat = {
 	unit_system: 'metric' | 'imperial';  // Wave height & distance unit
 	time_format: '12h' | '24h';          // Time display format
 	engine_count: 1 | 2;                  // Number of engines (1 = mono, 2 = catamaran/twin)
+	gps_to_bow_m: number;                 // Distance from GPS receiver to bow (meters)
 };
 
 export type BoatMember = {

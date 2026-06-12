@@ -29,6 +29,7 @@
 		time_format?: '12h' | '24h';
 		engine_count?: 1 | 2;
 		boat_icon?: string;
+		gps_to_bow_m?: number;
 	}) {
 		if (!$currentBoat?.id) {
 			unitMessage = 'Error: No boat selected';
@@ -725,6 +726,21 @@
 				<span class="boat-icon-lbl">{BOAT_ICON_LABELS[key]}</span>
 			</button>
 			{/each}
+		</div>
+
+		<!-- GPS-to-bow offset -->
+		<div class="setting-row" style="margin-top:8px">
+			<div class="setting-label">
+				<h3>Distance GPS receiver to bow</h3>
+				<p>Corrects anchor position when using the instant drop button</p>
+			</div>
+			<div class="gps-bow-input">
+				<input type="number" min="0" max="50" step="1" inputmode="numeric"
+					value={$currentBoat?.gps_to_bow_m ?? 0}
+					onchange={(e) => saveUnitSettings({ gps_to_bow_m: Math.max(0, Math.min(50, parseInt((e.target as HTMLInputElement).value) || 0)) })}
+				/>
+				<span class="gps-bow-unit">m</span>
+			</div>
 		</div>
 
 		{#if unitMessage}
@@ -1454,5 +1470,18 @@
 	}
 	.boat-icon-svg { display: block; width: 32px; height: 38px; }
 	.boat-icon-lbl { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+	.gps-bow-input {
+		display: flex; align-items: center; gap: 6px;
+	}
+	.gps-bow-input input {
+		width: 64px; height: 36px;
+		background: var(--card2); border: 1px solid var(--border);
+		border-radius: 8px; color: var(--text);
+		font-size: 14px; font-weight: 600; text-align: center;
+		outline: none;
+	}
+	.gps-bow-input input:focus { border-color: var(--accent); }
+	.gps-bow-unit { font-size: 12px; color: var(--muted); }
 
 </style>

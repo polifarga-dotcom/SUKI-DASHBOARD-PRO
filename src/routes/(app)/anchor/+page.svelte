@@ -17,14 +17,15 @@
 	let mapInnerEl: HTMLDivElement;
 
 	// ── Leaflet (plain vars, not reactive) ────────────────────────────────────
-	let L:            any = null;
-	let map:          any = null;
-	let boatMarker:   any = null;
-	let ancMarker:    any = null;
-	let radiusCircle: any = null;
-	let chainLine:    any = null;
-	let crumbLine:    any = null;
-	let histLayers:   any[] = [];
+	let L:             any = null;
+	let map:           any = null;
+	let boatMarker:    any = null;
+	let dropRingMarker: any = null;
+	let ancMarker:     any = null;
+	let radiusCircle:  any = null;
+	let chainLine:     any = null;
+	let crumbLine:     any = null;
+	let histLayers:    any[] = [];
 
 	// ── Reactive UI state ─────────────────────────────────────────────────────
 	let mapReady      = $state(false);
@@ -246,6 +247,29 @@
 					map.panTo([boatLat, boatLon], { animate: true, duration: 0.3 });
 				}
 			}
+
+			// ── Pulsing "drop anchor now" ring ──
+			if (cfg?.active) {
+				// Anchor already set — hide ring
+				if (dropRingMarker) { dropRingMarker.remove(); dropRingMarker = null; }
+			} else {
+				const ringIcon = L.divIcon({
+					className: '',
+					html: '<div class="drop-ring-outer"><div class="drop-ring-inner"></div></div>',
+					iconSize: [64, 64], iconAnchor: [32, 32],
+				});
+				if (!dropRingMarker) {
+					dropRingMarker = L.marker([boatLat, boatLon], { icon: ringIcon, zIndexOffset: 50, interactive: true })
+						.addTo(map)
+						.on('click', dropAnchorNow);
+				} else {
+					dropRingMarker.setLatLng([boatLat, boatLon]);
+					dropRingMarker.setIcon(ringIcon);
+				}
+			}
+		} else {
+			// No boat position — hide ring
+			if (dropRingMarker) { dropRingMarker.remove(); dropRingMarker = null; }
 		}
 
 		// ── Anchor marker — always visible when we have a position ──
@@ -404,12 +428,36 @@
 		if (data) anchorHistory = data as AnchorHistoryEntry[];
 	}
 
+	// Distance GPS receiver → bow from boat settings
+	const gpsToBowM = $derived(($currentBoat as any)?.gps_to_bow_m ?? 0);
+
 	async function setAnchor() {
 		if (!boatLat || !boatLon) return;
 		const [ancLat, ancLon] = destinationPoint(boatLat, boatLon, localBearing, localChain);
 		await saveConfig({
 			lat: ancLat, lon: ancLon, active: true, alarming: false,
 			chain_length_m: localChain, radius_m: localRadius, bearing_deg: localBearing,
+			anchor_depth_at_set: depth
+		});
+		if (map) map.setView([ancLat, ancLon], Math.max(map.getZoom(), 16));
+	}
+
+	// ── Instant "drop anchor now" — sets anchor at bow position, auto-radius from depth ──
+	async function dropAnchorNow() {
+		if (!boatLat || !boatLon) return;
+		// Project to bow: GPS offset along current heading
+		const [ancLat, ancLon] = gpsToBowM > 0
+			? destinationPoint(boatLat, boatLon, hdgDeg, gpsToBowM)
+			: [boatLat, boatLon];
+		// 6× scope from current depth, fallback 30m if no depth sensor
+		const autoRadius = depth != null && depth > 0 ? Math.round(depth * 6) : 30;
+		localChain   = 0;
+		localRadius  = autoRadius;
+		localBearing = Math.round(hdgDeg);
+		await saveConfig({
+			lat: ancLat, lon: ancLon, active: true, alarming: false,
+			chain_length_m: 0, radius_m: autoRadius,
+			bearing_deg: Math.round(hdgDeg),
 			anchor_depth_at_set: depth
 		});
 		if (map) map.setView([ancLat, ancLon], Math.max(map.getZoom(), 16));
@@ -643,6 +691,7 @@
 
 	onDestroy(() => {
 		(map as any)?._customPanCleanup?.();
+		dropRingMarker?.remove();
 		map?.remove();
 	});
 </script>
@@ -944,6 +993,25 @@
 
 	/* ── Page ── */
 	.anchor-page { display:flex; flex-direction:column; gap:10px; }
+
+	/* ── Drop Anchor Now ring (Leaflet DivIcon on boat position) ── */
+	:global(.drop-ring-outer) {
+		width: 64px; height: 64px; border-radius: 50%;
+		background: rgba(0,200,255,0.10);
+		border: 2.5px solid rgba(0,200,255,0.65);
+		display: flex; align-items: center; justify-content: center;
+		animation: drop-ring-pulse 1.4s ease-in-out infinite;
+		cursor: pointer;
+	}
+	:global(.drop-ring-inner) {
+		width: 22px; height: 22px; border-radius: 50%;
+		background: rgba(0,200,255,0.20);
+		border: 2px solid rgba(0,200,255,0.85);
+	}
+	@keyframes drop-ring-pulse {
+		0%, 100% { transform: scale(1);    opacity: 0.75; }
+		50%       { transform: scale(1.18); opacity: 1.0;  }
+	}
 
 	/* ── Map box ── */
 	.map-box {
