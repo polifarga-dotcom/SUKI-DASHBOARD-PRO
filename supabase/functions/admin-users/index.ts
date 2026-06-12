@@ -5,6 +5,7 @@
  *
  * GET  /admin-users          → list all users with roles + boat memberships
  * POST /admin-users          → actions: set_superadmin | reset_password | remove_from_boat
+ *                                       get_bot_token | set_bot_token
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -89,18 +90,19 @@ Deno.serve(async (req: Request) => {
     });
 
     // ── Boat connection status ─────────────────────────────────────────────
-    // Collect all boat_ids across memberships
     const allBoatIds = [...new Set((members ?? []).map((m: any) => m.boat_id))];
 
-    const [{ data: configs }, { data: telRows }] = await Promise.all([
+    const [{ data: configs }, { data: telRows }, { data: tgSubs }] = await Promise.all([
       admin.from('anchor_config').select(
         'boat_id, plugin_api_key, vrm_api_token, vrm_installation_id, telegram_token, telegram_chat_ids, pushover_app_token, pushover_user_keys'
       ).in('boat_id', allBoatIds),
       admin.from('telemetry').select('boat_id, updated_at').in('boat_id', allBoatIds),
+      admin.from('telegram_subscribers').select('boat_id').in('boat_id', allBoatIds),
     ]);
 
     const cfgMap: Record<string, any> = Object.fromEntries((configs ?? []).map((c: any) => [c.boat_id, c]));
     const telMap: Record<string, string> = Object.fromEntries((telRows ?? []).map((t: any) => [t.boat_id, t.updated_at]));
+    const tgSubBoats = new Set((tgSubs ?? []).map((s: any) => s.boat_id));
 
     const fiveMinAgo = Date.now() - 5 * 60 * 1000;
     const boatStatus: Record<string, { signalk: boolean; vrm: boolean; telegram: boolean; pushover: boolean; telemetry_at: string | null }> = {};
@@ -110,7 +112,7 @@ Deno.serve(async (req: Request) => {
       boatStatus[bid] = {
         signalk:  !!(c.plugin_api_key) && !!(telAt) && new Date(telAt).getTime() > fiveMinAgo,
         vrm:      !!(c.vrm_api_token) && !!(c.vrm_installation_id),
-        telegram: !!(c.telegram_token) && !!(c.telegram_chat_ids),
+        telegram: tgSubBoats.has(bid) || (!!(c.telegram_token) && !!(c.telegram_chat_ids)),
         pushover: !!(c.pushover_app_token) && !!(c.pushover_user_keys),
         telemetry_at: telAt,
       };
@@ -124,7 +126,6 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const { action, user_id, value, boat_id, token } = body;
 
-    // ── Bot token read/write ───────────────────────────────────────────────
     if (action === 'get_bot_token') {
       const { data } = await admin.from('system_config').select('value').eq('key', 'telegram_bot_token').single();
       return json({ token: data?.value ?? '' });
@@ -132,7 +133,6 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'set_bot_token') {
       if (!token) return json({ error: 'token required' }, 400);
-      // Verify token via Telegram getMe
       let username: string | null = null;
       try {
         const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
