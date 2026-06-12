@@ -696,6 +696,14 @@
 			</button>
 		</div>
 
+		<!-- Anchor / Preview GPS coordinates — top-left overlay -->
+		{#if ancGPSStr != null}
+			<div class="anc-gps-overlay">
+				<span class="anc-gps-label">{ancGPSLabel}</span>
+				<span class="anc-gps-val">{ancGPSStr}</span>
+			</div>
+		{/if}
+
 		<!-- "Boat position updated X ago" timestamp overlay (bottom-right) -->
 		{#if posAgeStr != null}
 			<div class="pos-age" class:stale={posAgeSec != null && posAgeSec > 120}>
@@ -751,14 +759,6 @@
 		</div>
 	</div>
 
-	<!-- ── Anchor GPS preview line ── -->
-	{#if ancGPSStr != null}
-		<div class="anc-gps-row">
-			<span class="anc-gps-label">{ancGPSLabel}</span>
-			<span class="anc-gps-val">{ancGPSStr}</span>
-		</div>
-	{/if}
-
 	<!-- ── Control buttons ── -->
 	<div class="ctrl-row">
 		{#if !cfg?.active}
@@ -807,36 +807,6 @@
 				Set Anchor Here
 			</button>
 		</div>
-	{/if}
-
-	<!-- ── Past anchors (history buttons) ── -->
-	{#if anchorHistory.length > 0}
-	<div class="past-anchors">
-		<span class="past-label">Past</span>
-		{#each anchorHistory as h, i}
-			<button class="hist-btn" class:sel={selectedHistory === i}
-				onclick={() => {
-					if (selectedHistory === i) {
-						selectedHistory = null;
-					} else {
-						selectedHistory = i;
-						followMode = false;
-						if (map) map.setView([h.lat, h.lon], Math.max(map.getZoom(), 15));
-					}
-				}}>
-				#{i + 1} · {relativeTime(h.cleared_at)}
-			</button>
-		{/each}
-		{#if selectedHistory != null}
-			<button class="hist-use-btn" onclick={() => adoptHistory(anchorHistory[selectedHistory!])}>
-				<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-					<path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/>
-					<circle cx="12" cy="10" r="3"/>
-				</svg>
-				Set as Anchor
-			</button>
-		{/if}
-	</div>
 	{/if}
 
 	<!-- ── Sliders ── -->
@@ -915,6 +885,36 @@
 		</div>
 
 	</div>
+
+	<!-- ── Past anchors (history buttons) ── -->
+	{#if anchorHistory.length > 0}
+	<div class="past-anchors">
+		<span class="past-label">Past</span>
+		{#each anchorHistory as h, i}
+			<button class="hist-btn" class:sel={selectedHistory === i}
+				onclick={() => {
+					if (selectedHistory === i) {
+						selectedHistory = null;
+					} else {
+						selectedHistory = i;
+						followMode = false;
+						if (map) map.setView([h.lat, h.lon], Math.max(map.getZoom(), 15));
+					}
+				}}>
+				#{i + 1} · {relativeTime(h.cleared_at)}
+			</button>
+		{/each}
+		{#if selectedHistory != null}
+			<button class="hist-use-btn" onclick={() => adoptHistory(anchorHistory[selectedHistory!])}>
+				<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/>
+					<circle cx="12" cy="10" r="3"/>
+				</svg>
+				Set as Anchor
+			</button>
+		{/if}
+	</div>
+	{/if}
 </div>
 
 <style>
@@ -950,6 +950,7 @@
 		position: relative;
 		aspect-ratio: 4 / 3;
 		border-radius: var(--r);
+		@media (max-width: 480px) { aspect-ratio: 16 / 9; }
 		overflow: hidden;
 		border: 1px solid var(--border);
 		background: #111;
@@ -1068,19 +1069,19 @@
 	.cell-label { font-size:8px; color:var(--muted); letter-spacing:0.5px; }
 	.cell-val   { font-size:12px; font-weight:600; text-align:center; font-variant-numeric:tabular-nums; }
 
-	/* ── Anchor GPS preview ── */
-	.anc-gps-row {
-		display: flex; align-items: center; gap: 8px;
-		padding: 5px 8px;
-		background: var(--card); border: 1px solid var(--border);
-		border-radius: 8px;
-		font-size: 11px;
+	/* ── Anchor GPS overlay (top-left on map) ── */
+	.anc-gps-overlay {
+		position: absolute; top: 8px; left: 8px; z-index: 600;
+		display: flex; align-items: center; gap: 5px;
+		background: rgba(0,0,0,0.65); backdrop-filter: blur(4px);
+		padding: 3px 7px; border-radius: 5px;
+		pointer-events: none;
 	}
 	.anc-gps-label {
-		color: var(--muted); font-size: 9px; text-transform: uppercase;
-		letter-spacing: 0.5px; flex-shrink: 0; min-width: 40px;
+		color: var(--muted); font-size: 8px; text-transform: uppercase;
+		letter-spacing: 0.5px;
 	}
-	.anc-gps-val { color: var(--text); font-variant-numeric: tabular-nums; }
+	.anc-gps-val { color: var(--text); font-variant-numeric: tabular-nums; font-size: 10px; }
 
 	/* ── Control buttons ── */
 	.ctrl-row { display:flex; gap:8px; }
@@ -1116,15 +1117,15 @@
 	/* ── Sliders ── */
 	.sliders {
 		background:var(--card); border:1px solid var(--border);
-		border-radius:var(--r); padding:12px; display:flex; flex-direction:column; gap:14px;
+		border-radius:var(--r); padding:8px; display:flex; flex-direction:column; gap:8px;
 	}
-	.srow   { display:flex; flex-direction:column; gap:6px; }
+	.srow   { display:flex; flex-direction:column; gap:4px; }
 	.slabel { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:8px; }
 	.sval   { font-size:12px; font-weight:600; color:var(--text); }
 	.sctrl  { display:flex; align-items:center; gap:8px; }
 	.sbtn {
-		width:40px; height:40px; background:var(--card2); border:1px solid var(--border);
-		border-radius:8px; color:var(--text); font-size:20px; font-weight:300; cursor:pointer;
+		width:32px; height:32px; background:var(--card2); border:1px solid var(--border);
+		border-radius:8px; color:var(--text); font-size:16px; font-weight:300; cursor:pointer;
 		display:flex; align-items:center; justify-content:center; flex-shrink:0;
 	}
 	.sbtn:active { border-color:var(--accent); color:var(--accent); }
@@ -1170,8 +1171,8 @@
 	}
 	input[type="range"]::-webkit-slider-thumb {
 		-webkit-appearance:none; appearance:none;
-		width:26px; height:26px; border-radius:50%;
+		width:20px; height:14px; border-radius:4px;
 		background:var(--accent); cursor:pointer;
-		border:3px solid var(--bg); box-shadow:0 0 0 2px var(--accent);
+		border:2px solid var(--bg); box-shadow:0 0 0 1px var(--accent);
 	}
 </style>
