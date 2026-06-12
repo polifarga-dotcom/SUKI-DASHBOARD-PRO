@@ -950,7 +950,7 @@
 		position: relative;
 		aspect-ratio: 4 / 3;
 		border-radius: var(--r);
-		@media (max-width: 480px) { aspect-ratio: 16 / 9; }
+		@media (max-width: 480px) { aspect-ratio: unset; height: calc(56.25vw + 5px); }
 		overflow: hidden;
 		border: 1px solid var(--border);
 		background: #111;
