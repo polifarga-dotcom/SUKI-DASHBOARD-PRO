@@ -259,7 +259,7 @@
 					iconSize: [64, 64], iconAnchor: [32, 32],
 				});
 				if (!dropRingMarker) {
-					dropRingMarker = L.marker([boatLat, boatLon], { icon: ringIcon, zIndexOffset: 50, interactive: true })
+					dropRingMarker = L.marker([boatLat, boatLon], { icon: ringIcon, zIndexOffset: 300, interactive: true })
 						.addTo(map)
 						.on('click', dropAnchorNow);
 				} else {
@@ -997,16 +997,20 @@
 	/* ── Drop Anchor Now ring (Leaflet DivIcon on boat position) ── */
 	:global(.drop-ring-outer) {
 		width: 64px; height: 64px; border-radius: 50%;
-		background: rgba(0,200,255,0.10);
+		background: rgba(0,200,255,0.08);
 		border: 2.5px solid rgba(0,200,255,0.65);
 		display: flex; align-items: center; justify-content: center;
 		animation: drop-ring-pulse 1.4s ease-in-out infinite;
 		cursor: pointer;
+		/* full-area click target — no pointer-events gap in the middle */
+		pointer-events: all;
 	}
 	:global(.drop-ring-inner) {
 		width: 22px; height: 22px; border-radius: 50%;
-		background: rgba(0,200,255,0.20);
+		background: rgba(0,200,255,0.18);
 		border: 2px solid rgba(0,200,255,0.85);
+		/* inner circle also clickable */
+		pointer-events: none;
 	}
 	@keyframes drop-ring-pulse {
 		0%, 100% { transform: scale(1);    opacity: 0.75; }
