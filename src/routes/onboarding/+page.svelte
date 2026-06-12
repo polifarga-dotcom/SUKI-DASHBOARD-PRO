@@ -2,8 +2,9 @@
 	import { goto } from '$app/navigation';
 	import { supabase } from '$lib/supabase.js';
 	import { boatIconSettingsSvg, BOAT_ICON_LABELS } from '$lib/utils/boatIcons.js';
+	import { pwaInstallPrompt } from '$lib/stores/pwa.js';
 
-	// ── Step: 1 = name boat, 2 = configure APIs ───────────────────────────────
+	// ── Step: 1 = name boat, 2 = configure APIs, 3 = install PWA ─────────────
 	let step = $state(1);
 
 	// Step 1 — boat name + unit preferences
@@ -75,8 +76,29 @@
 			if (error) { s2Error = error.message; return; }
 		}
 
+		// Skip PWA install step if already running as standalone app
+		const isStandalone =
+			window.matchMedia('(display-mode: standalone)').matches ||
+			(navigator as any).standalone === true;
+		if (isStandalone) {
+			goto('/vessel');
+		} else {
+			step = 3;
+		}
+	}
+
+	async function installPwa() {
+		const prompt = $pwaInstallPrompt;
+		if (!prompt) return;
+		prompt.prompt();
+		const { outcome } = await prompt.userChoice;
+		if (outcome === 'accepted') pwaInstallPrompt.set(null);
 		goto('/vessel');
 	}
+
+	const isIOS = typeof navigator !== 'undefined' &&
+		/iphone|ipad|ipod/i.test(navigator.userAgent) &&
+		!(window as any).MSStream;
 
 	let skKeyCopied = $state(false);
 	async function copySkKey() {
@@ -252,6 +274,55 @@
 		</div>
 		{/if}
 
+		{#if step === 3}
+		<!-- ── Step 3: Install PWA ────────────────────────────── -->
+		<div class="ob-logo">
+			<img src="/logo.png" alt="SUKI PRO" class="logo-img" />
+		</div>
+		<h1 class="ob-title">Add to Home Screen</h1>
+		<p class="ob-sub">Install SUKI PRO for the best experience — full screen, works offline, no browser chrome.</p>
+
+		{#if $pwaInstallPrompt}
+		<!-- Android / Chrome with native install API -->
+		<div class="pwa-block">
+			<div class="pwa-icon">📲</div>
+			<p class="pwa-desc">Tap the button below to add SUKI PRO to your home screen with one tap.</p>
+			<button class="btn btn-primary pwa-install-btn" onclick={installPwa}>
+				Install App
+			</button>
+		</div>
+		{:else if isIOS}
+		<!-- iOS / Safari — manual instructions -->
+		<div class="pwa-block">
+			<ol class="pwa-steps">
+				<li>
+					<span class="pwa-step-num">1</span>
+					<span>Tap the <strong>Share</strong> icon <span class="share-icon">⬆</span> in the Safari toolbar</span>
+				</li>
+				<li>
+					<span class="pwa-step-num">2</span>
+					<span>Scroll down and tap <strong>"Add to Home Screen"</strong></span>
+				</li>
+				<li>
+					<span class="pwa-step-num">3</span>
+					<span>Tap <strong>"Add"</strong> — done!</span>
+				</li>
+			</ol>
+		</div>
+		{/if}
+
+		<div class="ob-actions" style="margin-top: 24px;">
+			<button class="btn btn-ghost" onclick={() => goto('/vessel')}>
+				{$pwaInstallPrompt || isIOS ? 'Skip' : 'Open App →'}
+			</button>
+			{#if isIOS}
+			<button class="btn btn-primary" onclick={() => goto('/vessel')}>
+				Done →
+			</button>
+			{/if}
+		</div>
+		{/if}
+
 	</div>
 </div>
 
@@ -423,6 +494,38 @@
 		text-decoration: none;
 		margin: 8px 0 4px;
 		font-size: 13px;
+	}
+
+	/* ── PWA install step ── */
+	.pwa-block {
+		background: var(--card2, rgba(255,255,255,0.04));
+		border: 1px solid var(--border, rgba(255,255,255,0.1));
+		border-radius: 14px;
+		padding: 20px 18px;
+		margin: 8px 0;
+	}
+	.pwa-icon { font-size: 40px; text-align: center; margin-bottom: 12px; }
+	.pwa-desc { font-size: 13px; color: var(--muted); text-align: center; margin: 0 0 16px; line-height: 1.5; }
+	.pwa-install-btn { width: 100%; font-size: 15px; padding: 12px; }
+	.pwa-steps {
+		list-style: none; padding: 0; margin: 0;
+		display: flex; flex-direction: column; gap: 14px;
+	}
+	.pwa-steps li {
+		display: flex; align-items: flex-start; gap: 12px;
+		font-size: 13px; line-height: 1.5; color: var(--text);
+	}
+	.pwa-step-num {
+		width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+		background: var(--accent, #00c8ff); color: #000;
+		display: flex; align-items: center; justify-content: center;
+		font-size: 12px; font-weight: 700; margin-top: 1px;
+	}
+	.share-icon {
+		display: inline-flex; align-items: center; justify-content: center;
+		width: 22px; height: 22px; border-radius: 5px;
+		background: var(--accent, #00c8ff); color: #000;
+		font-size: 12px; font-weight: 700; vertical-align: middle;
 	}
 
 	.ob-actions {

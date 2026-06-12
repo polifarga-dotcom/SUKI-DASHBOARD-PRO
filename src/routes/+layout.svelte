@@ -2,6 +2,7 @@
 	import '../app.css';
 	import { supabase } from '$lib/supabase.js';
 	import { authStore } from '$lib/stores/auth.js';
+	import { pwaInstallPrompt } from '$lib/stores/pwa.js';
 	import { onMount } from 'svelte';
 
 	let { children } = $props();
@@ -17,7 +18,17 @@
 			authStore.setSession(session);
 		});
 
-		return () => subscription.unsubscribe();
+		// Capture PWA install prompt early — must be before any user interaction
+		const onInstallPrompt = (e: Event) => {
+			e.preventDefault();
+			pwaInstallPrompt.set(e);
+		};
+		window.addEventListener('beforeinstallprompt', onInstallPrompt);
+
+		return () => {
+			subscription.unsubscribe();
+			window.removeEventListener('beforeinstallprompt', onInstallPrompt);
+		};
 	});
 </script>
 

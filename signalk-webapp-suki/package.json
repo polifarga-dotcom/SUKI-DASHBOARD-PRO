@@ -1,0 +1,14 @@
+{
+  "name": "signalk-webapp-suki-dashboard-pro",
+  "version": "1.0.0",
+  "description": "SUKI Dashboard Pro — anchor alarm, battery, wind, engine monitoring. Requires signalk-plugin-suki-bridge installed and an active NMEA data connection via SignalK.",
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-webapp"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/polifarga-dotcom/SUKI-DASHBOARD-PRO"
+  }
+}
