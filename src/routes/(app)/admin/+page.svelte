@@ -118,6 +118,43 @@
 		return new Date(iso).toLocaleDateString();
 	}
 
+	// ── App Bot config ────────────────────────────────────────────────────────
+	let botToken      = $state('');
+	let botTokenSaved = $state<'idle' | 'saving' | 'ok' | 'err'>('idle');
+	let botStatus     = $state<string | null>(null);  // @BotUsername or error
+
+	async function loadBotToken() {
+		const { data: { session } } = await supabase.auth.getSession();
+		const res = await fetch(`${PUBLIC_SUPABASE_URL}/functions/v1/admin-users`, {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ action: 'get_bot_token' }),
+		});
+		const json = await res.json();
+		if (json.token) botToken = json.token;
+	}
+
+	async function saveBotToken() {
+		if (!botToken.trim()) return;
+		botTokenSaved = 'saving';
+		try {
+			const { data: { session } } = await supabase.auth.getSession();
+			const res = await fetch(`${PUBLIC_SUPABASE_URL}/functions/v1/admin-users`, {
+				method: 'POST',
+				headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'set_bot_token', token: botToken.trim() }),
+			});
+			const json = await res.json();
+			if (!res.ok) throw new Error(json.error ?? 'Failed');
+			botStatus = json.username ? `@${json.username}` : null;
+			botTokenSaved = 'ok';
+		} catch (e: unknown) {
+			botStatus = (e as Error).message;
+			botTokenSaved = 'err';
+		}
+		setTimeout(() => { botTokenSaved = 'idle'; }, 3000);
+	}
+
 	// Group boats across all users for boat summary
 	const boatSummary = $derived(() => {
 		const map: Record<string, { name: string; count: number }> = {};
@@ -141,7 +178,7 @@
 			isSuperAdmin = roleRow?.is_superadmin === true;
 		}
 		checking = false;
-		if (isSuperAdmin) loadUsers();
+		if (isSuperAdmin) { loadUsers(); loadBotToken(); }
 	});
 </script>
 
@@ -295,6 +332,30 @@
 	{/if}
 	{/if}
 
+	<!-- ── App Bot ── -->
+	<div class="section-hdr">App Bot</div>
+	<div class="bot-card">
+		<div class="bot-desc">
+			Shared Telegram bot for all boats — token stored in <code>system_config</code>.
+			After saving, the bot username is verified via Telegram's <code>getMe</code> API.
+		</div>
+		<div class="bot-row">
+			<input class="bot-input" type="text" bind:value={botToken}
+				placeholder="1234567890:AABBCCddEEff…" autocomplete="off" spellcheck="false" />
+			<button class="btn-save-bot"
+				class:ok={botTokenSaved === 'ok'} class:err={botTokenSaved === 'err'}
+				disabled={botTokenSaved === 'saving' || !botToken.trim()}
+				onclick={saveBotToken}>
+				{botTokenSaved === 'saving' ? 'Saving…' : botTokenSaved === 'ok' ? '✓ Saved' : botTokenSaved === 'err' ? '✗ Error' : 'Save'}
+			</button>
+		</div>
+		{#if botStatus}
+		<div class="bot-status" class:bot-ok={botStatus.startsWith('@')} class:bot-err={!botStatus.startsWith('@')}>
+			{botStatus.startsWith('@') ? '● Connected — ' + botStatus : '● ' + botStatus}
+		</div>
+		{/if}
+	</div>
+
 </div>
 {/if}
 
@@ -445,4 +506,34 @@
 	}
 	.bt-led.on  .led-lbl { color: #22c55e; }
 	.bt-led.off .led-lbl { color: var(--muted); }
+
+	/* ── App Bot ── */
+	.section-hdr {
+		font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
+		color: var(--muted); margin: 24px 0 8px;
+	}
+	.bot-card {
+		background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+		padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+	}
+	.bot-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+	.bot-desc code { background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 4px; font-size: 11px; }
+	.bot-row { display: flex; gap: 8px; }
+	.bot-input {
+		flex: 1; background: var(--card2); border: 1px solid var(--border); border-radius: 8px;
+		padding: 8px 10px; font-size: 13px; color: var(--text); font-family: monospace;
+		min-width: 0;
+	}
+	.bot-input:focus { outline: none; border-color: var(--accent); }
+	.btn-save-bot {
+		padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px;
+		font-weight: 500; background: var(--accent, #00c8ff); color: #000; white-space: nowrap;
+		transition: background 0.15s;
+	}
+	.btn-save-bot:disabled { opacity: 0.5; cursor: default; }
+	.btn-save-bot.ok  { background: #22c55e; color: #fff; }
+	.btn-save-bot.err { background: var(--red, #ff4444); color: #fff; }
+	.bot-status { font-size: 12px; font-weight: 500; }
+	.bot-ok  { color: #22c55e; }
+	.bot-err { color: var(--red, #ff4444); }
 </style>

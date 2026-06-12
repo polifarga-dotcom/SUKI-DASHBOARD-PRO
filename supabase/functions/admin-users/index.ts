@@ -122,7 +122,29 @@ Deno.serve(async (req: Request) => {
   // ── POST: actions ────────────────────────────────────────────────────────
   if (req.method === 'POST') {
     const body = await req.json();
-    const { action, user_id, value, boat_id } = body;
+    const { action, user_id, value, boat_id, token } = body;
+
+    // ── Bot token read/write ───────────────────────────────────────────────
+    if (action === 'get_bot_token') {
+      const { data } = await admin.from('system_config').select('value').eq('key', 'telegram_bot_token').single();
+      return json({ token: data?.value ?? '' });
+    }
+
+    if (action === 'set_bot_token') {
+      if (!token) return json({ error: 'token required' }, 400);
+      // Verify token via Telegram getMe
+      let username: string | null = null;
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+        const tg = await res.json();
+        if (tg.ok) username = tg.result.username ?? null;
+        else return json({ error: `Telegram: ${tg.description}` }, 400);
+      } catch {
+        return json({ error: 'Could not reach Telegram API' }, 502);
+      }
+      await admin.from('system_config').upsert({ key: 'telegram_bot_token', value: token }, { onConflict: 'key' });
+      return json({ ok: true, username });
+    }
 
     if (!user_id) return json({ error: 'user_id required' }, 400);
 

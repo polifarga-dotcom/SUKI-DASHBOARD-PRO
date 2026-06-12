@@ -592,6 +592,16 @@
 		const { error } = await supabase.functions.invoke('send-test-notification', {
 			body: { boat_id: boatId, channel },
 		});
+		if (!error && channel === 'telegram') {
+			// Successful Telegram test = migration complete — suppress migration banner permanently
+			const cfg = $anchorConfig;
+			if (cfg && cfg.telegram_migration_done !== true) {
+				await supabase.from('anchor_config')
+					.update({ telegram_migration_done: true })
+					.eq('boat_id', boatId);
+				anchorConfig.set({ ...cfg, telegram_migration_done: true });
+			}
+		}
 		set(error ? 'err' : 'ok');
 		setTimeout(() => set('idle'), 3000);
 	}
