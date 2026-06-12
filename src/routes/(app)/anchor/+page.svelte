@@ -75,11 +75,18 @@
 	const alarming = $derived(cfg?.alarming ?? false);
 
 	// Scope = Chain / Depth ratio
-	// Uses depth captured when anchor was set (stored in DB)
-	// Only recalculates when chain slider is moved; does not change with current depth
+	// Scope = chain / depth-at-set.
+	// When anchor is active, use live GPS distance (ancDistM) as chain length —
+	// this auto-updates as the boat drifts back after instant drop.
+	// When previewing (not yet set), use the slider value (localChain).
 	const scope = $derived(
-		cfg?.anchor_depth_at_set != null && cfg.anchor_depth_at_set > 0.5 && localChain > 0
-			? (localChain / cfg.anchor_depth_at_set).toFixed(1)
+		cfg?.anchor_depth_at_set != null && cfg.anchor_depth_at_set > 0.5
+			? (() => {
+				const chainLen = cfg?.active && ancDistM != null && ancDistM > 0
+					? ancDistM
+					: localChain;
+				return chainLen > 0 ? (chainLen / cfg.anchor_depth_at_set).toFixed(1) : null;
+			})()
 			: null
 	);
 
