@@ -210,6 +210,56 @@
 
 	const currentPath = $derived(page.url.pathname);
 	const t           = $derived($telemetry);
+
+	// ── Telegram migration banner ────────────────────────────────────────────
+	let showTgMigrationBanner = $state(false);
+	let tgMigrationModal = $state(false);
+	let tgMigrationDone = $state(false);
+
+	$effect(() => {
+		const cfg = $anchorConfig;
+		const boatId = $currentBoat?.id;
+		if (!cfg || !boatId) return;
+		const sessionKey = `tg_migration_skipped_${boatId}`;
+		const skippedThisSession = typeof sessionStorage !== 'undefined' && sessionStorage.getItem(sessionKey) === '1';
+		showTgMigrationBanner = !!(
+			cfg.telegram_token &&
+			cfg.telegram_migration_done !== true &&
+			!skippedThisSession
+		);
+	});
+
+	function skipTgMigration() {
+		const boatId = $currentBoat?.id;
+		if (boatId) sessionStorage.setItem(`tg_migration_skipped_${boatId}`, '1');
+		showTgMigrationBanner = false;
+	}
+
+	async function completeTgMigration() {
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
+		// Pre-register existing chat IDs as subscribers via app bot
+		const cfg = $anchorConfig;
+		if (cfg?.telegram_chat_ids && cfg?.telegram_token) {
+			const ids = cfg.telegram_chat_ids.split(',').map((s: string) => s.trim()).filter(Boolean);
+			for (const chatId of ids) {
+				await supabase.from('telegram_subscribers').upsert({
+					boat_id: boatId, chat_id: chatId, label: null,
+				}, { onConflict: 'boat_id,chat_id' });
+			}
+		}
+		// Mark migration done
+		await supabase.from('anchor_config')
+			.update({ telegram_migration_done: true })
+			.eq('boat_id', boatId);
+		anchorConfig.update(c => c ? { ...c, telegram_migration_done: true } : c);
+		tgMigrationDone = true;
+		setTimeout(() => {
+			showTgMigrationBanner = false;
+			tgMigrationModal = false;
+			tgMigrationDone = false;
+		}, 3000);
+	}
 	const stale       = $derived($dataStale);
 	const boats       = $derived($myBoats);
 	const activeBoat  = $derived($currentBoat);
@@ -326,6 +376,45 @@
 	<main class="content">
 		{@render children()}
 	</main>
+
+	<!-- ── Telegram migration banner ── -->
+	{#if showTgMigrationBanner}
+	<div class="tg-banner">
+		<span class="tg-banner-text">⚡ SUKI now uses a shared Telegram bot — no more manual token setup.</span>
+		<div class="tg-banner-actions">
+			<button class="tg-banner-btn primary" onclick={() => { tgMigrationModal = true; }}>Migrate now</button>
+			<button class="tg-banner-btn ghost" onclick={skipTgMigration}>Skip</button>
+		</div>
+	</div>
+	{/if}
+
+	<!-- ── Migration modal ── -->
+	{#if tgMigrationModal}
+	<div class="tg-modal-overlay" onclick={() => { tgMigrationModal = false; }}>
+		<div class="tg-modal" onclick={(e) => e.stopPropagation()}>
+			{#if tgMigrationDone}
+				<div class="tg-modal-done">✅ Migration complete! You can remove the old bot token in Settings.</div>
+			{:else}
+				<h3>Switch to @SukiProBot</h3>
+				<p class="tg-modal-desc">
+					Your existing subscribers will be pre-registered automatically.
+					Each person needs to tap the link once to activate the new bot.
+				</p>
+				{#if $anchorConfig?.plugin_api_key}
+				<a class="btn btn-primary tg-modal-link"
+					href="https://t.me/SukiProBot?start={$anchorConfig.plugin_api_key}"
+					target="_blank" rel="noopener">
+					Open @SukiProBot in Telegram
+				</a>
+				{/if}
+				<div class="tg-modal-footer">
+					<button class="btn btn-primary" onclick={completeTgMigration}>Done — mark as migrated</button>
+					<button class="btn btn-ghost" onclick={() => { tgMigrationModal = false; skipTgMigration(); }}>Skip for now</button>
+				</div>
+			{/if}
+		</div>
+	</div>
+	{/if}
 </div>
 
 <style>
@@ -434,4 +523,39 @@
 		padding: 12px;
 		padding-bottom: calc(12px + env(safe-area-inset-bottom));
 	}
+
+	/* ── Telegram migration banner ── */
+	.tg-banner {
+		position: fixed; bottom: 56px; left: 0; right: 0; z-index: 900;
+		background: linear-gradient(135deg, #1a2a3a, #0d1f2d);
+		border-top: 1px solid rgba(0,200,255,0.3);
+		padding: 10px 14px; display: flex; align-items: center;
+		gap: 10px; flex-wrap: wrap;
+		box-shadow: 0 -2px 12px rgba(0,0,0,0.4);
+	}
+	.tg-banner-text { flex: 1; font-size: 12px; color: var(--text); line-height: 1.4; }
+	.tg-banner-actions { display: flex; gap: 6px; flex-shrink: 0; }
+	.tg-banner-btn {
+		padding: 5px 12px; border-radius: 8px; border: none; cursor: pointer;
+		font-size: 12px; font-weight: 500;
+	}
+	.tg-banner-btn.primary { background: var(--accent, #00c8ff); color: #000; }
+	.tg-banner-btn.ghost { background: rgba(255,255,255,0.1); color: var(--text); }
+
+	/* ── Telegram migration modal ── */
+	.tg-modal-overlay {
+		position: fixed; inset: 0; z-index: 1000;
+		background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center;
+		padding: 20px;
+	}
+	.tg-modal {
+		background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+		padding: 24px; max-width: 360px; width: 100%;
+	}
+	.tg-modal h3 { font-size: 16px; font-weight: 600; margin: 0 0 10px; }
+	.tg-modal-desc { font-size: 13px; color: var(--muted); margin: 0 0 16px; line-height: 1.5; }
+	.tg-modal-link { display: block; text-align: center; text-decoration: none; margin-bottom: 16px; font-size: 13px; }
+	.tg-modal-footer { display: flex; flex-direction: column; gap: 8px; }
+	.tg-modal-footer .btn { font-size: 13px; }
+	.tg-modal-done { font-size: 14px; color: #4caf50; text-align: center; padding: 12px 0; }
 </style>

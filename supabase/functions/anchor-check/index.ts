@@ -110,12 +110,7 @@ async function resolveGPS(
 }
 
 // ── Telegram notification ─────────────────────────────────────────────────────
-async function sendTelegram(
-  botToken: string | null,
-  chatIds: string | null,
-  text: string
-): Promise<void> {
-  if (!botToken || !chatIds) return;
+async function sendTelegramRaw(botToken: string, chatIds: string, text: string): Promise<void> {
   const ids = chatIds.split(',').map(s => s.trim()).filter(Boolean);
   for (const chatId of ids) {
     try {
@@ -127,6 +122,40 @@ async function sendTelegram(
     } catch (e) {
       console.error('[anchor-check] Telegram error for chat', chatId, e);
     }
+  }
+}
+
+// Cached per invocation
+let _appBotToken: string | null | undefined = undefined;
+async function getAppBotToken(): Promise<string | null> {
+  if (_appBotToken !== undefined) return _appBotToken;
+  const { data } = await admin.from('system_config').select('value').eq('key', 'telegram_bot_token').single();
+  _appBotToken = data?.value ?? null;
+  return _appBotToken;
+}
+
+async function sendTelegram(
+  legacyToken: string | null,
+  legacyChatIds: string | null,
+  text: string,
+  boatId: string
+): Promise<void> {
+  // Prefer app-wide bot subscribers
+  const appToken = await getAppBotToken();
+  if (appToken) {
+    const { data: subs } = await admin
+      .from('telegram_subscribers')
+      .select('chat_id')
+      .eq('boat_id', boatId);
+    if (subs && subs.length > 0) {
+      const ids = subs.map((s: any) => s.chat_id).join(',');
+      await sendTelegramRaw(appToken, ids, text);
+      return;
+    }
+  }
+  // Legacy fallback: per-boat token
+  if (legacyToken && legacyChatIds) {
+    await sendTelegramRaw(legacyToken, legacyChatIds, text);
   }
 }
 
@@ -239,7 +268,7 @@ Deno.serve(async (req: Request) => {
         const msg =
           `✅ <b>Anchor back in range — ${boatName}</b>\n` +
           `Distance: ${Math.round(dist)} m (radius: ${watch.radius_m} m)`;
-        await sendTelegram(watch.telegram_token, watch.telegram_chat_ids, msg);
+        await sendTelegram(watch.telegram_token, watch.telegram_chat_ids, msg, watch.boat_id);
         await sendPushover(
           watch.pushover_app_token,
           watch.pushover_user_keys,
@@ -308,7 +337,7 @@ Deno.serve(async (req: Request) => {
 
       // Telegram: skip if muted
       if (!watch.alarm_telegram_muted) {
-        await sendTelegram(watch.telegram_token, watch.telegram_chat_ids, msg);
+        await sendTelegram(watch.telegram_token, watch.telegram_chat_ids, msg, watch.boat_id);
       }
 
       // Pushover: always fire (emergency priority with tag for cancel-on-clear)

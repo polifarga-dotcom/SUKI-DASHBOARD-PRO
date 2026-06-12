@@ -222,6 +222,26 @@
 			</div>
 		</div>
 
+		<!-- Telegram — optional alerts -->
+		<div class="api-section">
+			<div class="api-label-row">
+				<div class="api-label">Telegram Alerts</div>
+				<div class="api-badge optional">Optional</div>
+			</div>
+			<p class="api-desc">
+				Receive anchor alarm notifications on your phone via <strong>@SukiProBot</strong> — no token setup required.
+				Open the link below in Telegram and tap <strong>Start</strong>.
+			</p>
+			{#if skApiKey}
+			<a class="btn btn-ghost tg-ob-btn"
+				href="https://t.me/SukiProBot?start={skApiKey}"
+				target="_blank" rel="noopener">
+				Open @SukiProBot in Telegram
+			</a>
+			<span class="field-hint-sm">Your activation code: <code>{skApiKey.slice(0,8)}…</code></span>
+			{/if}
+		</div>
+
 		<div class="ob-actions">
 			<button class="btn btn-ghost" onclick={() => goto('/vessel')} disabled={s2Loading}>
 				Skip
@@ -395,6 +415,14 @@
 		font-size: 11px;
 		color: var(--muted);
 		margin-top: 2px;
+	}
+
+	.tg-ob-btn {
+		display: block;
+		text-align: center;
+		text-decoration: none;
+		margin: 8px 0 4px;
+		font-size: 13px;
 	}
 
 	.ob-actions {

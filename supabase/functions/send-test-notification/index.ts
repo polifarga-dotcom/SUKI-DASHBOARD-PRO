@@ -22,7 +22,7 @@ function err(msg: string, status = 400) {
   });
 }
 
-async function sendTelegram(botToken: string, chatIds: string, boatName: string): Promise<string[]> {
+async function sendTelegramRaw(botToken: string, chatIds: string, boatName: string): Promise<string[]> {
   const ids = chatIds.split(',').map(s => s.trim()).filter(Boolean);
   const errors: string[] = [];
   for (const chatId of ids) {
@@ -41,6 +41,28 @@ async function sendTelegram(botToken: string, chatIds: string, boatName: string)
     }
   }
   return errors;
+}
+
+async function sendTelegram(
+  supaAdmin: ReturnType<typeof createClient>,
+  boatId: string,
+  legacyToken: string | null,
+  legacyChatIds: string | null,
+  boatName: string
+): Promise<string[]> {
+  // Try app-wide bot + subscribers first
+  const { data: tokenRow } = await supaAdmin.from('system_config').select('value').eq('key', 'telegram_bot_token').single();
+  const appToken: string | null = tokenRow?.value ?? null;
+  if (appToken) {
+    const { data: subs } = await supaAdmin.from('telegram_subscribers').select('chat_id').eq('boat_id', boatId);
+    if (subs && subs.length > 0) {
+      const ids = subs.map((s: any) => s.chat_id).join(',');
+      return sendTelegramRaw(appToken, ids, boatName);
+    }
+  }
+  // Legacy fallback
+  if (legacyToken && legacyChatIds) return sendTelegramRaw(legacyToken, legacyChatIds, boatName);
+  return ['No Telegram subscribers found. Open @SukiProBot and send /start to subscribe.'];
 }
 
 async function sendPushover(appToken: string, userKeys: string, boatName: string): Promise<string[]> {
@@ -114,8 +136,7 @@ Deno.serve(async (req: Request) => {
   let errors: string[] = [];
 
   if (channel === 'telegram') {
-    if (!cfg.telegram_token || !cfg.telegram_chat_ids) return err('Telegram not configured');
-    errors = await sendTelegram(cfg.telegram_token, cfg.telegram_chat_ids, boatName);
+    errors = await sendTelegram(supaAdmin, boat_id, cfg.telegram_token, cfg.telegram_chat_ids, boatName);
   } else {
     if (!cfg.pushover_app_token || !cfg.pushover_user_keys) return err('Pushover not configured');
     errors = await sendPushover(cfg.pushover_app_token, cfg.pushover_user_keys, boatName);

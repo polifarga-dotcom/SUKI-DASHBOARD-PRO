@@ -104,6 +104,8 @@ export type AnchorConfig = {
 	alarm_telegram_muted:  boolean;       // true = skip Telegram but keep Pushover + alarm overlay
 	// Scope calculation (added migration 102)
 	anchor_depth_at_set:   number | null; // water depth when anchor was set (for static scope: chain/depth)
+	// Shared bot migration (added migration 20260613)
+	telegram_migration_done: boolean | null;
 };
 
 export type Boat = {

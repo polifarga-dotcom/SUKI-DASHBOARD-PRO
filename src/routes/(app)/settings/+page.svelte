@@ -177,9 +177,9 @@
 	type TestState = 'idle' | 'sending' | 'ok' | 'err';
 	let tgTest = $state<TestState>('idle');
 	let poTest = $state<TestState>('idle');
+	let tgSubscribers = $state<{ id: string; chat_id: string; label: string | null }[]>([]);
+	let tgSubsLoading = $state(false);
 
-	let tgToken    = $state('');
-	let tgChats    = $state('');
 	let poToken    = $state('');
 	let poKeys     = $state('');
 	let alarmDelay = $state(10);
@@ -321,11 +321,7 @@
 			document.execCommand('copy');
 			document.body.removeChild(el);
 		}
-		if (which === 'url') {
-			skUrlCopied = true; setTimeout(() => { skUrlCopied = false; }, 2000);
-		} else {
-			skKeyCopied = true; setTimeout(() => { skKeyCopied = false; }, 2000);
-		}
+		skKeyCopied = true; setTimeout(() => { skKeyCopied = false; }, 2000);
 	}
 
 	async function regenerateSignalKKey() {
@@ -352,8 +348,6 @@
 
 	$effect(() => {
 		if (cfg) {
-			tgToken    = cfg.telegram_token        ?? '';
-			tgChats    = cfg.telegram_chat_ids     ?? '';
 			poToken    = cfg.pushover_app_token    ?? '';
 			poKeys     = cfg.pushover_user_keys    ?? '';
 			alarmDelay = cfg.alarm_delay_s         ?? 10;
@@ -363,8 +357,28 @@
 			vrmInstallationId = cfg.vrm_installation_id != null ? String(cfg.vrm_installation_id) : '';
 			inreachId         = cfg.inreach_mapshare_id       ?? '';
 			inreachPassword   = cfg.inreach_mapshare_password ?? '';
+			// Load telegram subscribers for new shared bot
+			loadTgSubscribers();
 		}
 	});
+
+	async function loadTgSubscribers() {
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
+		tgSubsLoading = true;
+		const { data } = await supabase
+			.from('telegram_subscribers')
+			.select('id, chat_id, label')
+			.eq('boat_id', boatId)
+			.order('created_at');
+		tgSubscribers = data ?? [];
+		tgSubsLoading = false;
+	}
+
+	async function removeTgSubscriber(id: string) {
+		await supabase.from('telegram_subscribers').delete().eq('id', id);
+		tgSubscribers = tgSubscribers.filter(s => s.id !== id);
+	}
 
 	// Load crew list whenever admin access is confirmed
 	$effect(() => {
@@ -555,8 +569,6 @@
 		const { data: row } = await supabase
 			.from('anchor_config')
 			.update({
-				telegram_token:     tgToken  || null,
-				telegram_chat_ids:  tgChats  || null,
 				pushover_app_token: poToken  || null,
 				pushover_user_keys: poKeys   || null,
 				alarm_delay_s:      alarmDelay,
@@ -985,27 +997,42 @@
 	<section class="card">
 		<h2>Telegram Notifications</h2>
 		<div class="setup-hint">
-			<strong>1. Create a bot:</strong> Open Telegram → search <code>@BotFather</code> → send <code>/newbot</code> → follow the steps → copy the token.<br>
-			<strong>2. Activate your bot:</strong> Open a chat with your new bot and send <code>/start</code> — this is required before the bot can send you messages.<br>
-			<strong>3. Find your Chat ID:</strong> Open <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser after sending a message. Your Chat ID appears as <code>"id": 123456789</code>.<br>
-			For a <strong>group</strong>: add the bot to the group, send a message, then check getUpdates — group IDs start with <code>-100…</code>.
+			SUKI uses a shared app bot <strong>@SukiProBot</strong> — no token setup required.<br>
+			Add subscribers by sharing the link below. Each person opens it in Telegram and taps <strong>Start</strong>.
 		</div>
-		<div class="form-fields">
-			<div class="field">
-				<label for="tg-token">Bot Token</label>
-				<input id="tg-token" type="text" bind:value={tgToken} placeholder="123456789:AABBCCdd…" autocomplete="off" />
-				<span class="field-hint">From @BotFather — format: numbers:letters</span>
-			</div>
-			<div class="field">
-				<label for="tg-chats">Chat IDs (comma-separated)</label>
-				<input id="tg-chats" type="text" bind:value={tgChats} placeholder="-1001234567890,987654321" autocomplete="off" />
-				<span class="field-hint">Personal chats: positive number · Groups: negative number starting with -100</span>
-			</div>
+
+		<!-- Subscriber list -->
+		<div class="tg-subs-block">
+			{#if tgSubsLoading}
+				<p class="field-hint">Loading subscribers…</p>
+			{:else if tgSubscribers.length === 0}
+				<p class="field-hint">No subscribers yet. Add one using the button below.</p>
+			{:else}
+				<ul class="tg-subs-list">
+					{#each tgSubscribers as sub (sub.id)}
+						<li class="tg-sub-row">
+							<span class="tg-sub-label">{sub.label ?? 'Subscriber'}</span>
+							<span class="tg-sub-id">…{sub.chat_id.slice(-6)}</span>
+							<button class="btn-icon-sm" onclick={() => removeTgSubscriber(sub.id)} title="Remove">✕</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		</div>
-		<button class="btn btn-ghost test-btn" onclick={() => sendTestNotification('telegram')}
-			disabled={tgTest === 'sending' || !tgToken}>
-			{tgTest === 'sending' ? 'Sending…' : tgTest === 'ok' ? '✓ Sent' : tgTest === 'err' ? '✗ Error' : 'Send test message'}
-		</button>
+
+		<div class="tg-actions">
+			{#if cfg?.plugin_api_key}
+				<a class="btn btn-primary"
+					href="https://t.me/SukiProBot?start={cfg.plugin_api_key}"
+					target="_blank" rel="noopener">
+					+ Add subscriber
+				</a>
+			{/if}
+			<button class="btn btn-ghost test-btn" onclick={() => sendTestNotification('telegram')}
+				disabled={tgTest === 'sending'}>
+				{tgTest === 'sending' ? 'Sending…' : tgTest === 'ok' ? '✓ Sent' : tgTest === 'err' ? '✗ Error' : 'Send test message'}
+			</button>
+		</div>
 	</section>
 
 	<!-- ── Pushover ── -->
@@ -1427,6 +1454,27 @@
 		background: rgba(0,200,255,.08); border-radius: 3px; padding: 0 4px;
 	}
 	.setup-hint em { font-style: normal; color: var(--accent); }
+
+	/* ── Telegram subscribers ── */
+	.tg-subs-block { margin: 12px 0 8px; }
+	.tg-subs-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+	.tg-sub-row {
+		display: flex; align-items: center; gap: 8px;
+		background: var(--card-bg, rgba(255,255,255,0.04));
+		border: 1px solid var(--border, rgba(255,255,255,0.08));
+		border-radius: 8px; padding: 7px 10px;
+	}
+	.tg-sub-label { flex: 1; font-size: 13px; font-weight: 500; color: var(--text); }
+	.tg-sub-id { font-size: 11px; color: var(--muted); font-family: monospace; }
+	.btn-icon-sm {
+		background: none; border: none; cursor: pointer; padding: 2px 6px;
+		color: var(--muted); font-size: 14px; line-height: 1;
+		border-radius: 4px; transition: color 0.15s, background 0.15s;
+	}
+	.btn-icon-sm:hover { color: #ff6b6b; background: rgba(255,107,107,0.12); }
+	.tg-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+	.tg-actions .btn { flex: 1; min-width: 140px; font-size: 12px; text-align: center; text-decoration: none; }
+	.tg-actions .test-btn { margin-top: 0; }
 
 	/* ── Public tracking ── */
 	.setting-desc { font-size: 12px; color: var(--muted); margin: 0 0 12px; line-height: 1.5; }
