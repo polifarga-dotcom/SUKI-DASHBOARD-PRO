@@ -766,14 +766,16 @@
 
 	/* ── Wind speed bar — single row at bottom of map ── */
 	.wind-bar {
-		position: absolute; bottom: 0; left: 0; right: 0;
+		position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
 		z-index: 720;   /* above canvas, below ctrl-col(800) */
-		display: flex; align-items: center; justify-content: center; gap: 12px;
-		padding: 5px 16px;
-		background: rgba(8,12,20,0.65);
+		display: inline-flex; align-items: center; gap: 10px;
+		padding: 5px 14px;
+		background: rgba(8,12,20,0.72);
 		backdrop-filter: blur(12px);
 		-webkit-backdrop-filter: blur(12px);
-		border-top: 1px solid rgba(255,255,255,0.06);
+		border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 20px;
+		white-space: nowrap;
 		pointer-events: none;
 	}
 	.wb-title {
@@ -1003,7 +1005,7 @@
 		.ctrl-map { width: 34px; }
 
 		/* Wind bar: lift above the 42dvh bottom panel on mobile */
-		.wind-bar { bottom: 42dvh; gap: 8px; padding: 4px 10px; }
+		.wind-bar { bottom: calc(42dvh + 12px); gap: 8px; padding: 4px 10px; }
 		.wb-item { font-size: 9px; }
 
 		.pill-bar  { top: 12px; }
