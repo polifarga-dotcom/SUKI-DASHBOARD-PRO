@@ -140,6 +140,15 @@ function mapDiagToTelemetry(
       if (r.code === 'AC_INPUT_V')       payload['inv_ac_v']  ??= v;
       if (r.code === 'AC_OUTPUT_P')      payload['inv_ac_w']  ??= v;
     }
+
+    // ── GPS position (used as fallback when SignalK is offline) ──────────────
+    if (r.dbusPath === '/Position/Latitude')  payload['vrm_gps_lat'] = v;
+    if (r.dbusPath === '/Position/Longitude') payload['vrm_gps_lon'] = v;
+  }
+
+  // Stamp the VRM GPS timestamp only when we got a valid fix
+  if (payload['vrm_gps_lat'] != null && payload['vrm_gps_lon'] != null) {
+    payload['vrm_gps_at'] = new Date().toISOString();
   }
 
   if (hasSolar) {

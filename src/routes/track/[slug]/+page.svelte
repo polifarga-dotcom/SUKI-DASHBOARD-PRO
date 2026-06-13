@@ -9,14 +9,38 @@
 		wind_dir_deg: number | null; engine_on: boolean; batt_soc: number | null;
 	};
 	type BoatIcon = 'monohull' | 'catamaran' | 'trimaran' | 'motorboat';
+	type GpsSource = { lat: number; lon: number; at: string } | null;
 	type TrackerData = {
 		boat:      { name: string; slug: string; engine_count: number; boat_icon?: BoatIcon };
 		telemetry: Record<string, number | null> | null;
 		derived:   { tws_kn: number | null; twd_deg: number | null };
+		gps_sources?: { signalk: GpsSource; vrm: GpsSource; inreach: GpsSource };
 		track:     TrackPoint[];
 		trip:      { name: string | null; started_at: string; from_port: string | null; total_nm: number | null; max_sog_kn: number | null } | null;
 		generated_at: string;
 	};
+
+	type ResolvedGPS = { lat: number; lon: number; source: 'signalk' | 'vrm' | 'inreach' | 'track'; ageMs: number };
+
+	function resolveGPS(d: TrackerData): ResolvedGPS | null {
+		const now = Date.now();
+		const src = d.gps_sources;
+
+		// 1) SignalK — server already verified freshness (<5 min), trust it
+		if (src?.signalk) return { ...src.signalk, source: 'signalk', ageMs: now - new Date(src.signalk.at).getTime() };
+
+		// 2) VRM GPS — server verified freshness (<30 min)
+		if (src?.vrm)     return { ...src.vrm,     source: 'vrm',     ageMs: now - new Date(src.vrm.at).getTime()     };
+
+		// 3) InReach — server verified freshness (<2 h)
+		if (src?.inreach) return { ...src.inreach, source: 'inreach', ageMs: now - new Date(src.inreach.at).getTime() };
+
+		// 4) Last track point — always valid as last resort
+		const last = d.track.at(-1);
+		if (last?.lat && last?.lon) return { lat: last.lat, lon: last.lon, source: 'track', ageMs: now - new Date(last.logged_at).getTime() };
+
+		return null;
+	}
 
 	let data            = $state<TrackerData | null>(null);
 	let error           = $state<string | null>(null);
@@ -70,10 +94,8 @@
 
 	function centerOnBoat() {
 		if (!map || !data) return;
-		const t   = data.telemetry;
-		const lat = (t?.nav_lat ?? data.track.at(-1)?.lat) as number | null | undefined;
-		const lon = (t?.nav_lon ?? data.track.at(-1)?.lon) as number | null | undefined;
-		if (lat != null && lon != null) map.panTo([lat, lon]);
+		const gps = resolveGPS(data);
+		if (gps) map.panTo([gps.lat, gps.lon]);
 	}
 
 	// ── Wind particle canvas ────────────────────────────────────────────────
@@ -360,8 +382,9 @@
 		if (!mapEl || map) return;
 		const mod = await import('leaflet');
 		L = mod.default ?? mod;
-		const lat = data?.telemetry?.nav_lat ?? data?.track?.at(-1)?.lat ?? 39;
-		const lon = data?.telemetry?.nav_lon ?? data?.track?.at(-1)?.lon ?? 20;
+		const gps = data ? resolveGPS(data) : null;
+		const lat = gps?.lat ?? 39;
+		const lon = gps?.lon ?? 20;
 		map = L.map(mapEl, { center: [lat, lon], zoom: 11, zoomControl: false });
 
 		baseLayer = L.tileLayer(TILES.satellite.url, TILES.satellite.opts).addTo(map);
@@ -414,18 +437,16 @@
 		const boatSvg = `<div style="width:40px;height:60px;transform:rotate(${hdgDeg}deg);transform-origin:50% 50%;filter:drop-shadow(0 4px 14px rgba(0,0,0,.9))">${boatIconSvg(icon, col)}</div>`;
 		const bIcon = L.divIcon({ className:'', iconSize:[40,60], iconAnchor:[20,30], html: boatSvg });
 
-		if (t?.nav_lat != null && t?.nav_lon != null) {
+		// Use GPS fallback chain for boat marker position
+		const gps = resolveGPS(data);
+		if (gps) {
 			if (!boatMarker) {
-				boatMarker = L.marker([t.nav_lat, t.nav_lon], { icon: bIcon, zIndexOffset: 500 }).addTo(map);
-				map.setView([t.nav_lat, t.nav_lon], 12);
+				boatMarker = L.marker([gps.lat, gps.lon], { icon: bIcon, zIndexOffset: 500 }).addTo(map);
+				map.setView([gps.lat, gps.lon], 12);
 			} else {
-				boatMarker.setLatLng([t.nav_lat, t.nav_lon]);
+				boatMarker.setLatLng([gps.lat, gps.lon]);
 				boatMarker.setIcon(bIcon);
 			}
-		} else if (pts.length > 0 && !boatMarker) {
-			const last = pts.at(-1)!;
-			boatMarker = L.marker([last.lat, last.lon], { icon: bIcon, zIndexOffset: 500 }).addTo(map);
-			map.setView([last.lat, last.lon], 12);
 		}
 	}
 
@@ -488,6 +509,14 @@
 		boatStatus === 'Anchored' ? '⚓' : ''
 	);
 	const isStale = $derived(t?.updated_at != null && (Date.now() - new Date(t.updated_at as unknown as string).getTime()) > 300_000);
+
+	// GPS resolution — fallback chain: SignalK → VRM → InReach → track
+	const resolvedGPS = $derived(data ? resolveGPS(data) : null);
+	const gpsBadge = $derived(
+		resolvedGPS?.source === 'vrm'     ? 'VRM GPS'     :
+		resolvedGPS?.source === 'inreach' ? 'InReach GPS' :
+		resolvedGPS?.source === 'track'   ? 'GPS: track'  : null
+	);
 
 	// Wind compass SVG path helpers
 	const windAngle = $derived(twd ?? 0);
@@ -607,6 +636,14 @@
 		<span class="pill-dot" class:stale={isStale}></span>
 		{isStale ? 'Stale' : 'Live'} · {fmtAgo((t?.updated_at ?? null) as unknown as string)}
 	</div>
+	{#if gpsBadge}
+	<div class="pill-gps" title="GPS fallback active">
+		<svg viewBox="0 0 12 12" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+			<circle cx="6" cy="5" r="2"/><path d="M6 1v1M6 9v1M1 5h1M9 5h1M2.5 2.5l.7.7M8.8 8.8l.7.7M8.8 2.5l-.7.7M3.2 8.8l-.7.7"/>
+		</svg>
+		{gpsBadge}
+	</div>
+	{/if}
 	{#if data.trip}
 	<div class="pill-trip">
 		{data.trip.from_port ? data.trip.from_port + ' · ' : ''}{fmt1(data.trip.total_nm)} nm · {fmtDuration(data.trip.started_at)}
@@ -869,6 +906,16 @@
 	}
 	.pill-status.stale { color: #facc15; }
 	.pill-trip { font-size: 11px; color: rgba(255,255,255,0.35); }
+	.pill-gps {
+		display: flex; align-items: center; gap: 4px;
+		font-size: 10px; font-weight: 600; letter-spacing: 0.3px;
+		color: #fb923c;  /* amber — fallback GPS is a soft warning */
+		white-space: nowrap;
+		padding: 2px 7px;
+		background: rgba(251,146,60,0.12);
+		border: 1px solid rgba(251,146,60,0.3);
+		border-radius: 20px;
+	}
 	.pill-share {
 		width: 28px; height: 28px;
 		background: rgba(255,255,255,0.08);
@@ -972,7 +1019,8 @@
 	/* ── Mobile ── */
 	@media (max-width: 600px) {
 		.glass-panel {
-			left: 0; right: 0; top: auto; bottom: 0;
+			/* Reset absolute positioning so it participates in flex column of .bottom-wrap */
+			position: relative; left: auto; right: auto; top: auto; bottom: auto;
 			transform: none;
 			width: 100%; border-radius: 16px 16px 0 0;
 			max-height: 42dvh;
