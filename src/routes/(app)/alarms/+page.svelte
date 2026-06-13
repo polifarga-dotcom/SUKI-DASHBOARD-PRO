@@ -310,8 +310,9 @@
 		}
 
 		openKey = key;
-		// Fetch history lazily (only once per boat session; wind_dir handled specially inside)
-		if (!history[key]) fetchHistory(key);
+		// Fetch history lazily; check for undefined (not falsy) so an empty [] result
+		// doesn't permanently block re-fetching after a code/data update.
+		if (history[key] === undefined) fetchHistory(key);
 	}
 
 	// ── Save ──────────────────────────────────────────────────────────────────
