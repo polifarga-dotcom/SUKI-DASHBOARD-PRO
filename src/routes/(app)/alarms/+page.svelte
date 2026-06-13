@@ -215,51 +215,63 @@
 	let historyLoading = $state<Record<string, boolean>>({});
 
 	async function fetchHistory(key: SensorKey) {
-		if (!boat?.id) return;
-		historyLoading = { ...historyLoading, [key]: true };
+		// Read boat_id directly from store to avoid $derived async-closure issues
+		const boatId = $currentBoat?.id;
+		if (!boatId) return;
+		historyLoading[key] = true;
 		const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-		// wind_dir: compute TWD from heading + apparent wind angle (two columns)
-		if (key === 'wind_dir') {
-			const { data } = await supabase
-				.from('telemetry_history')
-				.select('recorded_at, nav_hdg_rad, env_awa_rad')
-				.eq('boat_id', boat.id)
-				.gte('recorded_at', since)
-				.order('recorded_at', { ascending: true })
+		try {
+			// wind_dir: compute TWD from heading + apparent wind angle (two columns)
+			if (key === 'wind_dir') {
+				const { data, error } = await supabase
+					.from('telemetry_history')
+					.select('recorded_at, nav_hdg_rad, env_awa_rad')
+					.eq('boat_id', boatId)
+					.gte('recorded_at', since)
+					.not('nav_hdg_rad', 'is', null)
+					.not('env_awa_rad', 'is', null)
+					.order('recorded_at', { ascending: true })
+					.limit(1440);
+				if (error) { console.error('[alarm chart] wind_dir:', error.message); }
+				// deno-lint-ignore no-explicit-any
+				const pts: SensorPoint[] = (data ?? []).map((row: any) => {
+					const hdg = row.nav_hdg_rad, awa = row.env_awa_rad;
+					const v = (hdg != null && awa != null)
+						? +((((hdg + awa) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1)
+						: null;
+					return { t: new Date(row.recorded_at).getTime(), v };
+				});
+				history[key] = pts;
+				historyLoading[key] = false;
+				return;
+			}
+
+			const cfg = SENSOR_HISTORY[key];
+			if (!cfg) { historyLoading[key] = false; return; }
+
+			const { data, error } = await supabase
+				.from(cfg.table)
+				.select(`${cfg.timeCol}, ${cfg.valueCol}`)
+				.eq('boat_id', boatId)
+				.gte(cfg.timeCol, since)
+				.not(cfg.valueCol, 'is', null)
+				.order(cfg.timeCol, { ascending: true })
 				.limit(1440);
+			if (error) { console.error(`[alarm chart] ${key}:`, error.message); }
 			// deno-lint-ignore no-explicit-any
-			const pts: SensorPoint[] = (data ?? []).map((row: any) => {
-				const hdg = row.nav_hdg_rad, awa = row.env_awa_rad;
-				const v = (hdg != null && awa != null)
-					? +((((hdg + awa) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1)
-					: null;
-				return { t: new Date(row.recorded_at).getTime(), v };
-			});
-			history = { ...history, [key]: pts };
-			historyLoading = { ...historyLoading, [key]: false };
-			return;
+			const pts: SensorPoint[] = (data ?? []).map((row: any) => ({
+				t: new Date(row[cfg.timeCol]).getTime(),
+				v: row[cfg.valueCol] != null
+					? (cfg.transform ? cfg.transform(row[cfg.valueCol]) : row[cfg.valueCol])
+					: null,
+			}));
+			history[key] = pts;
+			historyLoading[key] = false;
+		} catch (e) {
+			console.error(`[alarm chart] ${key} fetch failed:`, e);
+			historyLoading[key] = false;
 		}
-
-		const cfg = SENSOR_HISTORY[key];
-		if (!cfg) { historyLoading = { ...historyLoading, [key]: false }; return; }
-
-		const { data } = await supabase
-			.from(cfg.table)
-			.select(`${cfg.timeCol}, ${cfg.valueCol}`)
-			.eq('boat_id', boat.id)
-			.gte(cfg.timeCol, since)
-			.order(cfg.timeCol, { ascending: true })
-			.limit(1440);
-		// deno-lint-ignore no-explicit-any
-		const pts: SensorPoint[] = (data ?? []).map((row: any) => ({
-			t: new Date(row[cfg.timeCol]).getTime(),
-			v: row[cfg.valueCol] != null
-				? (cfg.transform ? cfg.transform(row[cfg.valueCol]) : row[cfg.valueCol])
-				: null,
-		}));
-		history = { ...history, [key]: pts };
-		historyLoading = { ...historyLoading, [key]: false };
 	}
 
 	const t = $derived($telemetry);
