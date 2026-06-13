@@ -198,17 +198,17 @@
 	} | null;
 
 	const SENSOR_HISTORY: Record<SensorKey, HistoryCfg> = {
-		// wind_speed + wind_dir use telemetry_history (written every 60s by DB trigger).
+		// All sensors use telemetry_history (written every 60s by DB trigger).
 		// log_entries is trip-only — no data at anchor.
-		wind_speed:  { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'env_aws_ms',  transform: v => +(v * 1.94384).toFixed(1) },
+		wind_speed:  { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'env_aws_ms',      transform: v => +(v * 1.94384).toFixed(1) },
 		wind_dir:    null, // handled specially in fetchHistory (needs two columns for TWD)
 		pressure:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'env_pressure_pa', transform: v => v / 100 },
-		depth:       { table: 'log_entries',       timeCol: 'logged_at',   valueCol: 'depth_m' },
-		water_temp:  { table: 'log_entries',       timeCol: 'logged_at',   valueCol: 'water_temp_c' },
-		batt_soc:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'batt_main_soc', transform: v => v * 100 },
+		depth:       { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'env_depth_m' },
+		water_temp:  { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'temp_water',      transform: v => +(v - 273.15).toFixed(1) },
+		batt_soc:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'batt_main_soc',   transform: v => v * 100 },
 		batt_volt:   { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'batt_main_v' },
-		tank_fw:     { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'tank_fw',       transform: v => v * 100 },
-		tank_dsl:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'tank_dsl',      transform: v => v * 100 },
+		tank_fw:     { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'tank_fw',         transform: v => v * 100 },
+		tank_dsl:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'tank_dsl',        transform: v => v * 100 },
 	};
 
 	let history        = $state<Record<string, SensorPoint[]>>({});
