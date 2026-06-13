@@ -552,19 +552,6 @@
 <div bind:this={mapEl} class="map-bg"></div>
 <canvas bind:this={windCanvas} class="wind-canvas"></canvas>
 
-<!-- Wind speed bar — single horizontal row at bottom of map -->
-{#if meteoWind}
-<div class="wind-bar">
-	<span class="wb-title">Wind</span>
-	{#each [['#a855f7','< 10 kn'],['#22c55e','10–20'],['#eab308','20–30'],['#ef4444','30–40'],['#7f1d1d','≥ 40']] as [col, lbl]}
-	<span class="wb-item">
-		<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="{col}"/></svg>
-		{lbl}
-	</span>
-	{/each}
-</div>
-{/if}
-
 <!-- ── Right control column ───────────────────────────────────────────────── -->
 <div class="ctrl-col">
 	<!-- Center on boat -->
@@ -627,6 +614,21 @@
 	{/if}
 	<button class="pill-share" onclick={copyLink}>{copied ? '✓' : '↑'}</button>
 </header>
+
+<!-- ── Bottom stack: wind legend + glass panel (anchored together on mobile) -->
+<div class="bottom-wrap">
+
+{#if meteoWind}
+<div class="wind-bar">
+	<span class="wb-title">Wind</span>
+	{#each [['#a855f7','< 10 kn'],['#22c55e','10–20'],['#eab308','20–30'],['#ef4444','30–40'],['#7f1d1d','≥ 40']] as [col, lbl]}
+	<span class="wb-item">
+		<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="{col}"/></svg>
+		{lbl}
+	</span>
+	{/each}
+</div>
+{/if}
 
 <!-- ── Side panel (glass) ───────────────────────────────────────────────── -->
 <aside class="glass-panel">
@@ -700,6 +702,8 @@
 	</div>
 </aside>
 
+</div><!-- /bottom-wrap -->
+
 {/if}
 </div>
 
@@ -765,10 +769,13 @@
 		pointer-events: none;
 	}
 
+	/* Desktop: wrapper is invisible — children keep their own absolute positioning */
+	.bottom-wrap { display: contents; }
+
 	/* ── Wind speed bar — single row at bottom of map ── */
 	.wind-bar {
 		position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-		z-index: 720;   /* above canvas, below ctrl-col(800) */
+		z-index: 720;
 		display: inline-flex; align-items: center; gap: 10px;
 		padding: 5px 14px;
 		background: rgba(8,12,20,0.72);
@@ -1005,8 +1012,18 @@
 		.ctrl-btn { height: 34px; width: 34px; border-radius: 8px; }
 		.ctrl-map { width: 34px; }
 
-		/* Wind bar: lift above the 42dvh bottom panel on mobile */
-		.wind-bar { bottom: calc(42dvh + 4px); gap: 8px; padding: 4px 10px; }
+		/* Bottom stack: flex column anchors wind legend directly above glass panel */
+		.bottom-wrap {
+			display: flex; flex-direction: column; align-items: center;
+			position: fixed; bottom: 0; left: 0; right: 0;
+			z-index: 720; pointer-events: none;
+		}
+		.wind-bar {
+			position: static; transform: none;
+			margin-bottom: 6px;
+			gap: 8px; padding: 4px 10px;
+		}
+		.glass-panel { pointer-events: auto; }
 		.wb-item { font-size: 9px; }
 
 		.pill-bar  { top: 12px; }
