@@ -382,6 +382,7 @@
 
 		mapReady = true;
 		updateMap();
+		centerOnBoat();   // always center on boat after initial render
 
 		// Fetch weather data from Open-Meteo (free, no API key)
 		if (lat && lon) fetchMeteoData(lat, lon);
