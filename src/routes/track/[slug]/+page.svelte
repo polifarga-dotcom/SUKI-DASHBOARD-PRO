@@ -302,6 +302,10 @@
 	function cardinal(deg: number | null) { return deg != null ? CARDS[Math.round(((deg%360)+360)%360/22.5)%16] : '—'; }
 	function fmt1(v: number | null, u = '') { return v != null ? `${v.toFixed(1)}${u}` : '—'; }
 	function fmt0(v: number | null, u = '') { return v != null ? `${v.toFixed(0)}${u}` : '—'; }
+	function fmtCoord(v: number, isLat: boolean) {
+		const dir = isLat ? (v >= 0 ? 'N' : 'S') : (v >= 0 ? 'E' : 'W');
+		return `${Math.abs(v).toFixed(5)}° ${dir}`;
+	}
 
 	function beaufortLabel(kn: number | null): string {
 		if (kn == null) return '';
@@ -511,6 +515,12 @@
 		resolvedGPS?.source === 'vrm'     ? 'VRM GPS'     :
 		resolvedGPS?.source === 'inreach' ? 'InReach GPS' :
 		resolvedGPS?.source === 'track'   ? 'GPS: track'  : null
+	);
+	const gpsSourceLabel = $derived(
+		resolvedGPS?.source === 'signalk' ? 'SignalK'       :
+		resolvedGPS?.source === 'vrm'     ? 'VRM GPS'       :
+		resolvedGPS?.source === 'inreach' ? 'Garmin InReach':
+		resolvedGPS?.source === 'track'   ? 'Track log'     : null
 	);
 
 	// Wind compass SVG path helpers
@@ -827,6 +837,13 @@
 		{/if}
 	</div>
 
+	{#if resolvedGPS}
+	<div class="gps-row">
+		{fmtCoord(resolvedGPS.lat, true)} &nbsp; {fmtCoord(resolvedGPS.lon, false)}
+		<span class="gps-src">· {gpsSourceLabel}</span>
+	</div>
+	{/if}
+
 	{#if weatherDays.length > 0}
 	<div class="divider"></div>
 	<div class="wx-strip">
@@ -1137,6 +1154,15 @@
 		line-height: 1;
 	}
 	.stat-key { font-size: 9px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
+
+	.gps-row {
+		margin-top: 8px;
+		font-size: 10px; color: rgba(255,255,255,0.38);
+		letter-spacing: 0.2px; line-height: 1.5;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+	}
+	.gps-src { color: rgba(255,255,255,0.22); margin-left: 2px; }
 
 	/* Daily weather strip */
 	.wx-strip {
