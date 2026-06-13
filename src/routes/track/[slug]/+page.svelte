@@ -684,14 +684,16 @@
 
 <!-- ── Top pill ─────────────────────────────────────────────────────────── -->
 <header class="pill-bar">
-	<div class="pill-name">{data.boat.name}</div>
-	{#if data.boat.callsign || data.boat.mmsi}
-	<div class="pill-ident">
-		{#if data.boat.callsign}<span>{data.boat.callsign}</span>{/if}
-		{#if data.boat.callsign && data.boat.mmsi}<span class="pill-ident-sep">·</span>{/if}
-		{#if data.boat.mmsi}<span>MMSI {data.boat.mmsi}</span>{/if}
+	<div class="pill-name-block">
+		<div class="pill-name">{data.boat.name}</div>
+		{#if data.boat.callsign || data.boat.mmsi}
+		<div class="pill-ident">
+			{#if data.boat.callsign}<span>{data.boat.callsign}</span>{/if}
+			{#if data.boat.callsign && data.boat.mmsi}<span class="pill-ident-sep">·</span>{/if}
+			{#if data.boat.mmsi}<span>MMSI {data.boat.mmsi}</span>{/if}
+		</div>
+		{/if}
 	</div>
-	{/if}
 	<div class="pill-status" class:stale={isStale}>
 		<span class="pill-dot" class:stale={isStale}></span>
 		{isStale ? 'Stale' : 'Live'} · {fmtAgo((t?.updated_at ?? null) as unknown as string)}
@@ -1018,6 +1020,9 @@
 		white-space: nowrap;
 		max-width: calc(100vw - 32px);
 		overflow: hidden;
+	}
+	.pill-name-block {
+		display: flex; flex-direction: column; gap: 1px;
 	}
 	.pill-name {
 		font-size: 14px; font-weight: 700;
