@@ -30,6 +30,8 @@
 		engine_count?: 1 | 2;
 		boat_icon?: string;
 		gps_to_bow_m?: number;
+		callsign?: string;
+		mmsi?: string;
 	}) {
 		if (!$currentBoat?.id) {
 			unitMessage = 'Error: No boat selected';
@@ -763,6 +765,28 @@
 				/>
 				<span class="gps-bow-unit">m</span>
 			</div>
+		</div>
+
+		<!-- Callsign + MMSI -->
+		<div class="setting-row" style="margin-top:8px">
+			<div class="setting-label">
+				<h3>Callsign</h3>
+				<p>Shown on the public tracking page</p>
+			</div>
+			<input class="settings-input ident-input" type="text" maxlength="12" placeholder="z.B. OE5XXX"
+				value={($currentBoat as any)?.callsign ?? ''}
+				onchange={(e) => saveUnitSettings({ callsign: (e.target as HTMLInputElement).value.trim().toUpperCase() || undefined })}
+			/>
+		</div>
+		<div class="setting-row">
+			<div class="setting-label">
+				<h3>MMSI</h3>
+				<p>9-stellige Maritime Mobile Service Identity</p>
+			</div>
+			<input class="settings-input ident-input" type="text" maxlength="9" inputmode="numeric" placeholder="123456789"
+				value={($currentBoat as any)?.mmsi ?? ''}
+				onchange={(e) => saveUnitSettings({ mmsi: (e.target as HTMLInputElement).value.trim() || undefined })}
+			/>
 		</div>
 
 		{#if unitMessage}
@@ -1541,5 +1565,13 @@
 	}
 	.gps-bow-input input:focus { border-color: var(--accent); }
 	.gps-bow-unit { font-size: 12px; color: var(--muted); }
+	.ident-input {
+		width: 140px; height: 36px; padding: 0 10px;
+		background: var(--card2); border: 1px solid var(--border);
+		border-radius: 8px; color: var(--text);
+		font-size: 14px; font-weight: 600; outline: none;
+		letter-spacing: 0.5px;
+	}
+	.ident-input:focus { border-color: var(--accent); }
 
 </style>
