@@ -111,14 +111,14 @@ Deno.serve(async (req: Request) => {
     return new Response('Method Not Allowed', { status: 405, headers: CORS });
   }
 
-  let body: { api_key?: unknown; data?: unknown };
+  let body: { api_key?: unknown; data?: unknown; vessel_meta?: unknown };
   try {
     body = await req.json();
   } catch {
     return json({ error: 'Invalid JSON' }, 400);
   }
 
-  const { api_key, data } = body;
+  const { api_key, data, vessel_meta } = body;
 
   if (typeof api_key !== 'string' || !api_key) {
     return json({ error: 'Unauthorized' }, 401);
@@ -174,6 +174,20 @@ Deno.serve(async (req: Request) => {
       if (safe['nav_lon']    == null) safe['nav_lon']    = vrm.nav_lon;
       if (safe['nav_sog_ms'] == null && vrm.nav_sog_ms != null) safe['nav_sog_ms'] = vrm.nav_sog_ms;
       console.log(`[signalk-ingest] VRM GPS fallback: ${vrm.nav_lat.toFixed(5)},${vrm.nav_lon.toFixed(5)}`);
+    }
+  }
+
+  // ── Auto-populate vessel metadata (mmsi / callsign) from SignalK ─────────
+  // Plugin reads these once at startup from vessels.self and sends them in
+  // the first batch. Only write non-empty values; never overwrite with empty.
+  if (vessel_meta && typeof vessel_meta === 'object' && !Array.isArray(vessel_meta)) {
+    const meta = vessel_meta as Record<string, unknown>;
+    const boatUpdate: Record<string, string> = {};
+    if (typeof meta.mmsi     === 'string' && meta.mmsi.trim())     boatUpdate.mmsi     = meta.mmsi.trim();
+    if (typeof meta.callsign === 'string' && meta.callsign.trim()) boatUpdate.callsign = meta.callsign.trim().toUpperCase();
+    if (Object.keys(boatUpdate).length > 0) {
+      await supabase.from('boats').update(boatUpdate).eq('id', cfg.boat_id);
+      console.log(`[signalk-ingest] vessel meta: ${JSON.stringify(boatUpdate)}`);
     }
   }
 

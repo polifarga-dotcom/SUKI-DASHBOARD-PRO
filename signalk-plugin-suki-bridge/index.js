@@ -451,6 +451,22 @@ module.exports = function (app) {
 
       app.debug(`Starting — endpoint: ${url}, interval: ${interval_ms}ms`);
 
+      // ── Vessel metadata (read once at startup) ───────────────────────────────
+      // MMSI and callsign are static vessel properties in SignalK — not a stream.
+      // We read them once and attach to the first batch so signalk-ingest can
+      // auto-populate boats.mmsi / boats.callsign without manual entry.
+      let _vesselMeta = null;
+      {
+        const mmsi     = app.getSelfPath('mmsi');
+        const callsign = app.getSelfPath('communication.callsignVhf');
+        if (mmsi || callsign) {
+          _vesselMeta = {};
+          if (mmsi     && typeof mmsi     === 'string') _vesselMeta.mmsi     = mmsi.trim();
+          if (callsign && typeof callsign === 'string') _vesselMeta.callsign = callsign.trim().toUpperCase();
+          app.debug(`Vessel meta: mmsi=${mmsi ?? '—'} callsign=${callsign ?? '—'}`);
+        }
+      };
+
       // ── Subscribe to static PATH_MAP paths ──────────────────────────────────
       const paths = Object.keys(PATH_MAP);
       unsubscribes = paths.map(path => {
@@ -580,10 +596,14 @@ module.exports = function (app) {
         if (Object.keys(payload).length === 0) return;
 
         try {
+          // Attach vessel metadata (mmsi/callsign) to the first batch only
+          const body = { api_key, data: payload };
+          if (_vesselMeta) { body.vessel_meta = _vesselMeta; _vesselMeta = null; }
+
           const res = await fetch(url, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ api_key, data: payload }),
+            body:    JSON.stringify(body),
           });
 
           if (!res.ok) {
