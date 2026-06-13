@@ -57,6 +57,14 @@
 			</svg>`
 		},
 		{
+			href: '/alarms', label: 'Alarms',
+			icon: `<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M10 2.5 Q13.5 3 14.5 7 L15 13 H5 L5.5 7 Q6.5 3 10 2.5Z"/>
+				<line x1="8.2" y1="15" x2="11.8" y2="15"/>
+				<line x1="10" y1="2.5" x2="10" y2="1.5"/>
+			</svg>`
+		},
+		{
 			href: '/settings', label: 'Settings',
 			icon: `<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 				<line x1="3" y1="6" x2="17" y2="6"/>
@@ -69,8 +77,10 @@
 
 	let pollTimer:  ReturnType<typeof setInterval>;
 	let clockTimer: ReturnType<typeof setInterval>;
+	let alarmBadge:  ReturnType<typeof setInterval>;
 	let clockStr       = $state('--:--');
 	let boatPickerOpen = $state(false);
+	let alarmingCount  = $state(0);
 
 	// Generation counter — incremented on every boat switch.
 	// Each in-flight fetchTelemetry captures its generation at call time and
@@ -180,13 +190,27 @@
 		}
 
 		fetchTelemetry();
+		fetchAlarmBadge();
 		pollTimer  = setInterval(fetchTelemetry, 3000);
 		clockTimer = setInterval(updateClock, 10000);
+		alarmBadge = setInterval(fetchAlarmBadge, 30000);
 	});
+
+	async function fetchAlarmBadge() {
+		const boat = $currentBoat;
+		if (!boat) return;
+		const { count } = await supabase
+			.from('sensor_alarms')
+			.select('id', { count: 'exact', head: true })
+			.eq('boat_id', boat.id)
+			.eq('state', 'alarming');
+		alarmingCount = count ?? 0;
+	}
 
 	onDestroy(() => {
 		clearInterval(pollTimer);
 		clearInterval(clockTimer);
+		clearInterval(alarmBadge);
 	});
 
 	// Superadmin check via direct store subscription — most reliable approach.
@@ -357,7 +381,12 @@
 				class="tab-item"
 				class:active={currentPath.startsWith(tab.href)}
 			>
-				<span class="tab-icon">{@html tab.icon}</span>
+				<span class="tab-icon-wrap">
+					<span class="tab-icon">{@html tab.icon}</span>
+					{#if tab.href === '/alarms' && alarmingCount > 0}
+					<span class="alarm-badge"></span>
+					{/if}
+				</span>
 			</a>
 		{/each}
 		<button class="tab-item tab-signout" onclick={signOut} title="Sign out">
@@ -513,7 +542,13 @@
 		background: rgba(0, 200, 255, 0.06);
 	}
 	.tab-item:hover:not(.active) { color: var(--text); }
+	.tab-icon-wrap { position: relative; display: flex; align-items: center; }
 	.tab-icon { display: flex; align-items: center; line-height: 0; }
+	.alarm-badge {
+		position: absolute; top: -2px; right: -4px;
+		width: 7px; height: 7px; border-radius: 50%;
+		background: #ff4040; border: 1.5px solid var(--card);
+	}
 	.tab-signout { flex: 0 0 48px; }
 	.tab-signout:hover { color: var(--red); }
 

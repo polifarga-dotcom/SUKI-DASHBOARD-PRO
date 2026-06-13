@@ -317,3 +317,19 @@ export type TemperatureSensor = {
   created_at: string;
   updated_at: string;
 };
+
+export type SensorAlarm = {
+  id: string;
+  boat_id: string;
+  sensor: string;
+  enabled: boolean;
+  threshold_value: number | null;
+  threshold_direction: 'above' | 'below' | 'deviation';
+  hysteresis: number | null;
+  grace_period_s: number;
+  state: 'ok' | 'grace' | 'alarming';
+  grace_started_at: string | null;
+  last_alarmed_at: string | null;
+  alarm_count: number;
+  updated_at: string;
+};
