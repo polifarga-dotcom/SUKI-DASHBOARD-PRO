@@ -40,15 +40,71 @@
 	let windAnimFrame: number | null = null;
 	let meteoWind = $state<{ speed_ms: number; dir_deg: number } | null>(null);
 
-	async function fetchMeteoWind(lat: number, lon: number) {
+	type WeatherDay = { date: string; wmo: number; tMax: number; tMin: number; windMax: number; };
+	let weatherDays = $state<WeatherDay[]>([]);
+	let waterTempC  = $state<number | null>(null);
+
+	function wmoIcon(code: number): string {
+		if (code === 0)  return '☀️';
+		if (code <= 3)   return '⛅';
+		if (code <= 48)  return '🌫';
+		if (code <= 55)  return '🌦';
+		if (code <= 67)  return '🌧';
+		if (code <= 77)  return '❄️';
+		if (code <= 82)  return '🌦';
+		if (code <= 86)  return '🌨';
+		return '⛈';
+	}
+
+	function wxDayLabel(dateStr: string): string {
+		const [y, mo, d] = dateStr.split('-').map(Number);
+		const dt    = new Date(y, mo - 1, d);
+		const today = new Date(); today.setHours(0,0,0,0);
+		const tom   = new Date(today); tom.setDate(today.getDate() + 1);
+		if (dt.getTime() === today.getTime()) return 'Today';
+		if (dt.getTime() === tom.getTime())   return 'Tmrw';
+		return dt.toLocaleDateString('en', { weekday: 'short' });
+	}
+
+	async function fetchMeteoData(lat: number, lon: number) {
 		try {
-			const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}&current=windspeed_10m,winddirection_10m&wind_speed_unit=ms&forecast_days=1`;
-			const res  = await fetch(url);
-			const json = await res.json();
-			const c    = json?.current;
+			const [wxRes, marineRes] = await Promise.all([
+				fetch(
+					`https://api.open-meteo.com/v1/forecast` +
+					`?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}` +
+					`&current=windspeed_10m,winddirection_10m` +
+					`&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max` +
+					`&wind_speed_unit=kn&forecast_days=4&timezone=auto`
+				),
+				fetch(
+					`https://marine-api.open-meteo.com/v1/marine` +
+					`?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}` +
+					`&current=sea_surface_temperature&forecast_days=1`
+				).catch(() => null),
+			]);
+			const json = await wxRes.json();
+			// Current wind → particles (kn → m/s)
+			const c = json?.current;
 			if (c?.windspeed_10m != null && c?.winddirection_10m != null) {
-				meteoWind = { speed_ms: c.windspeed_10m, dir_deg: c.winddirection_10m };
+				meteoWind = { speed_ms: c.windspeed_10m / 1.94384, dir_deg: c.winddirection_10m };
 				startWindParticles();
+			}
+			// Daily forecast
+			const dly = json?.daily;
+			if (dly?.time) {
+				weatherDays = (dly.time as string[]).map((date, i) => ({
+					date,
+					wmo:     dly.weathercode[i] ?? 0,
+					tMax:    Math.round(dly.temperature_2m_max[i] ?? 0),
+					tMin:    Math.round(dly.temperature_2m_min[i] ?? 0),
+					windMax: Math.round(dly.windspeed_10m_max[i] ?? 0),
+				}));
+			}
+			// Water temp from marine API
+			if (marineRes?.ok) {
+				const mj = await marineRes.json();
+				const sst = mj?.current?.sea_surface_temperature;
+				if (sst != null) waterTempC = Math.round(sst * 10) / 10;
 			}
 		} catch { /* meteo optional — no error shown */ }
 	}
@@ -259,8 +315,8 @@
 		mapReady = true;
 		updateMap();
 
-		// Fetch live wind from Open-Meteo (free, no API key)
-		if (lat && lon) fetchMeteoWind(lat, lon);
+		// Fetch weather data from Open-Meteo (free, no API key)
+		if (lat && lon) fetchMeteoData(lat, lon);
 	}
 
 	// ── Boat icon SVGs (top-down view, bow pointing up) ───────────────────────
@@ -336,9 +392,8 @@
 	const awaRaw  = $derived(t?.env_awa_rad != null ? +(t.env_awa_rad * 180 / Math.PI) : null);
 	const baro    = $derived(t?.env_pressure_pa != null ? Math.round(t.env_pressure_pa / 100) : null);
 	const depth   = $derived(t?.env_depth_m ?? null);
-	const battSoc = $derived(t?.batt_main_soc != null ? Math.round(t.batt_main_soc * 100) : null);
-	const solar   = $derived(t?.solar_total_w ?? null);  // telemetry from SignalK plugin
-	const engOn   = $derived((t?.eng_rpm ?? 0) > 0 || (t?.eng_sb_rpm ?? 0) > 0);
+	const waterTemp = $derived(t?.temp_water != null ? Math.round(t.temp_water * 10) / 10 : waterTempC);
+	const engOn     = $derived((t?.eng_rpm ?? 0) > 0 || (t?.eng_sb_rpm ?? 0) > 0);
 	// Status: Anchored ≤ 1.5 kn, Motoring when engine on, Sailing otherwise
 	const boatStatus = $derived(
 		sog == null             ? null :
@@ -356,7 +411,7 @@
 		boatStatus === 'Motoring' ? '🔴' :
 		boatStatus === 'Anchored' ? '⚓' : ''
 	);
-	const isStale = $derived(t?.updated_at != null && (Date.now() - new Date(t.updated_at as string).getTime()) > 300_000);
+	const isStale = $derived(t?.updated_at != null && (Date.now() - new Date(t.updated_at as unknown as string).getTime()) > 300_000);
 
 	// Wind compass SVG path helpers
 	const windAngle = $derived(twd ?? 0);
@@ -428,7 +483,7 @@
 	<div class="pill-name">{data.boat.name}</div>
 	<div class="pill-status" class:stale={isStale}>
 		<span class="pill-dot" class:stale={isStale}></span>
-		{isStale ? 'Stale' : 'Live'} · {fmtAgo(t?.updated_at ?? null)}
+		{isStale ? 'Stale' : 'Live'} · {fmtAgo((t?.updated_at ?? null) as unknown as string)}
 	</div>
 	{#if data.trip}
 	<div class="pill-trip">
@@ -476,31 +531,33 @@
 		</div>
 		{/if}
 
-		{#if battSoc != null}
-		<div class="stat-item">
-			<div class="stat-val" style="color:{battSoc>50?'#4ade80':battSoc>20?'#facc15':'#f87171'}">{battSoc}%</div>
-			<div class="stat-key">battery</div>
-		</div>
-		{/if}
-		{#if solar != null && solar > 0}
-		<div class="stat-item">
-			<div class="stat-val">{Math.round(solar)}</div>
-			<div class="stat-key">W solar</div>
-		</div>
-		{/if}
 		{#if data.trip?.max_sog_kn != null}
 		<div class="stat-item">
 			<div class="stat-val">{data.trip.max_sog_kn.toFixed(1)}</div>
 			<div class="stat-key">kn max</div>
 		</div>
 		{/if}
-		{#if (t?.tank_fw ?? null) != null}
+		{#if waterTemp != null}
 		<div class="stat-item">
-			<div class="stat-val">{Math.round((t!.tank_fw as number)*100)}%</div>
-			<div class="stat-key">fresh H₂O</div>
+			<div class="stat-val" style="color:#38bdf8">{waterTemp}°C</div>
+			<div class="stat-key">water</div>
 		</div>
 		{/if}
 	</div>
+
+	{#if weatherDays.length > 0}
+	<div class="divider"></div>
+	<div class="wx-strip">
+		{#each weatherDays.slice(0, 4) as day}
+		<div class="wx-day">
+			<div class="wx-day-label">{wxDayLabel(day.date)}</div>
+			<div class="wx-day-icon">{wmoIcon(day.wmo)}</div>
+			<div class="wx-day-wind" style="color:{beaufortColor(day.windMax)}">{day.windMax}<span class="wx-day-unit">kn</span></div>
+			<div class="wx-day-temp">{day.tMax}°<span class="wx-day-lo">/{day.tMin}°</span></div>
+		</div>
+		{/each}
+	</div>
+	{/if}
 
 	<div class="panel-footer">
 		{data.track.length} pts · 7 day track
@@ -663,22 +720,6 @@
 
 	.divider { height: 1px; background: rgba(255,255,255,0.06); margin: 0 0 10px; }
 
-	/* Wind */
-	.wind-block { padding-bottom: 10px; }
-	.wind-nums {
-		display: flex; gap: 16px; align-items: flex-end; margin-bottom: 8px;
-	}
-	.wind-big {
-		font-size: 30px; font-weight: 700; letter-spacing: -1px;
-		font-variant-numeric: tabular-nums; line-height: 1;
-	}
-	.wind-unit { font-size: 11px; color: rgba(255,255,255,0.35); letter-spacing: 0.5px; margin-top: 2px; }
-	.wind-meta-row {
-		display: flex; flex-wrap: wrap; gap: 8px;
-		font-size: 11px; color: rgba(255,255,255,0.4);
-	}
-	.wind-meta-row span { white-space: nowrap; }
-
 	/* Stats grid */
 	.stats-grid {
 		display: grid; grid-template-columns: 1fr 1fr;
@@ -696,6 +737,32 @@
 		line-height: 1;
 	}
 	.stat-key { font-size: 9px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
+
+	/* Daily weather strip */
+	.wx-strip {
+		display: grid; grid-template-columns: repeat(4, 1fr);
+		gap: 4px; padding-bottom: 8px;
+	}
+	.wx-day {
+		display: flex; flex-direction: column; align-items: center; gap: 3px;
+		background: rgba(255,255,255,0.04);
+		border: 1px solid rgba(255,255,255,0.05);
+		border-radius: 10px; padding: 7px 4px;
+	}
+	.wx-day-label {
+		font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+		color: rgba(255,255,255,0.35);
+	}
+	.wx-day-icon { font-size: 18px; line-height: 1; }
+	.wx-day-wind {
+		font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+	}
+	.wx-day-unit { font-size: 8px; font-weight: 400; color: rgba(255,255,255,0.4); margin-left: 1px; }
+	.wx-day-temp {
+		font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;
+		color: rgba(255,255,255,0.8);
+	}
+	.wx-day-lo { color: rgba(255,255,255,0.35); }
 
 	.panel-footer {
 		font-size: 10px; color: rgba(255,255,255,0.2);
@@ -718,16 +785,10 @@
 			display: flex; align-items: baseline; gap: 18px;
 			padding-bottom: 8px; flex-wrap: wrap;
 		}
-		.speed-block-main { display: flex; flex-direction: column; }
-		.speed-num { font-size: 32px; }
+.speed-num { font-size: 32px; }
 		.speed-unit { font-size: 11px; }
 		.speed-meta { font-size: 10px; margin-top: 2px; }
 		.status-badge { margin-top: 4px; font-size: 10px; padding: 2px 8px; }
-
-		.wind-block { padding-bottom: 8px; }
-		.wind-big  { font-size: 24px; }
-		.wind-nums { gap: 12px; margin-bottom: 5px; }
-		.wind-meta-row { gap: 5px; font-size: 10px; }
 
 		.divider { margin: 0 0 8px; }
 
