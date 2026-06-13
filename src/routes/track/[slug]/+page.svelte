@@ -77,7 +77,7 @@
 	}
 
 	// ── Wind particle canvas ────────────────────────────────────────────────
-	let windCanvas: HTMLCanvasElement | null = null;
+	let windCanvas = $state<HTMLCanvasElement | null>(null);
 	let windAnimFrame: number | null = null;
 	let meteoWind = $state<{ speed_ms: number; dir_deg: number } | null>(null);
 
@@ -435,6 +435,13 @@
 	$effect(() => {
 		if (mapEl && !map) {
 			initMap();
+		}
+	});
+
+	// Restart particles whenever wind data or canvas becomes available
+	$effect(() => {
+		if (windCanvas && meteoWind) {
+			resizeWindCanvas();
 		}
 	});
 
