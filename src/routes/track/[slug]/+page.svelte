@@ -1006,7 +1006,7 @@
 		.ctrl-map { width: 34px; }
 
 		/* Wind bar: lift above the 42dvh bottom panel on mobile */
-		.wind-bar { bottom: calc(42dvh + 12px); gap: 8px; padding: 4px 10px; }
+		.wind-bar { bottom: calc(42dvh + 4px); gap: 8px; padding: 4px 10px; }
 		.wb-item { font-size: 9px; }
 
 		.pill-bar  { top: 12px; }
