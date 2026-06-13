@@ -811,6 +811,15 @@
 
 	<div class="divider"></div>
 
+	<div class="gps-row">
+		{#if resolvedGPS}
+			{fmtCoord(resolvedGPS.lat, true)} &nbsp; {fmtCoord(resolvedGPS.lon, false)}
+			<span class="gps-src">· {gpsSourceLabel}</span>
+		{:else}
+			<span style="color:rgba(255,255,255,0.15)">GPS: —</span>
+		{/if}
+	</div>
+
 	<!-- Stats grid (incl. wind tiles) -->
 	<div class="stats-grid">
 		{#if aws != null}
@@ -843,15 +852,6 @@
 			<div class="stat-val" style="color:#38bdf8">{waterTemp}°C</div>
 			<div class="stat-key">water</div>
 		</div>
-		{/if}
-	</div>
-
-	<div class="gps-row">
-		{#if resolvedGPS}
-			{fmtCoord(resolvedGPS.lat, true)} &nbsp; {fmtCoord(resolvedGPS.lon, false)}
-			<span class="gps-src">· {gpsSourceLabel}</span>
-		{:else}
-			<span style="color:rgba(255,255,255,0.15)">GPS: —</span>
 		{/if}
 	</div>
 
@@ -1033,7 +1033,7 @@
 	.pill-ident {
 		font-size: 10px; color: rgba(255,255,255,0.35);
 		letter-spacing: 0.4px;
-		display: flex; align-items: center; gap: 5px;
+		display: flex; align-items: center; justify-content: center; gap: 5px;
 	}
 	.pill-ident-sep { color: rgba(255,255,255,0.18); }
 	.pill-status {
@@ -1176,10 +1176,10 @@
 	.stat-key { font-size: 9px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
 
 	.gps-row {
-		margin-top: 8px;
+		margin-bottom: 8px;
 		font-size: 10px; color: rgba(255,255,255,0.38);
 		letter-spacing: 0.2px; line-height: 1.5;
-		text-align: center;
+		text-align: left;
 		font-variant-numeric: tabular-nums;
 	}
 	.gps-src { color: rgba(255,255,255,0.22); margin-left: 2px; }
