@@ -1024,7 +1024,7 @@
 		overflow: hidden;
 	}
 	.pill-name-block {
-		display: flex; flex-direction: column; align-items: center; gap: 1px;
+		display: block; text-align: center;
 	}
 	.pill-name {
 		font-size: 14px; font-weight: 700;
@@ -1033,9 +1033,9 @@
 	.pill-ident {
 		font-size: 10px; color: rgba(255,255,255,0.35);
 		letter-spacing: 0.4px;
-		display: flex; align-items: center; justify-content: center; gap: 5px;
+		margin-top: 1px;
 	}
-	.pill-ident-sep { color: rgba(255,255,255,0.18); }
+	.pill-ident-sep { color: rgba(255,255,255,0.18); margin: 0 2px; }
 	.pill-status {
 		display: flex; align-items: center; gap: 5px;
 		font-size: 12px; color: rgba(255,255,255,0.5);
