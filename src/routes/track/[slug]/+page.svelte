@@ -11,7 +11,7 @@
 	type BoatIcon = 'monohull' | 'catamaran' | 'trimaran' | 'motorboat';
 	type GpsSource = { lat: number; lon: number; at: string } | null;
 	type TrackerData = {
-		boat:      { name: string; slug: string; engine_count: number; boat_icon?: BoatIcon };
+		boat:      { name: string; slug: string; engine_count: number; boat_icon?: BoatIcon; callsign?: string | null; mmsi?: string | null };
 		telemetry: Record<string, number | null> | null;
 		derived:   { tws_kn: number | null; twd_deg: number | null };
 		gps_sources?: { signalk: GpsSource; vrm: GpsSource; inreach: GpsSource };
@@ -846,12 +846,14 @@
 		{/if}
 	</div>
 
-	{#if resolvedGPS}
 	<div class="gps-row">
-		{fmtCoord(resolvedGPS.lat, true)} &nbsp; {fmtCoord(resolvedGPS.lon, false)}
-		<span class="gps-src">· {gpsSourceLabel}</span>
+		{#if resolvedGPS}
+			{fmtCoord(resolvedGPS.lat, true)} &nbsp; {fmtCoord(resolvedGPS.lon, false)}
+			<span class="gps-src">· {gpsSourceLabel}</span>
+		{:else}
+			<span style="color:rgba(255,255,255,0.15)">GPS: —</span>
+		{/if}
 	</div>
-	{/if}
 
 	{#if weatherDays.length > 0}
 	<div class="divider"></div>
