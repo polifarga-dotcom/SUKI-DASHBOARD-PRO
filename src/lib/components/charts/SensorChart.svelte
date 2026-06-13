@@ -159,16 +159,27 @@
 		class="chart-svg"
 		style="touch-action:none"
 	>
-		<!-- Threshold zone (subtle) -->
+		<defs>
+			<linearGradient id="area-fill" x1="0" y1="0" x2="0" y2="1">
+				<stop offset="0%"   stop-color="rgba(0,200,255,0.35)" />
+				<stop offset="100%" stop-color="rgba(0,200,255,0)" />
+			</linearGradient>
+			<linearGradient id="zone-fill" x1="0" y1="0" x2="0" y2="1">
+				<stop offset="0%"   stop-color="rgba(255,60,60,0.18)" />
+				<stop offset="100%" stop-color="rgba(255,60,60,0)" />
+			</linearGradient>
+		</defs>
+
+		<!-- Threshold zone (gradient) -->
 		{#if zoneD}
-		<path d={zoneD} fill="rgba(255,60,60,0.05)" />
+		<path d={zoneD} fill="url(#zone-fill)" />
 		{/if}
 
-		<!-- Area under curve -->
-		<path d={areaD} fill="rgba(0,200,255,0.07)" />
+		<!-- Area under curve (gradient infill) -->
+		<path d={areaD} fill="url(#area-fill)" />
 
 		<!-- Smooth line -->
-		<path d={smoothD} fill="none" stroke="rgba(0,200,255,0.7)" stroke-width="1.2" />
+		<path d={smoothD} fill="none" stroke="rgba(0,200,255,0.85)" stroke-width="1.4" />
 
 		<!-- Threshold line -->
 		{#if threshY != null}
