@@ -126,8 +126,9 @@
 		const BASE_PX = 0.5;
 		const pxPerFrame = Math.max(0.3, speed_ms * BASE_PX);
 		const rad = dir_deg * Math.PI / 180;
-		const vx  = Math.sin(rad) * pxPerFrame;
-		const vy  = -Math.cos(rad) * pxPerFrame;
+		// dir_deg is meteorological FROM direction. Negate to get TO direction.
+		const vx  = -Math.sin(rad) * pxPerFrame;
+		const vy  =  Math.cos(rad) * pxPerFrame;
 
 		// Wind-coded colour (subtle cyan→amber→red)
 		const r = speed_ms < 8 ? 14 : speed_ms < 15 ? 250 : 244;
@@ -478,6 +479,16 @@
 <!-- Wind particle canvas — rendered on top of the map, pointer-events:none -->
 <canvas bind:this={windCanvas} class="wind-canvas"></canvas>
 
+<!-- ── Wind legend ───────────────────────────────────────────────────────── -->
+{#if meteoWind}
+<div class="wind-legend">
+	<div class="wind-legend-title">Wind</div>
+	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:rgb(14,165,233)"></span>&lt; 16 kn</div>
+	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:rgb(250,204,21)"></span>16–29 kn</div>
+	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:rgb(244,63,21)"></span>≥ 29 kn</div>
+</div>
+{/if}
+
 <!-- ── Top pill ─────────────────────────────────────────────────────────── -->
 <header class="pill-bar">
 	<div class="pill-name">{data.boat.name}</div>
@@ -633,6 +644,33 @@
 		z-index: 800;          /* above all Leaflet layers (markers=600, popups=700) */
 		pointer-events: none;  /* clicks pass through to map */
 		/* No mix-blend-mode — particles are visible on their own */
+	}
+
+	/* ── Wind legend ── */
+	.wind-legend {
+		position: absolute; bottom: 80px; right: 16px;
+		z-index: 800;
+		padding: 7px 10px;
+		background: rgba(8,12,20,0.72);
+		backdrop-filter: blur(16px);
+		-webkit-backdrop-filter: blur(16px);
+		border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 10px;
+		display: flex; flex-direction: column; gap: 4px;
+	}
+	.wind-legend-title {
+		font-size: 9px; font-weight: 700; text-transform: uppercase;
+		letter-spacing: 0.8px; color: rgba(255,255,255,0.35);
+		margin-bottom: 2px;
+	}
+	.wind-legend-row {
+		display: flex; align-items: center; gap: 6px;
+		font-size: 11px; color: rgba(255,255,255,0.7);
+		font-variant-numeric: tabular-nums;
+	}
+	.wind-legend-dot {
+		width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+		opacity: 0.85;
 	}
 
 	/* ── Top pill bar ── */
@@ -802,6 +840,9 @@
 		.stat-key  { font-size: 8px; margin-top: 2px; }
 
 		.panel-footer { display: none; }
+
+		/* On mobile the bottom panel is ~42dvh tall — push legend above it */
+		.wind-legend { bottom: calc(42dvh + 12px); right: 12px; }
 
 		.pill-bar  { top: 12px; }
 		.pill-trip { display: none; }
