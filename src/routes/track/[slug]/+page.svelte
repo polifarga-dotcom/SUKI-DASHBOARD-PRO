@@ -85,16 +85,42 @@
 	let weatherDays = $state<WeatherDay[]>([]);
 	let waterTempC  = $state<number | null>(null);
 
-	function wmoIcon(code: number): string {
-		if (code === 0)  return '☀️';
-		if (code <= 3)   return '⛅';
-		if (code <= 48)  return '🌫';
-		if (code <= 55)  return '🌦';
-		if (code <= 67)  return '🌧';
-		if (code <= 77)  return '❄️';
-		if (code <= 82)  return '🌦';
-		if (code <= 86)  return '🌨';
-		return '⛈';
+	// SVG weather icons — no emoji
+	function wmoSvg(code: number): string {
+		const sun = `<circle cx="10" cy="10" r="3.8" fill="#fbbf24"/>
+			<g stroke="#fbbf24" stroke-width="1.4" stroke-linecap="round">
+				<line x1="10" y1="1.5" x2="10" y2="4"/><line x1="10" y1="16" x2="10" y2="18.5"/>
+				<line x1="1.5" y1="10" x2="4" y2="10"/><line x1="16" y1="10" x2="18.5" y2="10"/>
+				<line x1="3.8" y1="3.8" x2="5.5" y2="5.5"/><line x1="14.5" y1="14.5" x2="16.2" y2="16.2"/>
+				<line x1="3.8" y1="16.2" x2="5.5" y2="14.5"/><line x1="14.5" y1="5.5" x2="16.2" y2="3.8"/>
+			</g>`;
+		const cloud = `<path d="M3.5 13 Q3.5 10 7 10 Q8.5 7 12 7.5 Q15.5 8 15.5 11 Q17.5 11 17.5 13.5 Q17.5 16 14.5 16 H6.5 Q3.5 16 3.5 13Z" fill="#94a3b8"/>`;
+		const suncld = `<circle cx="7" cy="8.5" r="3.2" fill="#fbbf24"/>
+			<path d="M5 14 Q5 11.5 8 11.5 Q9 9 11.5 9.5 Q14 10 14 12 Q15.5 12 15.5 14 Q15.5 16 13.5 16 H6.5 Q5 16 5 14Z" fill="#94a3b8"/>`;
+		const rain = `${cloud}
+			<g stroke="#60a5fa" stroke-width="1.4" stroke-linecap="round">
+				<line x1="7.5" y1="17.5" x2="6.5" y2="20"/><line x1="10.5" y1="17.5" x2="9.5" y2="20"/><line x1="13.5" y1="17.5" x2="12.5" y2="20"/>
+			</g>`;
+		const snow = `${cloud}
+			<g stroke="#bae6fd" stroke-width="1.4" stroke-linecap="round">
+				<line x1="7.5" y1="17.5" x2="7.5" y2="20"/><line x1="10.5" y1="17.5" x2="10.5" y2="20"/><line x1="13.5" y1="17.5" x2="13.5" y2="20"/>
+			</g>`;
+		const storm = `<path d="M3.5 13 Q3.5 10 7 10 Q8.5 7 12 7.5 Q15.5 8 15.5 11 Q17.5 11 17.5 13.5 Q17.5 16 14.5 16 H6.5 Q3.5 16 3.5 13Z" fill="#475569"/>
+			<path d="M11 17 L9 20.5 L11 19.5 L10 23 L13 18 L11 19 Z" fill="#fbbf24"/>`;
+		const fog = `<g stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round">
+			<line x1="3" y1="8" x2="17" y2="8"/><line x1="4" y1="11" x2="16" y2="11"/><line x1="5" y1="14" x2="15" y2="14"/>
+			</g>`;
+		let inner: string;
+		if (code === 0)        inner = sun;
+		else if (code <= 3)    inner = suncld;
+		else if (code <= 48)   inner = fog;
+		else if (code <= 55)   inner = rain;
+		else if (code <= 67)   inner = rain;
+		else if (code <= 77)   inner = snow;
+		else if (code <= 82)   inner = rain;
+		else if (code <= 86)   inner = snow;
+		else                   inner = storm;
+		return `<svg viewBox="0 0 20 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
 	}
 
 	function wxDayLabel(dateStr: string): string {
@@ -515,10 +541,24 @@
 
 {:else if data}
 
-<!-- ── Map (full screen background) ────────────────────────────────────── -->
-<div bind:this={mapEl} class="map-bg"></div>
-<!-- Wind particle canvas — rendered on top of the map, pointer-events:none -->
-<canvas bind:this={windCanvas} class="wind-canvas"></canvas>
+<!-- ── Map area (canvas clipped here, glass panel stays clean) ──────────── -->
+<div class="map-area">
+	<div bind:this={mapEl} class="map-bg"></div>
+	<canvas bind:this={windCanvas} class="wind-canvas"></canvas>
+
+	<!-- Wind speed bar — single horizontal row at bottom of map -->
+	{#if meteoWind}
+	<div class="wind-bar">
+		<span class="wb-title">Wind</span>
+		{#each [['#a855f7','< 10 kn'],['#22c55e','10–20'],['#eab308','20–30'],['#ef4444','30–40'],['#7f1d1d','≥ 40']] as [col, lbl]}
+		<span class="wb-item">
+			<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="{col}"/></svg>
+			{lbl}
+		</span>
+		{/each}
+	</div>
+	{/if}
+</div>
 
 <!-- ── Right control column ───────────────────────────────────────────────── -->
 <div class="ctrl-col">
@@ -536,12 +576,29 @@
 	<div class="ctrl-sep"></div>
 
 	<!-- Map type -->
-	{#each (['nautical', 'satellite', 'street'] as const) as mt}
-	<button class="ctrl-btn ctrl-map" class:active={mapType === mt} onclick={() => switchMapType(mt)}>
-		<span class="ctrl-icon">{TILES[mt].icon}</span>
-		<span class="ctrl-label">{TILES[mt].label}</span>
+	<button class="ctrl-btn ctrl-map" class:active={mapType === 'nautical'} onclick={() => switchMapType('nautical')} title="Nautical">
+		<svg class="ctrl-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+			<circle cx="8" cy="4" r="1.8"/><line x1="8" y1="5.8" x2="8" y2="14"/>
+			<line x1="4.5" y1="8.5" x2="11.5" y2="8.5"/>
+			<path d="M4.5 14 Q4.5 11 8 11 Q11.5 11 11.5 14"/>
+		</svg>
+		<span class="ctrl-label">Nautical</span>
 	</button>
-	{/each}
+	<button class="ctrl-btn ctrl-map" class:active={mapType === 'satellite'} onclick={() => switchMapType('satellite')} title="Satellite">
+		<svg class="ctrl-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+			<rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
+			<line x1="1.5" y1="5.8" x2="14.5" y2="5.8"/><line x1="1.5" y1="10.2" x2="14.5" y2="10.2"/>
+			<line x1="5.8" y1="1.5" x2="5.8" y2="14.5"/><line x1="10.2" y1="1.5" x2="10.2" y2="14.5"/>
+		</svg>
+		<span class="ctrl-label">Satellite</span>
+	</button>
+	<button class="ctrl-btn ctrl-map" class:active={mapType === 'street'} onclick={() => switchMapType('street')} title="Street">
+		<svg class="ctrl-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M2 4 L6 2 L10 4 L14 2 L14 13 L10 15 L6 13 L2 15 Z"/>
+			<line x1="6" y1="2" x2="6" y2="13"/><line x1="10" y1="4" x2="10" y2="15"/>
+		</svg>
+		<span class="ctrl-label">Street</span>
+	</button>
 
 	<div class="ctrl-sep"></div>
 
@@ -635,7 +692,7 @@
 		{#each weatherDays.slice(0, 4) as day}
 		<div class="wx-day">
 			<div class="wx-day-label">{wxDayLabel(day.date)}</div>
-			<div class="wx-day-icon">{wmoIcon(day.wmo)}</div>
+			<div class="wx-day-icon">{@html wmoSvg(day.wmo)}</div>
 			<div class="wx-day-wind" style="color:{beaufortColor(day.windMax)}">{day.windMax}<span class="wx-day-unit">kn</span></div>
 			<div class="wx-day-temp">{day.tMax}°<span class="wx-day-lo">/{day.tMin}°</span></div>
 		</div>
@@ -704,19 +761,42 @@
 	.gate-btn:disabled { opacity: 0.4; cursor: default; }
 	.gate-error { font-size: 13px; color: #f87171; margin: 0; }
 
-	/* ── Map full background ── */
-	.map-bg {
+	/* ── Map area — clips wind canvas so it never bleeds onto glass panels ── */
+	.map-area {
 		position: absolute; inset: 0;
+		overflow: hidden;    /* canvas clipped here */
 		z-index: 0;
 	}
-	/* No vignette — the dark tiles are enough contrast */
-
-	/* ── Wind particle canvas ── */
+	.map-bg {
+		position: absolute; inset: 0;
+	}
 	.wind-canvas {
 		position: absolute; inset: 0;
-		z-index: 800;          /* above all Leaflet layers (markers=600, popups=700) */
-		pointer-events: none;  /* clicks pass through to map */
-		/* No mix-blend-mode — particles are visible on their own */
+		z-index: 2;
+		pointer-events: none;
+	}
+
+	/* ── Wind speed bar — single row at bottom of map area ── */
+	.wind-bar {
+		position: absolute; bottom: 0; left: 0; right: 0;
+		z-index: 4;
+		display: flex; align-items: center; justify-content: center; gap: 12px;
+		padding: 5px 16px;
+		background: rgba(8,12,20,0.65);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		border-top: 1px solid rgba(255,255,255,0.06);
+		pointer-events: none;
+	}
+	.wb-title {
+		font-size: 9px; font-weight: 700; text-transform: uppercase;
+		letter-spacing: 0.8px; color: rgba(255,255,255,0.35);
+		margin-right: 4px;
+	}
+	.wb-item {
+		display: flex; align-items: center; gap: 4px;
+		font-size: 10px; color: rgba(255,255,255,0.65);
+		font-variant-numeric: tabular-nums; white-space: nowrap;
 	}
 
 	/* ── Right control column ── */
@@ -756,32 +836,6 @@
 
 	.ctrl-sep { height: 1px; background: rgba(255,255,255,0.07); margin: 2px 0; }
 
-	/* ── Wind legend — bottom-right on desktop, bottom-left on mobile ── */
-	.wind-legend {
-		position: absolute; bottom: 16px; right: 16px;
-		z-index: 800;
-		padding: 7px 10px;
-		background: rgba(8,12,20,0.78);
-		backdrop-filter: blur(18px);
-		-webkit-backdrop-filter: blur(18px);
-		border: 1px solid rgba(255,255,255,0.08);
-		border-radius: 10px;
-		display: flex; flex-direction: column; gap: 4px;
-	}
-	.wind-legend-title {
-		font-size: 9px; font-weight: 700; text-transform: uppercase;
-		letter-spacing: 0.8px; color: rgba(255,255,255,0.35);
-		margin-bottom: 2px;
-	}
-	.wind-legend-row {
-		display: flex; align-items: center; gap: 6px;
-		font-size: 11px; color: rgba(255,255,255,0.7);
-		font-variant-numeric: tabular-nums;
-	}
-	.wind-legend-dot {
-		width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-		opacity: 0.85;
-	}
 
 	/* ── Top pill bar ── */
 	.pill-bar {
@@ -958,8 +1012,9 @@
 		.ctrl-btn { height: 34px; width: 34px; border-radius: 8px; }
 		.ctrl-map { width: 34px; }
 
-		/* Wind legend: above bottom panel, stay left so panel doesn't cover it */
-		.wind-legend { bottom: calc(42dvh + 12px); left: 12px; }
+		/* Wind bar: lift above the 42dvh bottom panel on mobile */
+		.wind-bar { bottom: 42dvh; gap: 8px; padding: 4px 10px; }
+		.wb-item { font-size: 9px; }
 
 		.pill-bar  { top: 12px; }
 		.pill-trip { display: none; }
