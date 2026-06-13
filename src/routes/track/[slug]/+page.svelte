@@ -130,10 +130,13 @@
 		const vx  = -Math.sin(rad) * pxPerFrame;
 		const vy  =  Math.cos(rad) * pxPerFrame;
 
-		// Wind-coded colour (subtle cyan→amber→red)
-		const r = speed_ms < 8 ? 14 : speed_ms < 15 ? 250 : 244;
-		const g = speed_ms < 8 ? 165 : speed_ms < 15 ? 204 : 63;
-		const b = speed_ms < 8 ? 233 : speed_ms < 15 ? 21 : 21;
+		// PredictWind colour scale: purple → green → yellow → red → black
+		const kn = speed_ms * 1.94384;
+		const [r, g, b] = kn < 10 ? [168, 85, 247]   // purple
+		                : kn < 20 ? [34, 197, 94]     // green
+		                : kn < 30 ? [234, 179, 8]     // yellow
+		                : kn < 40 ? [239, 68, 68]     // red
+		                :           [80, 20, 20];     // near-black (dark red)
 
 		const N = Math.max(80, Math.min(200, Math.round(speed_ms * 12)));
 		const particles: Particle[] = [];
@@ -224,13 +227,14 @@
 		if (kn < 41) return 'Gale';
 		return 'Severe gale+';
 	}
+	// PredictWind colour scale: purple → green → yellow → red → black
 	function beaufortColor(kn: number | null) {
 		if (kn == null) return '#64748b';
-		if (kn < 7)  return '#22d3ee';
-		if (kn < 17) return '#4ade80';
-		if (kn < 28) return '#facc15';
-		if (kn < 41) return '#f97316';
-		return '#f43f5e';
+		if (kn < 10) return '#a855f7';
+		if (kn < 20) return '#22c55e';
+		if (kn < 30) return '#eab308';
+		if (kn < 40) return '#ef4444';
+		return '#3f0f0f';
 	}
 	function sogColor(kn: number | null) {
 		if (kn == null || kn < 0.5) return '#475569';
@@ -483,9 +487,11 @@
 {#if meteoWind}
 <div class="wind-legend">
 	<div class="wind-legend-title">Wind</div>
-	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:rgb(14,165,233)"></span>&lt; 16 kn</div>
-	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:rgb(250,204,21)"></span>16–29 kn</div>
-	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:rgb(244,63,21)"></span>≥ 29 kn</div>
+	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:#a855f7"></span>&lt; 10 kn</div>
+	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:#22c55e"></span>10–20 kn</div>
+	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:#eab308"></span>20–30 kn</div>
+	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:#ef4444"></span>30–40 kn</div>
+	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:#3f0f0f; border:1px solid rgba(255,255,255,0.2)"></span>≥ 40 kn</div>
 </div>
 {/if}
 
