@@ -1024,7 +1024,7 @@
 		overflow: hidden;
 	}
 	.pill-name-block {
-		display: flex; flex-direction: column; gap: 1px;
+		display: flex; flex-direction: column; align-items: center; gap: 1px;
 	}
 	.pill-name {
 		font-size: 14px; font-weight: 700;
