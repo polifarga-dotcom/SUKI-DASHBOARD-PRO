@@ -994,14 +994,16 @@
 
 		.divider { margin: 0 0 8px; }
 
-		/* 3-column stats grid — much more compact */
+		/* Single-row flex — all tiles in one line regardless of count */
 		.stats-grid {
-			grid-template-columns: repeat(3, 1fr);
-			gap: 5px; padding-bottom: 8px;
+			display: flex; gap: 4px; padding-bottom: 8px;
 		}
-		.stat-item { padding: 5px 7px; border-radius: 8px; }
-		.stat-val  { font-size: 13px; }
-		.stat-key  { font-size: 8px; margin-top: 2px; }
+		.stat-item {
+			flex: 1 1 0; min-width: 0;
+			padding: 5px 4px; border-radius: 8px;
+		}
+		.stat-val  { font-size: 11px; }
+		.stat-key  { font-size: 7px; margin-top: 2px; }
 
 		.panel-footer { display: none; }
 
