@@ -202,13 +202,33 @@
 		// log_entries is trip-only — no data at anchor.
 		wind_speed:  { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'env_aws_ms',      transform: v => +(v * 1.94384).toFixed(1) },
 		wind_dir:    null, // handled specially in fetchHistory (needs two columns for TWD)
-		pressure:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'env_pressure_pa', transform: v => v / 100 },
+		pressure:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'env_pressure_pa', transform: v => +(v / 100).toFixed(1) },
 		depth:       { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'env_depth_m' },
 		water_temp:  { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'temp_water',      transform: v => +(v - 273.15).toFixed(1) },
-		batt_soc:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'batt_main_soc',   transform: v => v * 100 },
+		batt_soc:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'batt_main_soc',   transform: v => +(v * 100).toFixed(1) },
 		batt_volt:   { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'batt_main_v' },
-		tank_fw:     { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'tank_fw',         transform: v => v * 100 },
-		tank_dsl:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'tank_dsl',        transform: v => v * 100 },
+		tank_fw:     { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'tank_fw',         transform: v => +(v * 100).toFixed(1) },
+		tank_dsl:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'tank_dsl',        transform: v => +(v * 100).toFixed(1) },
+	};
+
+	// Chart color per sensor (RGB triplet for rgba())
+	const SENSOR_COLOR: Record<SensorKey, string> = {
+		wind_speed:  '100,180,255',   // sky blue
+		wind_dir:    '160,120,255',   // compass purple
+		pressure:    '160,190,220',   // steel grey-blue
+		depth:       '30,140,210',    // ocean blue
+		water_temp:  '0,210,150',     // aqua-teal
+		batt_soc:    '60,210,90',     // green
+		batt_volt:   '190,230,60',    // yellow-green
+		tank_fw:     '80,200,255',    // light blue
+		tank_dsl:    '255,165,40',    // amber
+	};
+
+	// Minimum Y-axis span in data units (prevents ultra-flat lines for slow-changing sensors)
+	const SENSOR_MIN_RANGE: Partial<Record<SensorKey, number>> = {
+		pressure:   4,    // hPa
+		batt_volt:  0.5,  // V
+		water_temp: 2,    // °C
 	};
 
 	let history        = $state<Record<string, SensorPoint[]>>({});
@@ -412,6 +432,8 @@
 					threshold={parseFloat(editThreshold[key]) || null}
 					thresholdDir={def.direction}
 					loading={historyLoading[key] ?? false}
+					color={SENSOR_COLOR[key]}
+					minRange={SENSOR_MIN_RANGE[key]}
 				/>
 
 				<!-- Enable toggle -->

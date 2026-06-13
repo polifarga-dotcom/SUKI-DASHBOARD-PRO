@@ -7,8 +7,11 @@
 		threshold?:   number | null;
 		thresholdDir?: 'above' | 'below' | 'deviation' | null;
 		loading?:     boolean;
+		color?:       string;   // RGB components e.g. "0,200,255"
+		minRange?:    number;   // minimum Y-axis span in data units
 	}
-	let { points = [], unit = '', threshold = null, thresholdDir = null, loading = false }: Props = $props();
+	let { points = [], unit = '', threshold = null, thresholdDir = null, loading = false,
+	      color = '0,200,255', minRange = 0 }: Props = $props();
 
 	// ── SVG coordinate space ─────────────────────────────────────────────────
 	const W = 600, H = 62;
@@ -28,14 +31,28 @@
 	const rawMin = $derived(hasData ? Math.min(...validVals) : 0);
 	const rawMax = $derived(hasData ? Math.max(...validVals) : 1);
 
-	// Expand domain to include threshold if outside data range (so it's always visible)
-	const domMin = $derived(threshold != null ? Math.min(rawMin, threshold) : rawMin);
-	const domMax = $derived(threshold != null ? Math.max(rawMax, threshold) : rawMax);
-	const domRange = $derived(Math.max(domMax - domMin, 0.001));
+	// Apply minRange: expand symmetrically around midpoint if data range is too small
+	const mid       = $derived((rawMin + rawMax) / 2);
+	const halfSpan  = $derived(Math.max((rawMax - rawMin) / 2, minRange / 2));
+	const expandMin = $derived(mid - halfSpan);
+	const expandMax = $derived(mid + halfSpan);
+
+	// Include threshold in domain so it's always visible
+	const domMin = $derived(threshold != null ? Math.min(expandMin, threshold) : expandMin);
+	const domMax = $derived(threshold != null ? Math.max(expandMax, threshold) : expandMax);
+
+	// 8% padding top + bottom so the line never clips the edges
+	const domPad   = $derived(Math.max((domMax - domMin) * 0.08, 0.001));
+	const padMin   = $derived(domMin - domPad);
+	const domRange = $derived(domMax - domMin + 2 * domPad);
 
 	// ── Coordinate helpers ───────────────────────────────────────────────────
 	function tx(t: number): number { return PL + ((t - tMin) / tRange) * IW; }
-	function vy(v: number): number { return PT + (1 - (v - domMin) / domRange) * IH; }
+	function vy(v: number): number { return PT + (1 - (v - padMin) / domRange) * IH; }
+
+	// Unique gradient ID derived from color so multiple charts can coexist
+	const gradId = $derived(`sg${color.replaceAll(',', '')}`);
+	const zoneId = $derived(`sz${color.replaceAll(',', '')}`);
 
 	// ── Catmull-Rom smoothing (from TripCharts) ──────────────────────────────
 	const TENSION = 1.0;
@@ -150,7 +167,7 @@
 	<div class="chart-empty">No data for this period</div>
 	{:else}
 	<div class="chart-val-row">
-		<span class="chart-val-label">{fmtVal(cursorVal)} {unit}</span>
+		<span class="chart-val-label" style="color: rgba({color},1)">{fmtVal(cursorVal)} {unit}</span>
 		<span class="chart-time-label">{new Date(cursorTime).toUTCString().slice(17, 22)} UTC</span>
 	</div>
 	<svg
@@ -160,11 +177,11 @@
 		style="touch-action:none"
 	>
 		<defs>
-			<linearGradient id="area-fill" x1="0" y1="0" x2="0" y2="1">
-				<stop offset="0%"   stop-color="rgba(0,200,255,0.35)" />
-				<stop offset="100%" stop-color="rgba(0,200,255,0)" />
+			<linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+				<stop offset="0%"   stop-color="rgba({color},0.35)" />
+				<stop offset="100%" stop-color="rgba({color},0)" />
 			</linearGradient>
-			<linearGradient id="zone-fill" x1="0" y1="0" x2="0" y2="1">
+			<linearGradient id={zoneId} x1="0" y1="0" x2="0" y2="1">
 				<stop offset="0%"   stop-color="rgba(255,60,60,0.18)" />
 				<stop offset="100%" stop-color="rgba(255,60,60,0)" />
 			</linearGradient>
@@ -172,14 +189,14 @@
 
 		<!-- Threshold zone (gradient) -->
 		{#if zoneD}
-		<path d={zoneD} fill="url(#zone-fill)" />
+		<path d={zoneD} fill="url(#{zoneId})" />
 		{/if}
 
 		<!-- Area under curve (gradient infill) -->
-		<path d={areaD} fill="url(#area-fill)" />
+		<path d={areaD} fill="url(#{gradId})" />
 
 		<!-- Smooth line -->
-		<path d={smoothD} fill="none" stroke="rgba(0,200,255,0.85)" stroke-width="1.4" />
+		<path d={smoothD} fill="none" stroke="rgba({color},0.9)" stroke-width="1.4" />
 
 		<!-- Threshold line -->
 		{#if threshY != null}
@@ -196,7 +213,7 @@
 		/>
 		{#if cursorVal != null}
 		{@const cy = vy(cursorVal)}
-		<circle cx={cursorX} cy={cy} r="2.5" fill="var(--accent)" />
+		<circle cx={cursorX} cy={cy} r="2.5" fill="rgba({color},1)" />
 		{/if}
 
 		<!-- Time axis labels -->
@@ -232,7 +249,7 @@
 		padding: 6px 8px 2px;
 	}
 	.chart-val-label {
-		font-size: 12px; font-weight: 600; color: var(--accent);
+		font-size: 12px; font-weight: 600;
 		font-variant-numeric: tabular-nums;
 	}
 	.chart-time-label {
