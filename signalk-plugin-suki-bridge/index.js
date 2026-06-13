@@ -17,6 +17,10 @@
  * Standard SignalK paths are mapped to SUKI's telemetry columns.
  * Victron-specific paths (solar total) use the Victron SignalK plugin conventions.
  *
+ * v1.0.20 — Enforce minimum 30 s send interval to stay within Supabase free-plan
+ *   edge-function quota. The interval is clamped in code regardless of the stored
+ *   config value, so existing users get the new behaviour automatically on update.
+ *
  * v1.0.10 — Add Venus-priority source filter to the V/A/W discovery subscriptions.
  *   Victron MPPT solar chargers report their output voltage on the same SignalK
  *   path as the BMV (e.g. electrical.batteries.278.voltage), causing 14.15 V
@@ -432,14 +436,17 @@ module.exports = function (app) {
         interval_ms: {
           type:        'number',
           title:       'Send interval (ms)',
-          description: 'How often to push data to the dashboard. Default 5000 ms = 5 seconds.',
-          default:     5000,
+          description: 'How often to push data to the dashboard. Minimum 30000 ms (30 s) — values below 30 s are clamped automatically.',
+          default:     30000,
+          minimum:     30000,
         },
       },
     },
 
     start (config) {
-      const { api_key, interval_ms = 5000 } = config || {};
+      const { api_key, interval_ms: _interval_ms = 30000 } = config || {};
+      // Enforce minimum 30 s — clamps legacy configs stored with 5000 ms.
+      const interval_ms = Math.max(_interval_ms, 30000);
       const url = 'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/signalk-ingest';
       // Offline log buffer endpoint — same base URL, different function
       const logUrl = url.replace('/signalk-ingest', '/ingest-log-entries');
