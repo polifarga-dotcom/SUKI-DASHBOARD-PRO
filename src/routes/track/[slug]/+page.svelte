@@ -33,7 +33,48 @@
 	let map: any = null;
 	let boatMarker: any  = null;
 	let trackLine: any   = null;
+	let baseLayer: any   = null;
+	let seamarkLayer: any = null;
 	let refreshTimer: ReturnType<typeof setInterval>;
+
+	type MapType = 'nautical' | 'satellite' | 'street';
+	let mapType = $state<MapType>('nautical');
+
+	const TILES: Record<MapType, { url: string; opts: Record<string, unknown>; label: string; icon: string }> = {
+		nautical: {
+			url:  'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+			opts: { attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 19 },
+			label: 'Nautical', icon: '⚓',
+		},
+		satellite: {
+			url:  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+			opts: { attribution: '© Esri, Maxar', maxZoom: 19 },
+			label: 'Satellite', icon: '🛰',
+		},
+		street: {
+			url:  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+			opts: { attribution: '© OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19 },
+			label: 'OSM', icon: '🗺',
+		},
+	};
+
+	function switchMapType(t: MapType) {
+		if (!map || !L || t === mapType) return;
+		if (baseLayer) map.removeLayer(baseLayer);
+		const def = TILES[t];
+		baseLayer = L.tileLayer(def.url, def.opts).addTo(map);
+		baseLayer.bringToBack();
+		seamarkLayer?.bringToFront();
+		mapType = t;
+	}
+
+	function centerOnBoat() {
+		if (!map || !data) return;
+		const t   = data.telemetry;
+		const lat = (t?.nav_lat ?? data.track.at(-1)?.lat) as number | null | undefined;
+		const lon = (t?.nav_lon ?? data.track.at(-1)?.lon) as number | null | undefined;
+		if (lat != null && lon != null) map.panTo([lat, lon]);
+	}
 
 	// ── Wind particle canvas ────────────────────────────────────────────────
 	let windCanvas: HTMLCanvasElement | null = null;
@@ -297,14 +338,10 @@
 		const lon = data?.telemetry?.nav_lon ?? data?.track?.at(-1)?.lon ?? 20;
 		map = L.map(mapEl, { center: [lat, lon], zoom: 11, zoomControl: false });
 
-		L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-			attribution: '© OpenStreetMap contributors © CARTO',
-			subdomains: 'abcd',
-			maxZoom: 19,
-		}).addTo(map);
+		baseLayer = L.tileLayer(TILES.nautical.url, TILES.nautical.opts).addTo(map);
 
 		// OpenSeaMap nautical overlay (transparent PNG on top)
-		L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+		seamarkLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
 			maxZoom: 18, opacity: 0.7,
 		}).addTo(map);
 
@@ -483,6 +520,24 @@
 <!-- Wind particle canvas — rendered on top of the map, pointer-events:none -->
 <canvas bind:this={windCanvas} class="wind-canvas"></canvas>
 
+<!-- ── Map controls ──────────────────────────────────────────────────────── -->
+<div class="map-controls-tr">
+	{#each (['nautical', 'satellite', 'street'] as const) as mt}
+	<button class="map-type-btn" class:active={mapType === mt} onclick={() => switchMapType(mt)}>
+		{TILES[mt].icon} {TILES[mt].label}
+	</button>
+	{/each}
+</div>
+<button class="center-btn" onclick={centerOnBoat} title="Center on boat">
+	<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+		<circle cx="10" cy="10" r="3.5"/>
+		<line x1="10" y1="1" x2="10" y2="5.5"/>
+		<line x1="10" y1="14.5" x2="10" y2="19"/>
+		<line x1="1" y1="10" x2="5.5" y2="10"/>
+		<line x1="14.5" y1="10" x2="19" y2="10"/>
+	</svg>
+</button>
+
 <!-- ── Wind legend ───────────────────────────────────────────────────────── -->
 {#if meteoWind}
 <div class="wind-legend">
@@ -651,6 +706,42 @@
 		pointer-events: none;  /* clicks pass through to map */
 		/* No mix-blend-mode — particles are visible on their own */
 	}
+
+	/* ── Map controls: type switcher (top-right) + center btn (above legend) ── */
+	.map-controls-tr {
+		position: absolute; top: 70px; right: 16px;
+		z-index: 800;
+		display: flex; gap: 5px;
+	}
+	.map-type-btn {
+		padding: 6px 11px;
+		background: rgba(8,12,20,0.72);
+		backdrop-filter: blur(16px);
+		-webkit-backdrop-filter: blur(16px);
+		border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 8px;
+		color: rgba(255,255,255,0.55);
+		font-size: 11px; font-weight: 600;
+		cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s;
+		white-space: nowrap;
+	}
+	.map-type-btn:hover  { color: #fff; background: rgba(255,255,255,0.1); }
+	.map-type-btn.active { color: #fff; background: rgba(14,165,233,0.2); border-color: rgba(14,165,233,0.5); }
+
+	.center-btn {
+		position: absolute; bottom: 210px; right: 16px;
+		z-index: 800;
+		width: 36px; height: 36px;
+		background: rgba(8,12,20,0.72);
+		backdrop-filter: blur(16px);
+		-webkit-backdrop-filter: blur(16px);
+		border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 8px;
+		color: rgba(255,255,255,0.7);
+		cursor: pointer; transition: background 0.15s, color 0.15s;
+		display: flex; align-items: center; justify-content: center;
+	}
+	.center-btn:hover { color: #fff; background: rgba(255,255,255,0.12); }
 
 	/* ── Wind legend ── */
 	.wind-legend {
@@ -847,8 +938,13 @@
 
 		.panel-footer { display: none; }
 
-		/* On mobile the bottom panel is ~42dvh tall — push legend above it */
-		.wind-legend { bottom: calc(42dvh + 12px); right: 12px; }
+		/* On mobile the bottom panel is ~42dvh tall — push legend + center btn above it */
+		.wind-legend  { bottom: calc(42dvh + 12px); right: 12px; }
+		.center-btn   { bottom: calc(42dvh + 130px); right: 12px; }
+
+		/* Map type switcher: move below pill bar (pill is at top: 12px, ~36px tall) */
+		.map-controls-tr { top: 58px; right: 12px; }
+		.map-type-btn { font-size: 10px; padding: 5px 8px; }
 
 		.pill-bar  { top: 12px; }
 		.pill-trip { display: none; }
