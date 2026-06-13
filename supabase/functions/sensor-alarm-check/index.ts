@@ -43,8 +43,11 @@ type SensorDef = {
 
 type TelRow = {
   env_aws_ms: number | null;
+  env_awa_rad: number | null;
   env_twa_rad: number | null;
   nav_hdg_rad: number | null;
+  nav_cog_rad: number | null;
+  nav_sog_ms: number | null;
   env_pressure_pa: number | null;
   env_depth_m: number | null;
   temp_water: number | null;
@@ -64,9 +67,26 @@ const SENSOR_DEFS: Record<string, SensorDef> = {
   wind_dir: {
     label: 'Wind Direction', unit: '°', emoji: '🧭',
     extract: (t) => {
-      if (t.nav_hdg_rad == null || t.env_twa_rad == null) return null;
-      const twd = ((t.nav_hdg_rad + t.env_twa_rad) * 180 / Math.PI % 360 + 360) % 360;
-      return +twd.toFixed(1);
+      if (t.nav_hdg_rad == null) return null;
+      // Prefer TWA directly from SignalK
+      if (t.env_twa_rad != null) {
+        return +((t.nav_hdg_rad + t.env_twa_rad) * 180 / Math.PI % 360 + 360) % 360;
+      }
+      // Fallback: derive from AWS/AWA/SOG vector math
+      if (t.env_aws_ms != null && t.env_awa_rad != null && t.nav_sog_ms != null) {
+        const cog = t.nav_cog_rad ?? t.nav_hdg_rad;
+        const bx = t.nav_sog_ms * Math.cos(cog - t.nav_hdg_rad);
+        const by = t.nav_sog_ms * Math.sin(cog - t.nav_hdg_rad);
+        const twX = t.env_aws_ms * Math.cos(t.env_awa_rad) - bx;
+        const twY = t.env_aws_ms * Math.sin(t.env_awa_rad) - by;
+        const twaRad = Math.atan2(twY, twX);
+        return +((t.nav_hdg_rad + twaRad) * 180 / Math.PI % 360 + 360) % 360;
+      }
+      // Last resort: heading + AWA (accurate at anchor when SOG ≈ 0)
+      if (t.env_awa_rad != null) {
+        return +((t.nav_hdg_rad + t.env_awa_rad) * 180 / Math.PI % 360 + 360) % 360;
+      }
+      return null;
     },
     defaultDirection: 'deviation', defaultThreshold: 0, defaultHysteresis: 20,
   },
@@ -220,7 +240,8 @@ Deno.serve(async (req: Request) => {
     const { data: tel } = await supabase
       .from('telemetry')
       .select(
-        'env_aws_ms, env_twa_rad, nav_hdg_rad, env_pressure_pa, env_depth_m,' +
+        'env_aws_ms, env_awa_rad, env_twa_rad, nav_hdg_rad, nav_cog_rad, nav_sog_ms,' +
+        'env_pressure_pa, env_depth_m,' +
         'temp_water, batt_main_soc, batt_main_v, tank_fw, tank_dsl, updated_at'
       )
       .eq('boat_id', boatId)

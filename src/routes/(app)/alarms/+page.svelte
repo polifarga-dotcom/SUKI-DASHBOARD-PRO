@@ -46,8 +46,27 @@
 					<text x="10" y="17" text-anchor="middle" font-size="5" fill="currentColor" stroke="none">N</text>
 				</svg>`,
 				getValue: (t) => {
-					if (t?.nav_hdg_rad == null || t?.env_twa_rad == null) return null;
-					return +((((t.nav_hdg_rad + t.env_twa_rad) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1);
+					if (!t || t.nav_hdg_rad == null) return null;
+					// Prefer TWA directly from SignalK
+					if (t.env_twa_rad != null) {
+						return +((((t.nav_hdg_rad + t.env_twa_rad) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1);
+					}
+					// Fallback: derive TWA from AWS/AWA/SOG vector math (same as public-boat-tracker)
+					if (t.env_aws_ms != null && t.env_awa_rad != null && t.nav_sog_ms != null) {
+						const hdg = t.nav_hdg_rad;
+						const cog = t.nav_cog_rad ?? hdg;
+						const bx = t.nav_sog_ms * Math.cos(cog - hdg);
+						const by = t.nav_sog_ms * Math.sin(cog - hdg);
+						const twX = t.env_aws_ms * Math.cos(t.env_awa_rad) - bx;
+						const twY = t.env_aws_ms * Math.sin(t.env_awa_rad) - by;
+						const twaRad = Math.atan2(twY, twX);
+						return +((((t.nav_hdg_rad + twaRad) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1);
+					}
+					// Last resort: heading + AWA (accurate when stationary, e.g. at anchor)
+					if (t.env_awa_rad != null) {
+						return +((((t.nav_hdg_rad + t.env_awa_rad) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1);
+					}
+					return null;
 				},
 			}
 		},
