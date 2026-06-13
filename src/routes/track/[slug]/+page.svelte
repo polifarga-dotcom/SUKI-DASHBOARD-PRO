@@ -607,17 +607,6 @@
 	<button class="ctrl-btn ctrl-zoom" onclick={() => map?.zoomOut()}>−</button>
 </div>
 
-<!-- ── Wind legend (bottom-left) ─────────────────────────────────────────── -->
-{#if meteoWind}
-<div class="wind-legend">
-	<div class="wind-legend-title">Wind</div>
-	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:#a855f7"></span>&lt; 10 kn</div>
-	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:#22c55e"></span>10–20 kn</div>
-	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:#eab308"></span>20–30 kn</div>
-	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:#ef4444"></span>30–40 kn</div>
-	<div class="wind-legend-row"><span class="wind-legend-dot" style="background:#3f0f0f; border:1px solid rgba(255,255,255,0.2)"></span>≥ 40 kn</div>
-</div>
-{/if}
 
 <!-- ── Top pill ─────────────────────────────────────────────────────────── -->
 <header class="pill-bar">
@@ -772,14 +761,14 @@
 	}
 	.wind-canvas {
 		position: absolute; inset: 0;
-		z-index: 2;
+		z-index: 700;   /* above Leaflet tiles(200) and markers(600), within map-area context */
 		pointer-events: none;
 	}
 
 	/* ── Wind speed bar — single row at bottom of map area ── */
 	.wind-bar {
 		position: absolute; bottom: 0; left: 0; right: 0;
-		z-index: 4;
+		z-index: 800;
 		display: flex; align-items: center; justify-content: center; gap: 12px;
 		padding: 5px 16px;
 		background: rgba(8,12,20,0.65);
