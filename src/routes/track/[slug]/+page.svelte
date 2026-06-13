@@ -525,8 +525,14 @@
 	const wy = $derived(44 - 30 * Math.cos(windAngle * Math.PI / 180));
 
 	let copied = $state(false);
-	function copyLink() {
-		navigator.clipboard.writeText(window.location.href).catch(() => {});
+	async function shareOrCopy() {
+		const url   = window.location.href;
+		const title = `${data?.boat?.name ?? 'SUKI'} · Live Tracker`;
+		const text  = data?.boat?.name ? `Verfolge ${data.boat.name} live` : 'Live Boat Tracker';
+		if (navigator.share) {
+			try { await navigator.share({ title, text, url }); return; } catch { /* user cancelled */ }
+		}
+		navigator.clipboard.writeText(url).catch(() => {});
 		copied = true; setTimeout(() => { copied = false; }, 2000);
 	}
 
@@ -693,7 +699,19 @@
 		</svg>
 	</button>
 	{/if}
-	<button class="pill-share" onclick={copyLink}>{copied ? '✓' : '↑'}</button>
+	<button class="pill-share" onclick={shareOrCopy} title="Teilen">
+		{#if copied}
+		<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<polyline points="2,7 5.5,11 12,3"/>
+		</svg>
+		{:else}
+		<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M8 2v9"/>
+			<path d="M5 5L8 2l3 3"/>
+			<path d="M4 8H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1h-1"/>
+		</svg>
+		{/if}
+	</button>
 </header>
 
 {#if showIOSTip}
