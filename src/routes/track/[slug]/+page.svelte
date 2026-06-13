@@ -345,7 +345,7 @@
 			maxZoom: 18, opacity: 0.7,
 		}).addTo(map);
 
-		L.control.zoom({ position: 'bottomright' }).addTo(map);
+		// zoom handled by custom buttons in ctrl-col
 
 		// Wind canvas — sized to match the map container
 		if (windCanvas) {
@@ -520,25 +520,37 @@
 <!-- Wind particle canvas — rendered on top of the map, pointer-events:none -->
 <canvas bind:this={windCanvas} class="wind-canvas"></canvas>
 
-<!-- ── Map controls ──────────────────────────────────────────────────────── -->
-<div class="map-controls-tr">
+<!-- ── Right control column ───────────────────────────────────────────────── -->
+<div class="ctrl-col">
+	<!-- Center on boat -->
+	<button class="ctrl-btn" onclick={centerOnBoat} title="Center on boat">
+		<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+			<circle cx="10" cy="10" r="3.5"/>
+			<line x1="10" y1="1" x2="10" y2="5.5"/>
+			<line x1="10" y1="14.5" x2="10" y2="19"/>
+			<line x1="1" y1="10" x2="5.5" y2="10"/>
+			<line x1="14.5" y1="10" x2="19" y2="10"/>
+		</svg>
+	</button>
+
+	<div class="ctrl-sep"></div>
+
+	<!-- Map type -->
 	{#each (['nautical', 'satellite', 'street'] as const) as mt}
-	<button class="map-type-btn" class:active={mapType === mt} onclick={() => switchMapType(mt)}>
-		{TILES[mt].icon} {TILES[mt].label}
+	<button class="ctrl-btn ctrl-map" class:active={mapType === mt} onclick={() => switchMapType(mt)}>
+		<span class="ctrl-icon">{TILES[mt].icon}</span>
+		<span class="ctrl-label">{TILES[mt].label}</span>
 	</button>
 	{/each}
-</div>
-<button class="center-btn" onclick={centerOnBoat} title="Center on boat">
-	<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-		<circle cx="10" cy="10" r="3.5"/>
-		<line x1="10" y1="1" x2="10" y2="5.5"/>
-		<line x1="10" y1="14.5" x2="10" y2="19"/>
-		<line x1="1" y1="10" x2="5.5" y2="10"/>
-		<line x1="14.5" y1="10" x2="19" y2="10"/>
-	</svg>
-</button>
 
-<!-- ── Wind legend ───────────────────────────────────────────────────────── -->
+	<div class="ctrl-sep"></div>
+
+	<!-- Zoom -->
+	<button class="ctrl-btn ctrl-zoom" onclick={() => map?.zoomIn()}>+</button>
+	<button class="ctrl-btn ctrl-zoom" onclick={() => map?.zoomOut()}>−</button>
+</div>
+
+<!-- ── Wind legend (bottom-left) ─────────────────────────────────────────── -->
 {#if meteoWind}
 <div class="wind-legend">
 	<div class="wind-legend-title">Wind</div>
@@ -707,50 +719,51 @@
 		/* No mix-blend-mode — particles are visible on their own */
 	}
 
-	/* ── Map controls: type switcher (top-right) + center btn (above legend) ── */
-	.map-controls-tr {
+	/* ── Right control column ── */
+	.ctrl-col {
 		position: absolute; top: 70px; right: 16px;
 		z-index: 800;
-		display: flex; gap: 5px;
+		display: flex; flex-direction: column; gap: 4px;
+		align-items: stretch;
 	}
-	.map-type-btn {
-		padding: 6px 11px;
-		background: rgba(8,12,20,0.72);
-		backdrop-filter: blur(16px);
-		-webkit-backdrop-filter: blur(16px);
-		border: 1px solid rgba(255,255,255,0.08);
-		border-radius: 8px;
-		color: rgba(255,255,255,0.55);
-		font-size: 11px; font-weight: 600;
-		cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s;
-		white-space: nowrap;
-	}
-	.map-type-btn:hover  { color: #fff; background: rgba(255,255,255,0.1); }
-	.map-type-btn.active { color: #fff; background: rgba(14,165,233,0.2); border-color: rgba(14,165,233,0.5); }
-
-	.center-btn {
-		position: absolute; bottom: 210px; right: 16px;
-		z-index: 800;
-		width: 36px; height: 36px;
-		background: rgba(8,12,20,0.72);
-		backdrop-filter: blur(16px);
-		-webkit-backdrop-filter: blur(16px);
-		border: 1px solid rgba(255,255,255,0.08);
-		border-radius: 8px;
-		color: rgba(255,255,255,0.7);
-		cursor: pointer; transition: background 0.15s, color 0.15s;
+	.ctrl-btn {
+		height: 36px;
+		background: rgba(8,12,20,0.78);
+		backdrop-filter: blur(18px);
+		-webkit-backdrop-filter: blur(18px);
+		border: 1px solid rgba(255,255,255,0.09);
+		border-radius: 9px;
+		color: rgba(255,255,255,0.6);
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s, border-color 0.15s;
 		display: flex; align-items: center; justify-content: center;
 	}
-	.center-btn:hover { color: #fff; background: rgba(255,255,255,0.12); }
+	.ctrl-btn:hover { color: #fff; background: rgba(255,255,255,0.12); }
+	.ctrl-btn.active { color: #fff; background: rgba(14,165,233,0.2); border-color: rgba(14,165,233,0.5); }
 
-	/* ── Wind legend ── */
+	/* Map type buttons — icon + text label side by side */
+	.ctrl-map {
+		justify-content: flex-start;
+		padding: 0 10px; gap: 7px;
+		font-size: 12px; font-weight: 600;
+		white-space: nowrap; min-width: 110px;
+	}
+	.ctrl-icon { font-size: 14px; line-height: 1; flex-shrink: 0; }
+	.ctrl-label { font-size: 11px; }
+
+	/* Zoom buttons — larger font */
+	.ctrl-zoom { font-size: 18px; font-weight: 300; line-height: 1; }
+
+	.ctrl-sep { height: 1px; background: rgba(255,255,255,0.07); margin: 2px 0; }
+
+	/* ── Wind legend — bottom-right on desktop, bottom-left on mobile ── */
 	.wind-legend {
-		position: absolute; bottom: 80px; right: 16px;
+		position: absolute; bottom: 16px; right: 16px;
 		z-index: 800;
 		padding: 7px 10px;
-		background: rgba(8,12,20,0.72);
-		backdrop-filter: blur(16px);
-		-webkit-backdrop-filter: blur(16px);
+		background: rgba(8,12,20,0.78);
+		backdrop-filter: blur(18px);
+		-webkit-backdrop-filter: blur(18px);
 		border: 1px solid rgba(255,255,255,0.08);
 		border-radius: 10px;
 		display: flex; flex-direction: column; gap: 4px;
@@ -938,13 +951,15 @@
 
 		.panel-footer { display: none; }
 
-		/* On mobile the bottom panel is ~42dvh tall — push legend + center btn above it */
-		.wind-legend  { bottom: calc(42dvh + 12px); right: 12px; }
-		.center-btn   { bottom: calc(42dvh + 130px); right: 12px; }
+		/* ctrl-col: tighten up, hide text labels — icon only on mobile */
+		.ctrl-col { top: 58px; right: 12px; gap: 3px; }
+		.ctrl-map { min-width: unset; padding: 0; justify-content: center; }
+		.ctrl-label { display: none; }
+		.ctrl-btn { height: 34px; width: 34px; border-radius: 8px; }
+		.ctrl-map { width: 34px; }
 
-		/* Map type switcher: move below pill bar (pill is at top: 12px, ~36px tall) */
-		.map-controls-tr { top: 58px; right: 12px; }
-		.map-type-btn { font-size: 10px; padding: 5px 8px; }
+		/* Wind legend: above bottom panel, stay left so panel doesn't cover it */
+		.wind-legend { bottom: calc(42dvh + 12px); left: 12px; }
 
 		.pill-bar  { top: 12px; }
 		.pill-trip { display: none; }
