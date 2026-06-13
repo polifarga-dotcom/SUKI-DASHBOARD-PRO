@@ -685,6 +685,13 @@
 <!-- ── Top pill ─────────────────────────────────────────────────────────── -->
 <header class="pill-bar">
 	<div class="pill-name">{data.boat.name}</div>
+	{#if data.boat.callsign || data.boat.mmsi}
+	<div class="pill-ident">
+		{#if data.boat.callsign}<span>{data.boat.callsign}</span>{/if}
+		{#if data.boat.callsign && data.boat.mmsi}<span class="pill-ident-sep">·</span>{/if}
+		{#if data.boat.mmsi}<span>MMSI {data.boat.mmsi}</span>{/if}
+	</div>
+	{/if}
 	<div class="pill-status" class:stale={isStale}>
 		<span class="pill-dot" class:stale={isStale}></span>
 		{isStale ? 'Stale' : 'Live'} · {fmtAgo((t?.updated_at ?? null) as unknown as string)}
@@ -1016,6 +1023,12 @@
 		font-size: 14px; font-weight: 700;
 		letter-spacing: -0.2px;
 	}
+	.pill-ident {
+		font-size: 10px; color: rgba(255,255,255,0.35);
+		letter-spacing: 0.4px;
+		display: flex; align-items: center; gap: 5px;
+	}
+	.pill-ident-sep { color: rgba(255,255,255,0.18); }
 	.pill-status {
 		display: flex; align-items: center; gap: 5px;
 		font-size: 12px; color: rgba(255,255,255,0.5);
