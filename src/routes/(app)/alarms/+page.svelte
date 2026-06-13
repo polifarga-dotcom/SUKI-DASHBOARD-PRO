@@ -198,8 +198,10 @@
 	} | null;
 
 	const SENSOR_HISTORY: Record<SensorKey, HistoryCfg> = {
-		wind_speed:  { table: 'log_entries',       timeCol: 'logged_at',   valueCol: 'wind_speed_kn' },
-		wind_dir:    null,
+		// wind_speed + wind_dir use telemetry_history (written every 60s by DB trigger).
+		// log_entries is trip-only — no data at anchor.
+		wind_speed:  { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'env_aws_ms',  transform: v => +(v * 1.94384).toFixed(1) },
+		wind_dir:    null, // handled specially in fetchHistory (needs two columns for TWD)
 		pressure:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'env_pressure_pa', transform: v => v / 100 },
 		depth:       { table: 'log_entries',       timeCol: 'logged_at',   valueCol: 'depth_m' },
 		water_temp:  { table: 'log_entries',       timeCol: 'logged_at',   valueCol: 'water_temp_c' },
@@ -213,10 +215,35 @@
 	let historyLoading = $state<Record<string, boolean>>({});
 
 	async function fetchHistory(key: SensorKey) {
-		const cfg = SENSOR_HISTORY[key];
-		if (!cfg || !boat?.id) return;
+		if (!boat?.id) return;
 		historyLoading = { ...historyLoading, [key]: true };
 		const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+		// wind_dir: compute TWD from heading + apparent wind angle (two columns)
+		if (key === 'wind_dir') {
+			const { data } = await supabase
+				.from('telemetry_history')
+				.select('recorded_at, nav_hdg_rad, env_awa_rad')
+				.eq('boat_id', boat.id)
+				.gte('recorded_at', since)
+				.order('recorded_at', { ascending: true })
+				.limit(1440);
+			// deno-lint-ignore no-explicit-any
+			const pts: SensorPoint[] = (data ?? []).map((row: any) => {
+				const hdg = row.nav_hdg_rad, awa = row.env_awa_rad;
+				const v = (hdg != null && awa != null)
+					? +((((hdg + awa) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1)
+					: null;
+				return { t: new Date(row.recorded_at).getTime(), v };
+			});
+			history = { ...history, [key]: pts };
+			historyLoading = { ...historyLoading, [key]: false };
+			return;
+		}
+
+		const cfg = SENSOR_HISTORY[key];
+		if (!cfg) { historyLoading = { ...historyLoading, [key]: false }; return; }
+
 		const { data } = await supabase
 			.from(cfg.table)
 			.select(`${cfg.timeCol}, ${cfg.valueCol}`)
@@ -271,7 +298,7 @@
 		}
 
 		openKey = key;
-		// Fetch history lazily (only once per boat session)
+		// Fetch history lazily (only once per boat session; wind_dir handled specially inside)
 		if (!history[key]) fetchHistory(key);
 	}
 
@@ -366,9 +393,6 @@
 			{#if isOpen}
 			<div class="sensor-config">
 				<!-- 24h history chart -->
-				{#if SENSOR_HISTORY[key] === null}
-				<div class="chart-unavail">Wind direction history is not stored</div>
-				{:else}
 				<SensorChart
 					points={history[key] ?? []}
 					unit={def.unit}
@@ -376,7 +400,6 @@
 					thresholdDir={def.direction}
 					loading={historyLoading[key] ?? false}
 				/>
-				{/if}
 
 				<!-- Enable toggle -->
 				<div class="cfg-row cfg-toggle-row">
@@ -538,11 +561,6 @@
 	.cfg-slider {
 		width: 100%; accent-color: var(--accent);
 		background: none; border: none; cursor: pointer;
-	}
-
-	.chart-unavail {
-		font-size: 11px; color: rgba(255,255,255,0.2);
-		text-align: center; padding: 10px 0 6px;
 	}
 
 	.twd-suggest {
