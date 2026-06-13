@@ -4,6 +4,8 @@
 	import { currentBoat } from '$lib/stores/boat.js';
 	import { telemetry } from '$lib/stores/telemetry.js';
 	import type { SensorAlarm } from '$lib/types.js';
+	import SensorChart from '$lib/components/charts/SensorChart.svelte';
+	import type { SensorPoint } from '$lib/components/charts/SensorChart.svelte';
 
 	// ── Sensor definitions (mirror of edge function) ─────────────────────────
 
@@ -186,6 +188,53 @@
 	let editHysteresis:Record<string, string>   = $state({});
 	let editGrace:     Record<string, number>   = $state({});
 
+	// ── History charts ────────────────────────────────────────────────────────
+
+	type HistoryCfg = {
+		table: 'telemetry_history' | 'log_entries';
+		timeCol: string;
+		valueCol: string;
+		transform?: (v: number) => number;
+	} | null;
+
+	const SENSOR_HISTORY: Record<SensorKey, HistoryCfg> = {
+		wind_speed:  { table: 'log_entries',       timeCol: 'logged_at',   valueCol: 'wind_speed_kn' },
+		wind_dir:    null,
+		pressure:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'env_pressure_pa', transform: v => v / 100 },
+		depth:       { table: 'log_entries',       timeCol: 'logged_at',   valueCol: 'depth_m' },
+		water_temp:  { table: 'log_entries',       timeCol: 'logged_at',   valueCol: 'water_temp_c' },
+		batt_soc:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'batt_main_soc', transform: v => v * 100 },
+		batt_volt:   { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'batt_main_v' },
+		tank_fw:     { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'tank_fw',       transform: v => v * 100 },
+		tank_dsl:    { table: 'telemetry_history', timeCol: 'recorded_at', valueCol: 'tank_dsl',      transform: v => v * 100 },
+	};
+
+	let history        = $state<Record<string, SensorPoint[]>>({});
+	let historyLoading = $state<Record<string, boolean>>({});
+
+	async function fetchHistory(key: SensorKey) {
+		const cfg = SENSOR_HISTORY[key];
+		if (!cfg || !boat?.id) return;
+		historyLoading = { ...historyLoading, [key]: true };
+		const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+		const { data } = await supabase
+			.from(cfg.table)
+			.select(`${cfg.timeCol}, ${cfg.valueCol}`)
+			.eq('boat_id', boat.id)
+			.gte(cfg.timeCol, since)
+			.order(cfg.timeCol, { ascending: true })
+			.limit(1440);
+		// deno-lint-ignore no-explicit-any
+		const pts: SensorPoint[] = (data ?? []).map((row: any) => ({
+			t: new Date(row[cfg.timeCol]).getTime(),
+			v: row[cfg.valueCol] != null
+				? (cfg.transform ? cfg.transform(row[cfg.valueCol]) : row[cfg.valueCol])
+				: null,
+		}));
+		history = { ...history, [key]: pts };
+		historyLoading = { ...historyLoading, [key]: false };
+	}
+
 	const t = $derived($telemetry);
 	const boat = $derived($currentBoat);
 
@@ -222,6 +271,8 @@
 		}
 
 		openKey = key;
+		// Fetch history lazily (only once per boat session)
+		if (!history[key]) fetchHistory(key);
 	}
 
 	// ── Save ──────────────────────────────────────────────────────────────────
@@ -314,6 +365,19 @@
 			<!-- Accordion config panel -->
 			{#if isOpen}
 			<div class="sensor-config">
+				<!-- 24h history chart -->
+				{#if SENSOR_HISTORY[key] === null}
+				<div class="chart-unavail">Wind direction history is not stored</div>
+				{:else}
+				<SensorChart
+					points={history[key] ?? []}
+					unit={def.unit}
+					threshold={parseFloat(editThreshold[key]) || null}
+					thresholdDir={def.direction}
+					loading={historyLoading[key] ?? false}
+				/>
+				{/if}
+
 				<!-- Enable toggle -->
 				<div class="cfg-row cfg-toggle-row">
 					<span class="cfg-label">Enable alarm</span>
@@ -474,6 +538,11 @@
 	.cfg-slider {
 		width: 100%; accent-color: var(--accent);
 		background: none; border: none; cursor: pointer;
+	}
+
+	.chart-unavail {
+		font-size: 11px; color: rgba(255,255,255,0.2);
+		text-align: center; padding: 10px 0 6px;
 	}
 
 	.twd-suggest {
