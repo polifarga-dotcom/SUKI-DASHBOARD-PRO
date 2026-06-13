@@ -548,24 +548,21 @@
 
 {:else if data}
 
-<!-- ── Map area (canvas clipped here, glass panel stays clean) ──────────── -->
-<div class="map-area">
-	<div bind:this={mapEl} class="map-bg"></div>
-	<canvas bind:this={windCanvas} class="wind-canvas"></canvas>
+<div bind:this={mapEl} class="map-bg"></div>
+<canvas bind:this={windCanvas} class="wind-canvas"></canvas>
 
-	<!-- Wind speed bar — single horizontal row at bottom of map -->
-	{#if meteoWind}
-	<div class="wind-bar">
-		<span class="wb-title">Wind</span>
-		{#each [['#a855f7','< 10 kn'],['#22c55e','10–20'],['#eab308','20–30'],['#ef4444','30–40'],['#7f1d1d','≥ 40']] as [col, lbl]}
-		<span class="wb-item">
-			<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="{col}"/></svg>
-			{lbl}
-		</span>
-		{/each}
-	</div>
-	{/if}
+<!-- Wind speed bar — single horizontal row at bottom of map -->
+{#if meteoWind}
+<div class="wind-bar">
+	<span class="wb-title">Wind</span>
+	{#each [['#a855f7','< 10 kn'],['#22c55e','10–20'],['#eab308','20–30'],['#ef4444','30–40'],['#7f1d1d','≥ 40']] as [col, lbl]}
+	<span class="wb-item">
+		<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="{col}"/></svg>
+		{lbl}
+	</span>
+	{/each}
 </div>
+{/if}
 
 <!-- ── Right control column ───────────────────────────────────────────────── -->
 <div class="ctrl-col">
@@ -757,25 +754,20 @@
 	.gate-btn:disabled { opacity: 0.4; cursor: default; }
 	.gate-error { font-size: 13px; color: #f87171; margin: 0; }
 
-	/* ── Map area — clips wind canvas so it never bleeds onto glass panels ── */
-	.map-area {
-		position: absolute; inset: 0;
-		overflow: hidden;    /* canvas clipped here */
-		z-index: 0;
-	}
 	.map-bg {
 		position: absolute; inset: 0;
+		z-index: 0;
 	}
 	.wind-canvas {
 		position: absolute; inset: 0;
-		z-index: 700;   /* above Leaflet tiles(200) and markers(600), within map-area context */
+		z-index: 650;   /* above Leaflet markers(600), below glass-panel(700) */
 		pointer-events: none;
 	}
 
-	/* ── Wind speed bar — single row at bottom of map area ── */
+	/* ── Wind speed bar — single row at bottom of map ── */
 	.wind-bar {
 		position: absolute; bottom: 0; left: 0; right: 0;
-		z-index: 800;
+		z-index: 720;   /* above canvas, below ctrl-col(800) */
 		display: flex; align-items: center; justify-content: center; gap: 12px;
 		padding: 5px 16px;
 		background: rgba(8,12,20,0.65);
