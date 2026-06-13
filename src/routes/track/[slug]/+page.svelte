@@ -529,11 +529,46 @@
 		navigator.clipboard.writeText(window.location.href).catch(() => {});
 		copied = true; setTimeout(() => { copied = false; }, 2000);
 	}
+
+	// ── PWA install ──────────────────────────────────────────────────────────
+	let deferredPrompt = $state<any>(null);
+	let isStandalone   = $state(false);
+	let isIOS          = $state(false);
+	let showIOSTip     = $state(false);
+
+	onMount(() => {
+		isStandalone = window.matchMedia('(display-mode: standalone)').matches
+		           || (navigator as any).standalone === true;
+		isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+		const onPrompt = (e: Event) => { e.preventDefault(); deferredPrompt = e; };
+		window.addEventListener('beforeinstallprompt', onPrompt);
+		return () => window.removeEventListener('beforeinstallprompt', onPrompt);
+	});
+
+	async function installApp() {
+		if (deferredPrompt) {
+			deferredPrompt.prompt();
+			await deferredPrompt.userChoice;
+			deferredPrompt = null;
+		} else if (isIOS) {
+			showIOSTip = !showIOSTip;
+		}
+	}
+
+	// Show button when: not already installed AND (prompt available OR iOS Safari)
+	const showInstall = $derived(
+		!isStandalone && (deferredPrompt != null || isIOS)
+	);
 </script>
 
 <svelte:head>
 	<title>{data?.boat?.name ?? 'Live Tracker'} · SUKI</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<meta name="apple-mobile-web-app-title" content="SUKI Tracker">
+	<link rel="manifest" href="/track/{$page.params.slug}/manifest.json">
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 </svelte:head>
 
@@ -649,8 +684,42 @@
 		{data.trip.from_port ? data.trip.from_port + ' · ' : ''}{fmt1(data.trip.total_nm)} nm · {fmtDuration(data.trip.started_at)}
 	</div>
 	{/if}
+	{#if showInstall}
+	<button class="pill-install" onclick={installApp} title="Zum Home-Bildschirm hinzufügen">
+		<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+			<rect x="2" y="2" width="12" height="12" rx="2.5"/>
+			<line x1="8" y1="5" x2="8" y2="11"/>
+			<line x1="5" y1="8" x2="11" y2="8"/>
+		</svg>
+	</button>
+	{/if}
 	<button class="pill-share" onclick={copyLink}>{copied ? '✓' : '↑'}</button>
 </header>
+
+{#if showIOSTip}
+<div class="ios-tip" role="tooltip">
+	<div class="ios-tip-row">
+		<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M10 2v10M6 6l4-4 4 4"/>
+			<path d="M4 13v3a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3"/>
+		</svg>
+		Auf <strong>Teilen</strong> tippen
+	</div>
+	<div class="ios-tip-row">
+		<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+			<rect x="3" y="3" width="14" height="14" rx="3"/>
+			<line x1="10" y1="7" x2="10" y2="13"/>
+			<line x1="7" y1="10" x2="13" y2="10"/>
+		</svg>
+		<strong>„Zum Home-Bildschirm"</strong> wählen
+	</div>
+	<button class="ios-tip-close" onclick={() => showIOSTip = false}>
+		<svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+			<line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/>
+		</svg>
+	</button>
+</div>
+{/if}
 
 <!-- ── Bottom stack: wind legend + glass panel (anchored together on mobile) -->
 <div class="bottom-wrap">
@@ -927,6 +996,51 @@
 	}
 	.pill-share:hover { background: rgba(255,255,255,0.15); }
 
+	.pill-install {
+		width: 28px; height: 28px;
+		background: rgba(14,165,233,0.15);
+		border: 1px solid rgba(14,165,233,0.4);
+		border-radius: 50%; color: #0ea5e9;
+		cursor: pointer; display: flex; align-items: center; justify-content: center;
+		transition: background 0.15s; flex-shrink: 0;
+	}
+	.pill-install:hover { background: rgba(14,165,233,0.28); }
+
+	/* iOS "how to install" tooltip */
+	.ios-tip {
+		position: absolute; top: 64px; right: 16px;
+		z-index: 900;
+		background: rgba(8,12,20,0.95);
+		backdrop-filter: blur(20px);
+		-webkit-backdrop-filter: blur(20px);
+		border: 1px solid rgba(14,165,233,0.35);
+		border-radius: 14px;
+		padding: 12px 14px 12px 12px;
+		display: flex; flex-direction: column; gap: 10px;
+		min-width: 220px;
+		box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+	}
+	.ios-tip::before {
+		content: '';
+		position: absolute; top: -7px; right: 38px;
+		width: 12px; height: 12px;
+		background: rgba(8,12,20,0.95);
+		border-left: 1px solid rgba(14,165,233,0.35);
+		border-top: 1px solid rgba(14,165,233,0.35);
+		transform: rotate(45deg);
+	}
+	.ios-tip-row {
+		display: flex; align-items: center; gap: 8px;
+		font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.3;
+	}
+	.ios-tip-row svg { flex-shrink: 0; color: #0ea5e9; }
+	.ios-tip-close {
+		position: absolute; top: 8px; right: 8px;
+		background: none; border: none;
+		color: rgba(255,255,255,0.3); cursor: pointer; padding: 4px;
+	}
+	.ios-tip-close:hover { color: rgba(255,255,255,0.7); }
+
 	/* ── Glass side panel ── */
 	.glass-panel {
 		position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
@@ -1076,5 +1190,7 @@
 
 		.pill-bar  { top: 12px; }
 		.pill-trip { display: none; }
+		.ios-tip   { top: 56px; right: 12px; min-width: 200px; }
+		.ios-tip::before { right: 34px; }
 	}
 </style>

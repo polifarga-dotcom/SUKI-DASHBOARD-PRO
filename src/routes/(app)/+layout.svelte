@@ -559,3 +559,7 @@
 	.tg-modal-footer .btn { font-size: 13px; }
 	.tg-modal-done { font-size: 14px; color: #4caf50; text-align: center; padding: 12px 0; }
 </style>
+
+<svelte:head>
+	<link rel="manifest" href="/manifest.json" />
+</svelte:head>
