@@ -38,7 +38,7 @@
 	let refreshTimer: ReturnType<typeof setInterval>;
 
 	type MapType = 'nautical' | 'satellite' | 'street';
-	let mapType = $state<MapType>('nautical');
+	let mapType = $state<MapType>('satellite');
 
 	const TILES: Record<MapType, { url: string; opts: Record<string, unknown>; label: string; icon: string }> = {
 		nautical: {
@@ -278,11 +278,11 @@
 		return '#3f0f0f';
 	}
 	function sogColor(kn: number | null) {
-		if (kn == null || kn < 0.5) return '#475569';
-		if (kn < 3)  return '#38bdf8';
-		if (kn < 6)  return '#34d399';
-		if (kn < 9)  return '#a3e635';
-		return '#fb923c';
+		if (kn == null || kn < 0.5) return '#94a3b8';
+		if (kn < 3)  return '#7dd3fc';
+		if (kn < 6)  return '#6ee7b7';
+		if (kn < 9)  return '#d9f99d';
+		return '#fdba74';
 	}
 	function fmtAgo(iso: string | null) {
 		if (!iso) return '—';
@@ -338,7 +338,7 @@
 		const lon = data?.telemetry?.nav_lon ?? data?.track?.at(-1)?.lon ?? 20;
 		map = L.map(mapEl, { center: [lat, lon], zoom: 11, zoomControl: false });
 
-		baseLayer = L.tileLayer(TILES.nautical.url, TILES.nautical.opts).addTo(map);
+		baseLayer = L.tileLayer(TILES.satellite.url, TILES.satellite.opts).addTo(map);
 
 		// OpenSeaMap nautical overlay (transparent PNG on top)
 		seamarkLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
