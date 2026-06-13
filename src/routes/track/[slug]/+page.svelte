@@ -64,21 +64,21 @@
 	type MapType = 'nautical' | 'satellite' | 'street';
 	let mapType = $state<MapType>('satellite');
 
-	const TILES: Record<MapType, { url: string; opts: Record<string, unknown>; label: string; icon: string }> = {
+	const TILES: Record<MapType, { url: string; opts: Record<string, unknown>; label: string }> = {
 		nautical: {
 			url:  'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
 			opts: { attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 19 },
-			label: 'Nautical', icon: '⚓',
+			label: 'Nautical',
 		},
 		satellite: {
 			url:  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
 			opts: { attribution: '© Esri, Maxar', maxZoom: 19 },
-			label: 'Satellite', icon: '🛰',
+			label: 'Satellite',
 		},
 		street: {
 			url:  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
 			opts: { attribution: '© OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19 },
-			label: 'OSM', icon: '🗺',
+			label: 'OSM',
 		},
 	};
 
@@ -503,11 +503,6 @@
 		boatStatus === 'Motoring' ? '#fb923c' :
 		boatStatus === 'Anchored' ? '#60a5fa' : 'rgba(255,255,255,0.3)'
 	);
-	const statusIcon = $derived(
-		boatStatus === 'Sailing'  ? '⛵' :
-		boatStatus === 'Motoring' ? '🔴' :
-		boatStatus === 'Anchored' ? '⚓' : ''
-	);
 	const isStale = $derived(t?.updated_at != null && (Date.now() - new Date(t.updated_at as unknown as string).getTime()) > 300_000);
 
 	// GPS resolution — fallback chain: SignalK → VRM → InReach → track
@@ -612,7 +607,14 @@
 
 {:else if error}
 <div class="gate">
-	<div class="gate-icon">⚓</div>
+	<div class="gate-icon">
+		<svg viewBox="0 0 32 32" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.5">
+			<circle cx="16" cy="7" r="3"/>
+			<line x1="16" y1="10" x2="16" y2="28"/>
+			<line x1="9" y1="16" x2="23" y2="16"/>
+			<path d="M9 28 Q16 31 23 28"/>
+		</svg>
+	</div>
 	<h2 class="gate-title">Tracker not found</h2>
 	<p class="gate-sub">{error}</p>
 </div>
@@ -763,7 +765,26 @@
 		<div class="speed-unit">knots SOG</div>
 		{#if boatStatus}
 		<div class="status-badge" style="color:{statusColor}; border-color:{statusColor}">
-			{statusIcon} {boatStatus}
+			{#if boatStatus === 'Anchored'}
+			<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<circle cx="7" cy="2.5" r="1.5"/>
+				<line x1="7" y1="4" x2="7" y2="12"/>
+				<line x1="4" y1="7.5" x2="10" y2="7.5"/>
+				<path d="M4.5 12 Q7 13.5 9.5 12"/>
+			</svg>
+			{:else if boatStatus === 'Sailing'}
+			<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<line x1="7" y1="1.5" x2="7" y2="11.5"/>
+				<path d="M7 2 L13 11 L7 11 Z"/>
+				<path d="M3 13 Q7 12 11 13"/>
+			</svg>
+			{:else if boatStatus === 'Motoring'}
+			<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M2 9.5 L4 7 L10.5 7 L12.5 9.5 Q7.5 12 2 9.5Z"/>
+				<path d="M7.5 7 L7.5 5 L10.5 5 L10.5 7"/>
+			</svg>
+			{/if}
+			{boatStatus}
 		</div>
 		{/if}
 		<div class="speed-meta">{hdgDeg != null ? `HDG ${hdgDeg}°` : ''}</div>
@@ -862,7 +883,7 @@
 	@keyframes spin { to { transform: rotate(360deg); } }
 	.gate-label { font-size: 14px; color: rgba(255,255,255,0.4); margin: 0; }
 	.gate-lock  { width: 56px; height: 56px; opacity: 0.6; }
-	.gate-icon  { font-size: 48px; }
+	.gate-icon  { display: flex; align-items: center; justify-content: center; }
 	.gate-title { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.3px; }
 	.gate-sub   { font-size: 13px; color: rgba(255,255,255,0.4); margin: 0; max-width: 280px; text-align: center; }
 	.gate-form  { display: flex; gap: 8px; }
