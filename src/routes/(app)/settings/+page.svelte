@@ -301,7 +301,7 @@
 	const skConnected = $derived.by(() => {
 		const tel = $telemetry;
 		if (!tel?.updated_at) return false;
-		return (Date.now() - new Date(tel.updated_at).getTime()) < 15_000;
+		return (Date.now() - new Date(tel.updated_at).getTime()) < 90_000;
 	});
 	const skLastSeen = $derived.by(() => {
 		const tel = $telemetry;

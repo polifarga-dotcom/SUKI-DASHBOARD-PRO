@@ -92,7 +92,7 @@ export const rigColor = (n: number | null): string => {
 
 export const dataAge = (updatedAt: string | null): boolean => {
 	if (!updatedAt) return true;
-	return Date.now() - new Date(updatedAt).getTime() > 15_000;
+	return Date.now() - new Date(updatedAt).getTime() > 90_000;
 };
 
 const CARDINALS = ['N','NNO','NO','ONO','O','OSO','SO','SSO','S','SSW','SW','WSW','W','WNW','NW','NNW'];
