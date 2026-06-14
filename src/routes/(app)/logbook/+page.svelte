@@ -614,14 +614,14 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 	// Returns the trip that ended immediately before `trip` started, if it's
 	// eligible to merge (both auto, gap < 4 h, previous trip is closed).
 	function mergeCandidateFor(trip: LogTrip): LogTrip | null {
-		if (!trip.is_auto || !trip.started_at) return null;
+		if (!trip.started_at) return null;
 		const sorted = [...$allTrips].sort(
 			(a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
 		);
 		const idx = sorted.findIndex(t => t.id === trip.id);
 		if (idx < 0) return null;
-		const prev = sorted[idx + 1]; // next in desc order = earlier trip
-		if (!prev || !prev.ended_at || !prev.is_auto) return null;
+		const prev = sorted[idx + 1]; // next in desc-order = earlier trip
+		if (!prev || !prev.ended_at) return null;
 		const gapMs = new Date(trip.started_at).getTime() - new Date(prev.ended_at).getTime();
 		if (gapMs < 0 || gapMs > 4 * 60 * 60_000) return null;
 		return prev;
