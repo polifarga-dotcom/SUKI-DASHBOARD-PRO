@@ -540,6 +540,15 @@ Deno.serve(async (req: Request) => {
     );
     if (!gps) {
       console.log(`[log-position] trip ${trip.id}: GPS unavailable`);
+      // Clear slow countdown — wall-clock must not tick while we have no data.
+      // Without GPS we cannot conclude the boat is slow; resetting prevents a
+      // false auto-stop when connectivity is restored after a long outage.
+      if (trip.auto_slow_since) {
+        await supabase.from('log_trips')
+          .update({ auto_slow_since: null })
+          .eq('id', trip.id).eq('boat_id', boatId);
+        console.log(`[log-position] trip ${trip.id}: auto_slow_since cleared (no GPS)`);
+      }
       results.push({ trip: trip.id, boat: boatId, status: 'gps_unavailable' });
       continue;
     }

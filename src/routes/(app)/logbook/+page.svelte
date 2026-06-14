@@ -610,6 +610,87 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		saving = false;
 	}
 
+	// ── Trip merge ────────────────────────────────────────────────────────────
+	// Returns the trip that ended immediately before `trip` started, if it's
+	// eligible to merge (both auto, gap < 4 h, previous trip is closed).
+	function mergeCandidateFor(trip: LogTrip): LogTrip | null {
+		if (!trip.is_auto || !trip.started_at) return null;
+		const sorted = [...$allTrips].sort(
+			(a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
+		);
+		const idx = sorted.findIndex(t => t.id === trip.id);
+		if (idx < 0) return null;
+		const prev = sorted[idx + 1]; // next in desc order = earlier trip
+		if (!prev || !prev.ended_at || !prev.is_auto) return null;
+		const gapMs = new Date(trip.started_at).getTime() - new Date(prev.ended_at).getTime();
+		if (gapMs < 0 || gapMs > 4 * 60 * 60_000) return null;
+		return prev;
+	}
+
+	async function mergeWithPrevious(trip: LogTrip, e: Event) {
+		e.stopPropagation();
+		const prev = mergeCandidateFor(trip);
+		if (!prev) return;
+		const gapMin = Math.round(
+			(new Date(trip.started_at).getTime() - new Date(prev.ended_at).getTime()) / 60_000
+		);
+		if (!confirm(
+			`Merge "${trip.name ?? 'this trip'}" into the previous trip?\n` +
+			`Gap: ${gapMin} min — all entries will be combined and the duplicate trip deleted.`
+		)) return;
+		saving = true;
+		try {
+			// 1. Re-assign all entries from trip → prev
+			await supabase.from('log_entries')
+				.update({ trip_id: prev.id })
+				.eq('trip_id', trip.id).eq('boat_id', trip.boat_id);
+
+			// 2. Recalculate stats for the surviving trip
+			const { data: entries } = await supabase.from('log_entries')
+				.select('distance_nm, engine_on, sog_kn, logged_at')
+				.eq('trip_id', prev.id).order('logged_at', { ascending: true });
+			const rows = entries ?? [];
+			const totalNm  = +rows.reduce((s, r) => s + (r.distance_nm ?? 0), 0).toFixed(3);
+			const sailNm   = +rows.filter(r => !r.engine_on).reduce((s, r) => s + (r.distance_nm ?? 0), 0).toFixed(3);
+			const motorNm  = +rows.filter(r =>  r.engine_on).reduce((s, r) => s + (r.distance_nm ?? 0), 0).toFixed(3);
+			const sogsArr  = rows.filter(r => r.sog_kn != null).map(r => r.sog_kn as number);
+			const maxSog   = sogsArr.length ? +Math.max(...sogsArr).toFixed(2) : (prev.max_sog_kn ?? null);
+			const avgSog   = sogsArr.length ? +(sogsArr.reduce((a, b) => a + b, 0) / sogsArr.length).toFixed(2) : null;
+
+			// 3. Update the surviving trip: close with trip B's endpoint + merged stats
+			await supabase.from('log_trips').update({
+				ended_at:   trip.ended_at,
+				to_port:    trip.to_port,
+				total_nm:   totalNm,
+				sail_nm:    sailNm,
+				motor_nm:   motorNm,
+				max_sog_kn: maxSog,
+				avg_sog_kn: avgSog,
+				auto_slow_since: null,
+				is_auto: false,
+			}).eq('id', prev.id).eq('boat_id', prev.boat_id);
+
+			// 4. Delete the now-empty duplicate trip
+			await supabase.from('log_trips').delete().eq('id', trip.id).eq('boat_id', trip.boat_id);
+
+			// Update local store
+			allTrips.update(ts => ts
+				.filter(t => t.id !== trip.id)
+				.map(t => t.id === prev.id
+					? { ...t, ended_at: trip.ended_at, to_port: trip.to_port, total_nm: totalNm,
+					    sail_nm: sailNm, motor_nm: motorNm, max_sog_kn: maxSog, avg_sog_kn: avgSog }
+					: t
+				)
+			);
+			if (expandedTripId === trip.id) {
+				expandedMapInst?.remove(); expandedMapInst = null;
+				expandedTripId = null; expandedEntries = []; expandedMapPositions = [];
+			}
+		} finally {
+			saving = false;
+		}
+	}
+
 	// ── Selection mode ─────────────────────────────────────────────────────────
 	let selectionMode   = $state(false);
 	let selectedTripIds = $state<Set<string>>(new Set());
@@ -1731,6 +1812,16 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 						</svg>
 						Edit trip
 					</button>
+					{#if mergeCandidateFor(trip)}
+					<button class="trip-action-btn trip-action-merge" onclick={(e) => mergeWithPrevious(trip, e)}>
+						<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<line x1="8" y1="1" x2="8" y2="9"/>
+							<polyline points="5,6 8,9 11,6"/>
+							<line x1="8" y1="15" x2="8" y2="9"/>
+						</svg>
+						Merge with previous
+					</button>
+					{/if}
 					<button class="trip-action-btn trip-action-del" onclick={(e) => deleteTripSingle(trip, e)}>
 						<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
 							<polyline points="2,4 14,4"/>
@@ -2226,7 +2317,8 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		transition: all 0.15s;
 	}
 	.trip-action-btn:hover { color: var(--text); border-color: var(--text); }
-	.trip-action-del:hover { color: var(--red); border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.06); }
+	.trip-action-del:hover   { color: var(--red);   border-color: rgba(239,68,68,.4);  background: rgba(239,68,68,.06); }
+	.trip-action-merge:hover { color: var(--amber); border-color: rgba(234,179,8,.4); background: rgba(234,179,8,.06); }
 
 	/* Selection checkbox */
 	.trip-checkbox {
