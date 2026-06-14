@@ -91,8 +91,25 @@ Deno.serve(async (req: Request) => {
         .order('started_at', { ascending: false })
         .limit(1);
 
-      const tripId = trips?.[0]?.id ?? null;
-      // Skip entries that don't fall within any trip (no trip was active then)
+      let tripId = trips?.[0]?.id ?? null;
+
+      // Fallback for outage gaps: the entry timestamp falls BETWEEN two trips
+      // (the first trip was falsely auto-stopped during an internet outage).
+      // Assign to the most recently ended trip within 4 hours before this entry.
+      if (!tripId) {
+        const fourHoursAgo = new Date(new Date(loggedAt).getTime() - 4 * 60 * 60_000).toISOString();
+        const { data: recentTrips } = await supabase
+          .from('log_trips')
+          .select('id')
+          .eq('boat_id', boatId)
+          .not('ended_at', 'is', null)
+          .gte('ended_at', fourHoursAgo)
+          .lte('ended_at', loggedAt)
+          .order('ended_at', { ascending: false })
+          .limit(1);
+        tripId = recentTrips?.[0]?.id ?? null;
+      }
+
       if (!tripId) { skipped++; continue; }
 
       // 2. Deduplicate: skip if entry already exists within ±90s
