@@ -416,11 +416,17 @@
 	// ── Supabase helpers ──────────────────────────────────────────────────────
 	function boatId() { return $currentBoat?.id ?? null; }
 
-	async function saveConfig(patch: Record<string, unknown>) {
+	async function saveConfig(patch: Record<string, unknown>): Promise<boolean> {
 		const id = boatId();
-		if (!id) return;
-		const { data } = await supabase.from('anchor_config').update(patch).eq('boat_id', id).select().single();
+		if (!id) return false;
+		const { data, error } = await supabase.from('anchor_config').update(patch).eq('boat_id', id).select().single();
+		if (error) {
+			console.error('[anchor] saveConfig failed:', error.message);
+			alert(`Failed to save anchor settings: ${error.message}\nPlease check your connection and try again.`);
+			return false;
+		}
 		if (data) anchorConfig.set(data);
+		return true;
 	}
 
 	async function loadAnchorHistory() {
