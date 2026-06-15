@@ -213,8 +213,8 @@ async function serverAutoStop(
   const boatId = trip.boat_id;
 
   // ── Trim idle tail ────────────────────────────────────────────────────────
-  // Find the last entry where the boat was actually moving (sog_kn > 0).
-  // Delete everything after that point so idle time doesn't inflate stats.
+  // Find the last entry with sog_kn >= 0.5 kn and delete everything after it,
+  // so the idle tail (anchored schwojen + 15-min countdown) doesn't inflate stats.
   const { data: allEntries } = await supabase
     .from('log_entries')
     .select('id, logged_at, sog_kn, lat, lon')
@@ -222,16 +222,24 @@ async function serverAutoStop(
     .eq('boat_id', boatId)
     .order('logged_at', { ascending: false });
 
+  // SOG threshold: anything below this is considered "stopped/swinging at anchor".
+  // 0.5 kn avoids trimming entries where the boat is just drifting or swinging
+  // (anchored boats regularly show 0.1–0.4 kn due to GPS noise and schwojen).
+  const STOP_SOG_KN = 0.5;
+
   let realEndAt: string | null = null;
   let realEndLat: number | null = null;
   let realEndLon: number | null = null;
   if (allEntries && allEntries.length > 0) {
-    const lastMoving = allEntries.find(e => e.sog_kn != null && e.sog_kn > 0);
+    // Walk backwards (allEntries is newest-first). Find the last entry that
+    // starts a sustained run of < STOP_SOG_KN — i.e., the last entry before
+    // the boat was continuously slow. We stop at the first entry >= threshold.
+    const lastMoving = allEntries.find(e => e.sog_kn != null && e.sog_kn >= STOP_SOG_KN);
     if (lastMoving) {
       realEndAt  = lastMoving.logged_at;
       realEndLat = lastMoving.lat;
       realEndLon = lastMoving.lon;
-      // Delete entries strictly after the last-moving entry
+      // Delete all entries strictly after the last-moving entry (the idle tail)
       await supabase.from('log_entries')
         .delete()
         .eq('trip_id', trip.id)
