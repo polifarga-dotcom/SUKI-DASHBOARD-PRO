@@ -109,7 +109,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		// Input (solar)
 		'/Pv/V', '/Pv/I', '/Pv/P',
 		// Energy
-		'/Yield/User', '/Yield/System', '/History/Daily/1/Yield',
+		'/History/Daily/0/Yield', '/Yield/System', '/History/Daily/1/Yield',
 		// State & diagnostics
 		'/State', '/MppOperatingMode', '/ErrorCode', '/Dc/0/Temperature',
 		// Metadata
@@ -146,9 +146,9 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 		else if (r.dbusPath === '/Pv/I')         entry.pv_i            = v;
 		else if (r.dbusPath === '/Pv/P')         entry.pv_p            = v;
 		// Energy (both in Wh from VRM API)
-		else if (r.dbusPath === '/Yield/User')              entry.yield_today_wh     = v ?? 0;  // Wh
-		else if (r.dbusPath === '/History/Daily/1/Yield')   entry.yield_yesterday_wh = v ?? 0;  // Wh
-		else if (r.dbusPath === '/Yield/System')            entry.yield_total_kwh    = (v ?? 0) / 1000;
+		else if (r.dbusPath === '/History/Daily/0/Yield')   entry.yield_today_wh     = (v ?? 0) * 1000;  // kWh → Wh
+		else if (r.dbusPath === '/History/Daily/1/Yield')   entry.yield_yesterday_wh = (v ?? 0) * 1000;  // kWh → Wh
+		else if (r.dbusPath === '/Yield/System')            entry.yield_total_kwh    = v ?? 0;             // kWh
 		// State & diagnostics
 		else if (r.dbusPath === '/State')        entry.state           = v != null ? Math.round(v) : null;
 		else if (r.dbusPath === '/MppOperatingMode') entry.mppt_mode   = v != null ? Math.round(v) : null;
