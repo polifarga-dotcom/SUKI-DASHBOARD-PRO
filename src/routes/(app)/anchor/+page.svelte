@@ -872,7 +872,12 @@
 		</button>
 		{#if alarming}
 			<button class="ctrl-btn warning" onclick={muteAlarm}>Mute</button>
-			<button class="ctrl-btn danger" onclick={silenceAlarm}>Silence All</button>
+		{/if}
+		{#if cfg?.active}
+			<button class="ctrl-btn silence" onclick={silenceAlarm} title="Stop all anchor alarm notifications immediately">
+				<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+				Silence
+			</button>
 		{/if}
 	</div>
 
@@ -1215,6 +1220,8 @@
 	.ctrl-btn.restore { background: var(--card2); color: var(--text); border: 1px solid var(--border); flex: 0 0 auto; padding: 10px 14px; display: flex; align-items: center; gap: 5px; }
 	.ctrl-btn.gps-btn { background: var(--card2); color: var(--muted); border: 1px solid var(--border); flex: 0 0 auto; padding: 10px 14px; display: flex; align-items: center; gap: 5px; }
 	.ctrl-btn.gps-btn.active { color: var(--amber); border-color: var(--amber); }
+	.ctrl-btn.silence { background: var(--card2); color: var(--muted); border: 1px solid var(--border); flex: 0 0 auto; padding: 10px 14px; display: flex; align-items: center; gap: 5px; }
+	.ctrl-btn.silence:hover { color: var(--red); border-color: var(--red); }
 
 	/* ── GPS input block ── */
 	.gps-input-block {
