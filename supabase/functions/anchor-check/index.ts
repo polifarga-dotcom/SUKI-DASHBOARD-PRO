@@ -369,5 +369,38 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  // ── Cancel lingering alarms for watches that were cleared while alarming ──
+  // When a user clears the anchor (active=false) while an alarm is active,
+  // anchor-check skips those watches (active=true filter). The Pushover
+  // emergency keeps repeating until explicitly cancelled here.
+  const { data: staleAlarms } = await supabase
+    .from('anchor_config')
+    .select('*, boats(name)')
+    .eq('active', false)
+    .eq('alarming', true)
+    .not('boat_id', 'is', null);
+
+  for (const watch of staleAlarms ?? []) {
+    const boatName: string = (watch.boats as { name: string } | null)?.name ?? watch.boat_id ?? 'Unknown';
+    const pushoverTag = `anchor_${String(watch.boat_id).substring(0, 8)}`;
+
+    console.log(`[anchor-check] cancelling stale alarm for ${boatName} (anchor cleared while alarming)`);
+
+    await cancelPushoverByTag(watch.pushover_app_token, pushoverTag);
+
+    const msg = `✅ <b>Anchor alarm cancelled — ${boatName}</b>\nAnchor watch was cleared.`;
+    await sendTelegram(watch.telegram_token, watch.telegram_chat_ids, msg, watch.boat_id);
+
+    await supabase.from('anchor_config').update({
+      alarming: false,
+      alarm_started_at: null,
+      alarm_notify_count: 0,
+      alarm_next_notify_at: null,
+      alarm_telegram_muted: false,
+    }).eq('boat_id', watch.boat_id);
+
+    results.push({ boat: boatName, status: 'stale_alarm_cancelled' });
+  }
+
   return json({ checked: results.length, results });
 });
