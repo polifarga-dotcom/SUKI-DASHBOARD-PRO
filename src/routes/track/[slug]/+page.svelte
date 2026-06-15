@@ -423,33 +423,13 @@
 		const t   = data.telemetry;
 		const pts = data.track.filter(p => p.lat && p.lon);
 
-		// Track — split into segments at geographic teleports (>50 km jump)
+		// Track — continuous polyline across all trips
 		if (trackLine) { trackLine.remove(); trackLine = null; }
 		if (pts.length > 1) {
-			const R = 6371;
-			const toRad = (d: number) => d * Math.PI / 180;
-			const distKm = (a: typeof pts[0], b: typeof pts[0]) => {
-				const dLat = toRad(b.lat - a.lat);
-				const dLon = toRad(b.lon - a.lon);
-				const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2;
-				return R * 2 * Math.asin(Math.sqrt(s));
-			};
-			const segments: [number,number][][] = [];
-			let seg: [number,number][] = [[pts[0].lat, pts[0].lon]];
-			for (let i = 1; i < pts.length; i++) {
-				if (distKm(pts[i-1], pts[i]) > 50) {
-					if (seg.length > 1) segments.push(seg);
-					seg = [];
-				}
-				seg.push([pts[i].lat, pts[i].lon]);
-			}
-			if (seg.length > 1) segments.push(seg);
-			if (segments.length > 0) {
-				trackLine = L.polyline(segments as any, {
-					color: '#0ea5e9', weight: 2.5, opacity: 0.85,
-					lineCap: 'round', lineJoin: 'round',
-				}).addTo(map);
-			}
+			trackLine = L.polyline(pts.map(p => [p.lat, p.lon]), {
+				color: '#0ea5e9', weight: 2.5, opacity: 0.85,
+				lineCap: 'round', lineJoin: 'round',
+			}).addTo(map);
 		}
 
 		// Boat icon — minimal, heading-up
