@@ -211,21 +211,41 @@ async function serverAutoStop(
   gps: GPSData
 ): Promise<void> {
   const boatId = trip.boat_id;
-  const place  = await reverseGeocode(gps.lat, gps.lon);
 
-  await supabase.from('log_entries').insert({
-    trip_id:   trip.id,
-    boat_id:   boatId,
-    logged_at: new Date().toISOString(),
-    lat:       gps.lat,
-    lon:       gps.lon,
-    sog_kn:    gps.speed_kn,
-    cog_deg:   gps.course_deg,
-    engine_on: gps.engine_rpm != null ? gps.engine_rpm > 200 : false,
-    source:    'auto',
-    notes:     `Arrival at ${place} (auto-stop: < 1.5 kn for 15 min)`,
-    ...telemetryFields(gps),
-  });
+  // ── Trim idle tail ────────────────────────────────────────────────────────
+  // Find the last entry where the boat was actually moving (sog_kn > 0).
+  // Delete everything after that point so idle time doesn't inflate stats.
+  const { data: allEntries } = await supabase
+    .from('log_entries')
+    .select('id, logged_at, sog_kn, lat, lon')
+    .eq('trip_id', trip.id)
+    .eq('boat_id', boatId)
+    .order('logged_at', { ascending: false });
+
+  let realEndAt: string | null = null;
+  let realEndLat: number | null = null;
+  let realEndLon: number | null = null;
+  if (allEntries && allEntries.length > 0) {
+    const lastMoving = allEntries.find(e => e.sog_kn != null && e.sog_kn > 0);
+    if (lastMoving) {
+      realEndAt  = lastMoving.logged_at;
+      realEndLat = lastMoving.lat;
+      realEndLon = lastMoving.lon;
+      // Delete entries strictly after the last-moving entry
+      await supabase.from('log_entries')
+        .delete()
+        .eq('trip_id', trip.id)
+        .eq('boat_id', boatId)
+        .gt('logged_at', realEndAt);
+    }
+  }
+
+  // Reverse-geocode from last known moving position (or current GPS as fallback)
+  const endLat = realEndLat ?? gps.lat;
+  const endLon = realEndLon ?? gps.lon;
+  const place  = await reverseGeocode(endLat, endLon);
+
+  // No new "arrival" entry inserted — the trimmed last entry IS the real stop.
 
   const { data: rows } = await supabase
     .from('log_entries')
@@ -265,7 +285,7 @@ async function serverAutoStop(
     : (trip.name ?? 'Auto trip');
 
   await supabase.from('log_trips').update({
-    ended_at:        new Date().toISOString(),
+    ended_at:        realEndAt ?? new Date().toISOString(),
     to_port:         place,
     name:            tripName,
     total_nm:        +totalNm.toFixed(3),
