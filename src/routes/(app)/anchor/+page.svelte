@@ -537,6 +537,24 @@
 		setTimeout(() => { muteActive = false; }, 30000);
 	}
 
+	async function silenceAlarm() {
+		// Cancel ALL alarm notifications (Pushover + Telegram) and reset anchor watch.
+		// The alarm stays silenced until the user explicitly sets a new anchor.
+		const id = boatId();
+		if (!id) return;
+		const { error } = await supabase.functions.invoke('cancel-anchor-alarm', {
+			body: { boat_id: id },
+		});
+		if (error) {
+			console.error('[anchor] silenceAlarm failed:', error.message);
+			alert(`Failed to silence alarm: ${error.message}`);
+			return;
+		}
+		// Optimistically update local state so UI clears immediately
+		anchorConfig.update(c => c ? { ...c, active: false, alarming: false, alarm_telegram_muted: false } : c);
+		muteActive = false;
+	}
+
 	function snapBearingToHeading() {
 		localBearing = hdgDeg;
 		bearingManual = false;
@@ -720,7 +738,13 @@
 	{#if cfg?.alarm_telegram_muted}
 		<div class="alarm-muted-badge">Telegram muted · Pushover active</div>
 	{/if}
-	<button class="alarm-mute-btn" onclick={muteAlarm}>Mute Telegram (30s)</button>
+	<div class="alarm-btns">
+		<button class="alarm-mute-btn" onclick={muteAlarm}>Mute (30s)</button>
+		<button class="alarm-silence-btn" onclick={silenceAlarm}>
+			<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+			Silence All
+		</button>
+	</div>
 </div>
 {/if}
 
@@ -848,6 +872,7 @@
 		</button>
 		{#if alarming}
 			<button class="ctrl-btn warning" onclick={muteAlarm}>Mute</button>
+			<button class="ctrl-btn danger" onclick={silenceAlarm}>Silence All</button>
 		{/if}
 	</div>
 
@@ -993,11 +1018,20 @@
 	.alarm-icon  { font-size: 64px; }
 	.alarm-title { font-size: 32px; font-weight: 900; color:#fff; letter-spacing:4px; }
 	.alarm-dist  { font-size: 16px; color:#ffcccc; }
+	.alarm-btns {
+		margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+	}
 	.alarm-mute-btn {
-		margin-top: 12px; padding: 12px 32px;
+		padding: 12px 24px;
 		background: rgba(255,255,255,0.15); border: 2px solid #fff;
 		border-radius: 8px; color:#fff; font-size:16px; font-weight:600; cursor:pointer;
 	}
+	.alarm-silence-btn {
+		padding: 12px 24px; display: flex; align-items: center; gap: 8px;
+		background: rgba(0,0,0,0.5); border: 2px solid rgba(255,80,80,0.8);
+		border-radius: 8px; color:#ff8080; font-size:16px; font-weight:700; cursor:pointer;
+	}
+	.alarm-silence-btn:active { background: rgba(180,0,0,0.6); }
 	.alarm-muted-badge {
 		font-size: 12px; color: rgba(255,220,100,0.9);
 		background: rgba(0,0,0,0.3); padding: 4px 12px; border-radius: 4px;
