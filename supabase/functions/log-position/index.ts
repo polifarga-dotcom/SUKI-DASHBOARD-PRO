@@ -324,10 +324,11 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      // Already has an active trip
-      const { data: existingTrip } = await supabase
-        .from('log_trips').select('id').eq('boat_id', boatId).is('ended_at', null).maybeSingle();
-      if (existingTrip) continue;
+      // Already has an active trip — use limit(1) not maybeSingle() which returns
+      // null when multiple rows match, causing cascade trip creation.
+      const { data: existingTrips } = await supabase
+        .from('log_trips').select('id').eq('boat_id', boatId).is('ended_at', null).limit(1);
+      if (existingTrips && existingTrips.length > 0) continue;
 
       // Resolve GPS
       const gps = await resolveGPS(supabase, boatId, ac.vrm_api_token ?? null, ac.vrm_installation_id ?? null);
@@ -502,8 +503,19 @@ Deno.serve(async (req: Request) => {
   const results: { trip: string; boat: string; status: string }[] = [];
   console.log(`[log-position] processing ${trips?.length ?? 0} active trips`);
 
+  // If a boat somehow has multiple open trips (cascade bug), only process the
+  // oldest one per boat to prevent adding duplicate entries to all of them.
+  const oldestPerBoat = new Map<string, string>();
+  for (const trip of (trips ?? []) as Trip[]) {
+    if (!oldestPerBoat.has(trip.boat_id)) oldestPerBoat.set(trip.boat_id, trip.id);
+  }
+
   for (const trip of (trips ?? []) as Trip[]) {
     const boatId = trip.boat_id;
+    if (oldestPerBoat.get(boatId) !== trip.id) {
+      results.push({ trip: trip.id, boat: boatId, status: 'skipped_duplicate_open_trip' });
+      continue;
+    }
     try {  // ── per-trip isolation: one trip's error never blocks others ──
 
     const { data: cfg } = await supabase
