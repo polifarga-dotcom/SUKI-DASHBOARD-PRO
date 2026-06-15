@@ -151,7 +151,6 @@ Deno.serve(async (req: Request) => {
     .not('trip_id', 'is', null)
     .not('lat', 'is', null)
     .not('lon', 'is', null)
-    .gte('logged_at', new Date(Date.now() - 30 * 86_400_000).toISOString())
     .order('logged_at', { ascending: true })
     .limit(2000);
   const track = trackRes.data ?? [];
