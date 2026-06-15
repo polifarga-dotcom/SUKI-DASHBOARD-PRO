@@ -139,46 +139,21 @@ Deno.serve(async (req: Request) => {
   const trip      = tripRes.data ?? null;
   const irCfg     = cfgRes.data ?? null;
 
-  // ── GPS track — scoped to the active trip (or last completed trip) ─────────
-  // Fetching all entries across trips would connect yesterday's last point to
-  // today's first point with a straight line, inflating the track visually.
-  let trackRes;
-  if (trip) {
-    // Active trip: only entries belonging to this trip, up to 1000 pts
-    trackRes = await supabase.from('log_entries').select(
-      'lat, lon, logged_at, sog_kn, wind_speed_kn, wind_dir_deg, engine_on, batt_soc'
-    )
-      .eq('boat_id', boatId)
-      .eq('trip_id', trip.id)
-      .not('lat', 'is', null)
-      .not('lon', 'is', null)
-      .order('logged_at', { ascending: true })
-      .limit(1000);
-  } else {
-    // No active trip: show last completed trip (up to 7 days ago) so there's still
-    // something to display after arriving, without connecting across trips.
-    const { data: lastTrip } = await supabase.from('log_trips').select('id')
-      .eq('boat_id', boatId)
-      .not('ended_at', 'is', null)
-      .gte('ended_at', new Date(Date.now() - 7 * 86_400_000).toISOString())
-      .order('ended_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (lastTrip) {
-      trackRes = await supabase.from('log_entries').select(
-        'lat, lon, logged_at, sog_kn, wind_speed_kn, wind_dir_deg, engine_on, batt_soc'
-      )
-        .eq('boat_id', boatId)
-        .eq('trip_id', lastTrip.id)
-        .not('lat', 'is', null)
-        .not('lon', 'is', null)
-        .order('logged_at', { ascending: true })
-        .limit(1000);
-    } else {
-      trackRes = { data: [] };
-    }
-  }
+  // ── GPS track — all trip entries, last 30 days, chronological ───────────────
+  // Filter trip_id IS NOT NULL to exclude orphan pre-trip entries (source='pre-trip')
+  // which have no trip_id and can span far back in time, creating phantom lines.
+  // Entries from multiple trips are returned in order — the frontend draws one
+  // continuous polyline, connecting end of one leg to start of the next as intended.
+  const trackRes = await supabase.from('log_entries').select(
+    'lat, lon, logged_at, sog_kn, wind_speed_kn, wind_dir_deg, engine_on, batt_soc'
+  )
+    .eq('boat_id', boatId)
+    .not('trip_id', 'is', null)
+    .not('lat', 'is', null)
+    .not('lon', 'is', null)
+    .gte('logged_at', new Date(Date.now() - 30 * 86_400_000).toISOString())
+    .order('logged_at', { ascending: true })
+    .limit(2000);
   const track = trackRes.data ?? [];
 
   // ── InReach GPS cache refresh ─────────────────────────────────────────────
