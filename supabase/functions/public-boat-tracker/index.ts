@@ -101,8 +101,10 @@ Deno.serve(async (req: Request) => {
     CORS['Cache-Control'] = 'no-store';
   }
 
-  // ── Fetch all data in parallel ────────────────────────────────────────────
-  const [telRes, trackRes, tripRes, cfgRes] = await Promise.all([
+  // ── Fetch telemetry, active trip, and config in parallel ─────────────────
+  // Track is fetched after, because we need the trip ID to filter entries
+  // to the current trip only (prevents connecting yesterday's track to today's).
+  const [telRes, tripRes, cfgRes] = await Promise.all([
 
     // Live telemetry snapshot (everything except credentials)
     // vrm_gps_* and inreach_gps_* are GPS fallback columns written by vrm-poll and this function
@@ -120,17 +122,6 @@ Deno.serve(async (req: Request) => {
       'updated_at'
     ).eq('boat_id', boatId).single(),
 
-    // GPS track — all log_entries with positions, last 7 days, max 1000 pts
-    supabase.from('log_entries').select(
-      'lat, lon, logged_at, sog_kn, wind_speed_kn, wind_dir_deg, engine_on, batt_soc'
-    )
-      .eq('boat_id', boatId)
-      .not('lat', 'is', null)
-      .not('lon', 'is', null)
-      .gte('logged_at', new Date(Date.now() - 7 * 86_400_000).toISOString())
-      .order('logged_at', { ascending: true })
-      .limit(1000),
-
     // Active trip (if any)
     supabase.from('log_trips').select(
       'id, name, started_at, from_port, total_nm, sail_nm, motor_nm, avg_sog_kn, max_sog_kn'
@@ -145,9 +136,50 @@ Deno.serve(async (req: Request) => {
 
   // deno-lint-ignore no-explicit-any
   const telemetry = (telRes.data ?? null) as Record<string, any> | null;
-  const track     = trackRes.data ?? [];
   const trip      = tripRes.data ?? null;
   const irCfg     = cfgRes.data ?? null;
+
+  // ── GPS track — scoped to the active trip (or last completed trip) ─────────
+  // Fetching all entries across trips would connect yesterday's last point to
+  // today's first point with a straight line, inflating the track visually.
+  let trackRes;
+  if (trip) {
+    // Active trip: only entries belonging to this trip, up to 1000 pts
+    trackRes = await supabase.from('log_entries').select(
+      'lat, lon, logged_at, sog_kn, wind_speed_kn, wind_dir_deg, engine_on, batt_soc'
+    )
+      .eq('boat_id', boatId)
+      .eq('trip_id', trip.id)
+      .not('lat', 'is', null)
+      .not('lon', 'is', null)
+      .order('logged_at', { ascending: true })
+      .limit(1000);
+  } else {
+    // No active trip: show last completed trip (up to 7 days ago) so there's still
+    // something to display after arriving, without connecting across trips.
+    const { data: lastTrip } = await supabase.from('log_trips').select('id')
+      .eq('boat_id', boatId)
+      .not('ended_at', 'is', null)
+      .gte('ended_at', new Date(Date.now() - 7 * 86_400_000).toISOString())
+      .order('ended_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lastTrip) {
+      trackRes = await supabase.from('log_entries').select(
+        'lat, lon, logged_at, sog_kn, wind_speed_kn, wind_dir_deg, engine_on, batt_soc'
+      )
+        .eq('boat_id', boatId)
+        .eq('trip_id', lastTrip.id)
+        .not('lat', 'is', null)
+        .not('lon', 'is', null)
+        .order('logged_at', { ascending: true })
+        .limit(1000);
+    } else {
+      trackRes = { data: [] };
+    }
+  }
+  const track = trackRes.data ?? [];
 
   // ── InReach GPS cache refresh ─────────────────────────────────────────────
   // Refresh cached InReach position when stale (>10 min) and credentials exist.
