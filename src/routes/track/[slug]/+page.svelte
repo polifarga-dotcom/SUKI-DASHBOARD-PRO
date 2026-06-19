@@ -474,7 +474,7 @@
 	onMount(async () => {
 		await fetchData();
 		// initMap() will be triggered by the $effect above once mapEl is set
-		refreshTimer = setInterval(fetchData, 30_000);
+		// No auto-refresh — snapshot on page load only (saves egress)
 	});
 	onDestroy(() => {
 		clearInterval(refreshTimer);
