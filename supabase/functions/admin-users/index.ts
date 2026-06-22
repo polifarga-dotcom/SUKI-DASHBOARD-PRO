@@ -6,6 +6,8 @@
  * GET  /admin-users          → list all users with roles + boat memberships
  * POST /admin-users          → actions: set_superadmin | reset_password | remove_from_boat
  *                                       get_bot_token | set_bot_token
+ *                                       delete_user | delete_boat | set_password
+ *                                       toggle_boat_membership
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -90,7 +92,16 @@ Deno.serve(async (req: Request) => {
     });
 
     // ── Boat connection status ─────────────────────────────────────────────
-    const allBoatIds = [...new Set((members ?? []).map((m: any) => m.boat_id))];
+    // Use all boats (not just those with members) so delete-boat works for all
+    const { data: allBoats } = await admin.from('boats').select('id, name');
+    const allBoatIds = (allBoats ?? []).map((b: any) => b.id);
+
+    // Which boats is the superadmin already a member of?
+    const { data: myMemberships } = await admin
+      .from('boat_members')
+      .select('boat_id')
+      .eq('user_id', callerId);
+    const myBoatSet = new Set((myMemberships ?? []).map((m: any) => m.boat_id));
 
     const [{ data: configs }, { data: telRows }, { data: tgSubs }] = await Promise.all([
       admin.from('anchor_config').select(
@@ -105,26 +116,27 @@ Deno.serve(async (req: Request) => {
     const tgSubBoats = new Set((tgSubs ?? []).map((s: any) => s.boat_id));
 
     const fiveMinAgo = Date.now() - 5 * 60 * 1000;
-    const boatStatus: Record<string, { signalk: boolean; vrm: boolean; telegram: boolean; pushover: boolean; telemetry_at: string | null }> = {};
+    const boatStatus: Record<string, { signalk: boolean; vrm: boolean; telegram: boolean; pushover: boolean; telemetry_at: string | null; is_admin_member: boolean }> = {};
     for (const bid of allBoatIds) {
       const c = cfgMap[bid] ?? {};
       const telAt = telMap[bid] ?? null;
       boatStatus[bid] = {
-        signalk:  !!(c.plugin_api_key) && !!(telAt) && new Date(telAt).getTime() > fiveMinAgo,
-        vrm:      !!(c.vrm_api_token) && !!(c.vrm_installation_id),
-        telegram: tgSubBoats.has(bid) || (!!(c.telegram_token) && !!(c.telegram_chat_ids)),
-        pushover: !!(c.pushover_app_token) && !!(c.pushover_user_keys),
-        telemetry_at: telAt,
+        signalk:         !!(c.plugin_api_key) && !!(telAt) && new Date(telAt).getTime() > fiveMinAgo,
+        vrm:             !!(c.vrm_api_token) && !!(c.vrm_installation_id),
+        telegram:        tgSubBoats.has(bid) || (!!(c.telegram_token) && !!(c.telegram_chat_ids)),
+        pushover:        !!(c.pushover_app_token) && !!(c.pushover_user_keys),
+        telemetry_at:    telAt,
+        is_admin_member: myBoatSet.has(bid),
       };
     }
 
-    return json({ users: result, boatStatus });
+    return json({ users: result, boatStatus, allBoats: allBoats ?? [] });
   }
 
   // ── POST: actions ────────────────────────────────────────────────────────
   if (req.method === 'POST') {
     const body = await req.json();
-    const { action, user_id, value, boat_id, token } = body;
+    const { action, user_id, value, boat_id, token, password, join } = body;
 
     if (action === 'get_bot_token') {
       const { data } = await admin.from('system_config').select('value').eq('key', 'telegram_bot_token').single();
@@ -146,6 +158,46 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true, username });
     }
 
+    // ── delete_boat (no user_id needed) ───────────────────────────────────
+    if (action === 'delete_boat') {
+      if (!boat_id) return json({ error: 'boat_id required' }, 400);
+      // Delete in dependency order to avoid FK violations
+      await admin.from('log_entries').delete().in('trip_id',
+        admin.from('log_trips').select('id').eq('boat_id', boat_id) as any
+      );
+      await admin.from('log_trips').delete().eq('boat_id', boat_id);
+      await admin.from('anchor_history').delete().eq('boat_id', boat_id);
+      await admin.from('telegram_subscribers').delete().eq('boat_id', boat_id);
+      await admin.from('relay_commands').delete().eq('boat_id', boat_id);
+      await admin.from('sensor_alarms').delete().eq('boat_id', boat_id);
+      await admin.from('shelly_devices').delete().eq('boat_id', boat_id);
+      await admin.from('temperature_sensors').delete().eq('boat_id', boat_id);
+      await admin.from('telemetry_history').delete().eq('boat_id', boat_id);
+      await admin.from('anchor_config').delete().eq('boat_id', boat_id);
+      await admin.from('telemetry').delete().eq('boat_id', boat_id);
+      await admin.from('boat_members').delete().eq('boat_id', boat_id);
+      const { error } = await admin.from('boats').delete().eq('id', boat_id);
+      if (error) return json({ error: error.message }, 500);
+      return json({ ok: true });
+    }
+
+    // ── toggle_boat_membership (superadmin joins/leaves a boat) ───────────
+    if (action === 'toggle_boat_membership') {
+      if (!boat_id) return json({ error: 'boat_id required' }, 400);
+      if (join) {
+        const { error } = await admin.from('boat_members').upsert(
+          { boat_id, user_id: callerId, role: 'admin', invited_by: callerId },
+          { onConflict: 'boat_id,user_id' }
+        );
+        if (error) return json({ error: error.message }, 500);
+      } else {
+        const { error } = await admin.from('boat_members').delete()
+          .eq('boat_id', boat_id).eq('user_id', callerId);
+        if (error) return json({ error: error.message }, 500);
+      }
+      return json({ ok: true });
+    }
+
     if (!user_id) return json({ error: 'user_id required' }, 400);
 
     if (action === 'set_superadmin') {
@@ -163,6 +215,23 @@ Deno.serve(async (req: Request) => {
         .from('user_roles')
         .update({ force_password_change: true })
         .eq('user_id', user_id);
+      if (error) return json({ error: error.message }, 500);
+      return json({ ok: true });
+    }
+
+    if (action === 'set_password') {
+      if (!password || password.length < 8) return json({ error: 'Password must be at least 8 characters' }, 400);
+      const { error } = await admin.auth.admin.updateUserById(user_id, { password });
+      if (error) return json({ error: error.message }, 500);
+      // Clear force_password_change since password is now known
+      await admin.from('user_roles').update({ force_password_change: false }).eq('user_id', user_id);
+      return json({ ok: true });
+    }
+
+    if (action === 'delete_user') {
+      if (user_id === callerId) return json({ error: 'Cannot delete your own account' }, 400);
+      await admin.from('user_roles').delete().eq('user_id', user_id);
+      const { error } = await admin.auth.admin.deleteUser(user_id);
       if (error) return json({ error: error.message }, 500);
       return json({ ok: true });
     }

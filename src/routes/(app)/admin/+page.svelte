@@ -17,15 +17,22 @@
 		boats: { boat_id: string; boat_name: string; role: string }[];
 	};
 
-	type BoatStatus = { signalk: boolean; vrm: boolean; telegram: boolean; pushover: boolean; telemetry_at: string | null };
+	type BoatStatus = { signalk: boolean; vrm: boolean; telegram: boolean; pushover: boolean; telemetry_at: string | null; is_admin_member: boolean };
+	type BoatSummaryItem = { id: string; name: string; count: number };
 
 	let users = $state<AdminUser[]>([]);
 	let boatStatus = $state<Record<string, BoatStatus>>({});
+	let allBoats = $state<{ id: string; name: string }[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let expandedUser = $state<string | null>(null);
 	let actionMsg = $state('');
 	let actionMsgTimeout: ReturnType<typeof setTimeout>;
+
+	// Password set state per user
+	let pwExpanded = $state<Record<string, boolean>>({});
+	let pwInput    = $state<Record<string, string>>({});
+	let pwVisible  = $state<Record<string, boolean>>({});
 
 	function showMsg(msg: string) {
 		actionMsg = msg;
@@ -48,6 +55,7 @@
 			if (!res.ok) throw new Error(json.error ?? 'Failed to load users');
 			users = json.users;
 			boatStatus = json.boatStatus ?? {};
+			allBoats = json.allBoats ?? [];
 		} catch (e: unknown) {
 			error = (e as Error).message;
 		} finally {
@@ -85,6 +93,55 @@
 			await callAction({ action: 'reset_password', user_id: user.id });
 			user.force_password_change = true;
 			showMsg(`Password reset forced for ${user.email}`);
+		} catch (e: unknown) {
+			showMsg('Error: ' + (e as Error).message);
+		}
+	}
+
+	async function deleteUser(u: AdminUser) {
+		if (!confirm(`Delete ${u.email} permanently? This cannot be undone.`)) return;
+		try {
+			await callAction({ action: 'delete_user', user_id: u.id });
+			users = users.filter(x => x.id !== u.id);
+			showMsg(`${u.email} deleted`);
+		} catch (e: unknown) {
+			showMsg('Error: ' + (e as Error).message);
+		}
+	}
+
+	async function setPassword(u: AdminUser) {
+		const pw = pwInput[u.id] ?? '';
+		if (pw.length < 8) { showMsg('Password must be at least 8 characters'); return; }
+		try {
+			await callAction({ action: 'set_password', user_id: u.id, password: pw });
+			pwInput[u.id] = '';
+			pwExpanded[u.id] = false;
+			u.force_password_change = false;
+			showMsg(`Password updated for ${u.email}`);
+		} catch (e: unknown) {
+			showMsg('Error: ' + (e as Error).message);
+		}
+	}
+
+	async function deleteBoat(b: BoatSummaryItem) {
+		if (!confirm(`Delete "${b.name}" and ALL data?\nTrips, log entries, config — everything. This cannot be undone.`)) return;
+		try {
+			await callAction({ action: 'delete_boat', boat_id: b.id });
+			for (const u of users) u.boats = u.boats.filter(bm => bm.boat_id !== b.id);
+			allBoats = allBoats.filter(ab => ab.id !== b.id);
+			delete boatStatus[b.id];
+			showMsg(`"${b.name}" deleted`);
+		} catch (e: unknown) {
+			showMsg('Error: ' + (e as Error).message);
+		}
+	}
+
+	async function toggleBoatMembership(boat_id: string, boat_name: string) {
+		const current = boatStatus[boat_id]?.is_admin_member ?? false;
+		try {
+			await callAction({ action: 'toggle_boat_membership', boat_id, join: !current });
+			boatStatus[boat_id] = { ...boatStatus[boat_id], is_admin_member: !current };
+			showMsg(current ? `Left "${boat_name}"` : `Joined "${boat_name}" as admin`);
 		} catch (e: unknown) {
 			showMsg('Error: ' + (e as Error).message);
 		}
@@ -155,16 +212,15 @@
 		setTimeout(() => { botTokenSaved = 'idle'; }, 3000);
 	}
 
-	// Group boats across all users for boat summary
-	const boatSummary = $derived(() => {
-		const map: Record<string, { name: string; count: number }> = {};
+	// Boat summary: all boats from API, member count derived from users
+	const boatSummary = $derived((): BoatSummaryItem[] => {
+		const countMap: Record<string, number> = {};
 		for (const u of users) {
 			for (const b of u.boats) {
-				if (!map[b.boat_id]) map[b.boat_id] = { name: b.boat_name, count: 0 };
-				map[b.boat_id].count++;
+				countMap[b.boat_id] = (countMap[b.boat_id] ?? 0) + 1;
 			}
 		}
-		return Object.entries(map).map(([id, v]) => ({ id, ...v }));
+		return allBoats.map(b => ({ id: b.id, name: b.name, count: countMap[b.id] ?? 0 }));
 	});
 
 	onMount(async () => {
@@ -294,7 +350,38 @@
 						disabled={u.force_password_change}>
 						{u.force_password_change ? 'Pw reset pending' : 'Force pw reset'}
 					</button>
+					<button class="btn-sm" onclick={() => pwExpanded[u.id] = !pwExpanded[u.id]}>
+						Set password
+					</button>
+					<button class="btn-sm btn-danger" onclick={() => deleteUser(u)}>
+						Delete user
+					</button>
 				</div>
+
+				{#if pwExpanded[u.id]}
+				<div class="pw-row">
+					<div class="pw-input-wrap">
+						<input
+							class="pw-input"
+							type={pwVisible[u.id] ? 'text' : 'password'}
+							placeholder="New password (min. 8 chars)"
+							bind:value={pwInput[u.id]}
+							onkeydown={e => e.key === 'Enter' && setPassword(u)}
+						/>
+						<button class="pw-eye" onclick={() => pwVisible[u.id] = !pwVisible[u.id]} title="Show/hide">
+							{#if pwVisible[u.id]}
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+							{:else}
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+							{/if}
+						</button>
+					</div>
+					<button class="btn-sm btn-accent" onclick={() => setPassword(u)}
+						disabled={!pwInput[u.id] || (pwInput[u.id]?.length ?? 0) < 8}>
+						Save
+					</button>
+				</div>
+				{/if}
 			</div>
 			{/if}
 		</div>
@@ -326,6 +413,18 @@
 				</div>
 			</div>
 			{/if}
+			<div class="bt-actions">
+				<label class="bt-checkbox" title="Join this boat as admin for support access">
+					<input type="checkbox"
+						checked={st?.is_admin_member ?? false}
+						onchange={() => toggleBoatMembership(b.id, b.name)}
+					/>
+					<span>I am admin</span>
+				</label>
+				<button class="btn-sm btn-danger bt-del" onclick={() => deleteBoat(b)} title="Delete boat and all data">
+					<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="2,4 14,4"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M6 7v5M10 7v5"/><rect x="3" y="4" width="10" height="9" rx="1"/></svg>
+				</button>
+			</div>
 		</div>
 		{/each}
 	</div>
@@ -506,6 +605,47 @@
 	}
 	.bt-led.on  .led-lbl { color: #22c55e; }
 	.bt-led.off .led-lbl { color: var(--muted); }
+
+	/* ── Set password row ── */
+	.pw-row {
+		display: flex; gap: 8px; align-items: center;
+		background: var(--card2); border-radius: 8px; padding: 8px 10px;
+	}
+	.pw-input-wrap {
+		flex: 1; position: relative; display: flex; align-items: center;
+	}
+	.pw-input {
+		width: 100%; background: transparent; border: none; outline: none;
+		font-size: 13px; color: var(--text); padding-right: 28px;
+	}
+	.pw-eye {
+		position: absolute; right: 0; background: none; border: none;
+		cursor: pointer; color: var(--muted); padding: 2px; display: flex;
+	}
+	.pw-eye:hover { color: var(--text); }
+	.btn-accent {
+		border-color: rgba(0,200,255,0.35); color: var(--accent);
+		background: rgba(0,200,255,0.08);
+	}
+	.btn-accent:hover { background: rgba(0,200,255,0.15); }
+	.btn-accent:disabled { opacity: 0.4; cursor: default; }
+
+	/* ── Boat tile actions ── */
+	.bt-actions {
+		display: flex; align-items: center; justify-content: space-between;
+		margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);
+	}
+	.bt-checkbox {
+		display: flex; align-items: center; gap: 6px;
+		font-size: 11px; color: var(--muted); cursor: pointer; user-select: none;
+	}
+	.bt-checkbox input[type="checkbox"] {
+		accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer;
+	}
+	.bt-checkbox:has(input:checked) { color: var(--accent); }
+	.bt-del {
+		padding: 4px 8px; display: flex; align-items: center;
+	}
 
 	/* ── App Bot ── */
 	.section-hdr {
