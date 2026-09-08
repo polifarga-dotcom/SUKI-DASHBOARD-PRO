@@ -14,6 +14,7 @@
 	import { queueLogEntry, getPendingCount, syncPendingEntries, subscribeToOnline } from '$lib/offline.js';
 	import type { LogEntry, LogTrip } from '$lib/types.js';
 	import TripCharts, { type ChartPoint } from '$lib/components/charts/TripCharts.svelte';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 
 	// ── Reactive store snapshots ──────────────────────────────────────────────
 	const t    = $derived($telemetry);
@@ -28,6 +29,29 @@
 	let showTripModal   = $state(false);
 	let showEntryModal  = $state(false);
 	let saving          = $state(false);
+
+	// ── Confirm dialog (replaces window.confirm(), which silently no-ops in
+	// standalone/installed PWA mode on several mobile browsers) ──────────────
+	let confirmState = $state<{
+		open: boolean;
+		title: string;
+		message: string;
+		action: (() => Promise<void>) | null;
+	}>({ open: false, title: '', message: '', action: null });
+
+	function askConfirm(title: string, message: string, action: () => Promise<void>) {
+		confirmState = { open: true, title, message, action };
+	}
+
+	async function handleConfirm() {
+		const action = confirmState.action;
+		confirmState = { ...confirmState, open: false };
+		if (action) await action();
+	}
+
+	function handleCancelConfirm() {
+		confirmState = { ...confirmState, open: false };
+	}
 	let autoLogTimer: ReturnType<typeof setInterval>;
 
 	// ── Realtime subscription (receives server-inserted entries) ──────────────
@@ -596,20 +620,24 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		editingTrip = null;
 	}
 
-	async function deleteTripSingle(trip: LogTrip, e: Event) {
+function deleteTripSingle(trip: LogTrip, e: Event) {
 		e.stopPropagation();
-		if (!confirm(`Delete "${trip.name ?? 'Unnamed trip'}" and all its log entries?`)) return;
-		saving = true;
-		await supabase.from('log_entries').delete().eq('trip_id', trip.id).eq('boat_id', trip.boat_id);
-		await supabase.from('log_trips').delete().eq('id', trip.id).eq('boat_id', trip.boat_id);
-		allTrips.update(ts => ts.filter(t => t.id !== trip.id));
-		if (expandedTripId === trip.id) {
-			expandedMapInst?.remove(); expandedMapInst = null;
-			expandedTripId = null; expandedEntries = []; expandedMapPositions = [];
-		}
-		saving = false;
+		askConfirm(
+			'Delete trip',
+			`Delete "${trip.name ?? 'Unnamed trip'}" and all its log entries?`,
+			async () => {
+				saving = true;
+				await supabase.from('log_entries').delete().eq('trip_id', trip.id).eq('boat_id', trip.boat_id);
+				await supabase.from('log_trips').delete().eq('id', trip.id).eq('boat_id', trip.boat_id);
+				allTrips.update(ts => ts.filter(t => t.id !== trip.id));
+				if (expandedTripId === trip.id) {
+					expandedMapInst?.remove(); expandedMapInst = null;
+					expandedTripId = null; expandedEntries = []; expandedMapPositions = [];
+				}
+				saving = false;
+			}
+		);
 	}
-
 	// ── Trip merge ────────────────────────────────────────────────────────────
 	// Returns the trip that ended immediately before `trip` started, if it's
 	// eligible to merge (both auto, gap < 4 h, previous trip is closed).
@@ -627,17 +655,22 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		return prev;
 	}
 
-	async function mergeWithPrevious(trip: LogTrip, e: Event) {
+function mergeWithPrevious(trip: LogTrip, e: Event) {
 		e.stopPropagation();
 		const prev = mergeCandidateFor(trip);
 		if (!prev) return;
 		const gapMin = Math.round(
 			(new Date(trip.started_at).getTime() - new Date(prev.ended_at).getTime()) / 60_000
 		);
-		if (!confirm(
+		askConfirm(
+			'Merge trips',
 			`Merge "${trip.name ?? 'this trip'}" into the previous trip?\n` +
-			`Gap: ${gapMin} min — all entries will be combined and the duplicate trip deleted.`
-		)) return;
+			`Gap: ${gapMin} min — all entries will be combined and the duplicate trip deleted.`,
+			() => doMergeWithPrevious(trip, prev)
+		);
+	}
+
+	async function doMergeWithPrevious(trip: LogTrip, prev: LogTrip) {
 		saving = true;
 		try {
 			// 1. Re-assign all entries from trip → prev
@@ -710,21 +743,26 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		selectionMode = false;
 	}
 
-	async function deleteSelected() {
+function deleteSelected() {
 		if (selectedTripIds.size === 0 || saving) return;
-		if (!confirm(`Delete ${selectedTripIds.size} trip${selectedTripIds.size === 1 ? '' : 's'} and all their log entries? This cannot be undone.`)) return;
-		saving = true;
-		const ids = [...selectedTripIds];
-		await supabase.from('log_entries').delete().in('trip_id', ids).eq('boat_id', boat!.id);
-		await supabase.from('log_trips').delete().in('id', ids).eq('boat_id', boat!.id);
-		allTrips.update(ts => ts.filter(t => !selectedTripIds.has(t.id)));
-		if (expandedTripId && selectedTripIds.has(expandedTripId)) {
-			expandedMapInst?.remove(); expandedMapInst = null;
-			expandedTripId = null; expandedEntries = []; expandedMapPositions = [];
-		}
-		selectedTripIds = new Set();
-		selectionMode = false;
-		saving = false;
+		askConfirm(
+			'Delete trips',
+			`Delete ${selectedTripIds.size} trip${selectedTripIds.size === 1 ? '' : 's'} and all their log entries? This cannot be undone.`,
+			async () => {
+				saving = true;
+				const ids = [...selectedTripIds];
+				await supabase.from('log_entries').delete().in('trip_id', ids).eq('boat_id', boat!.id);
+				await supabase.from('log_trips').delete().in('id', ids).eq('boat_id', boat!.id);
+				allTrips.update(ts => ts.filter(t => !selectedTripIds.has(t.id)));
+				if (expandedTripId && selectedTripIds.has(expandedTripId)) {
+					expandedMapInst?.remove(); expandedMapInst = null;
+					expandedTripId = null; expandedEntries = []; expandedMapPositions = [];
+				}
+				selectedTripIds = new Set();
+				selectionMode = false;
+				saving = false;
+			}
+		);
 	}
 
 	// ── Trip modal form ───────────────────────────────────────────────────────
@@ -2006,6 +2044,14 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 </div>
 {/if}
 {/snippet}
+
+<ConfirmDialog
+	open={confirmState.open}
+	title={confirmState.title}
+	message={confirmState.message}
+	onconfirm={handleConfirm}
+	oncancel={handleCancelConfirm}
+/>
 
 <style>
 	.log-page {
