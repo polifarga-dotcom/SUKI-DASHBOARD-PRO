@@ -620,7 +620,7 @@ ${lbl ? `<text x="${xl.toFixed(1)}" y="${(yl+3).toFixed(1)}" font-size="7" fill=
 		editingTrip = null;
 	}
 
-function deleteTripSingle(trip: LogTrip, e: Event) {
+	function deleteTripSingle(trip: LogTrip, e: Event) {
 		e.stopPropagation();
 		askConfirm(
 			'Delete trip',
@@ -655,7 +655,7 @@ function deleteTripSingle(trip: LogTrip, e: Event) {
 		return prev;
 	}
 
-function mergeWithPrevious(trip: LogTrip, e: Event) {
+	function mergeWithPrevious(trip: LogTrip, e: Event) {
 		e.stopPropagation();
 		const prev = mergeCandidateFor(trip);
 		if (!prev) return;
@@ -743,7 +743,7 @@ function mergeWithPrevious(trip: LogTrip, e: Event) {
 		selectionMode = false;
 	}
 
-function deleteSelected() {
+	function deleteSelected() {
 		if (selectedTripIds.size === 0 || saving) return;
 		askConfirm(
 			'Delete trips',
