@@ -6,7 +6,7 @@
  * with the Ingest URL and API Key from the SUKI Dashboard Settings tab.
  *
  * Data flow:
- *   SignalK delta stream → PATH_MAP filter → 5 s batch → POST /signalk-ingest
+ *   SignalK delta stream → PATH_MAP filter → 5 s batch → POST /ingest-suki-8k2p
  *
  * The plugin:
  *   - Subscribes to all mapped SignalK paths
@@ -16,6 +16,8 @@
  *
  * Standard SignalK paths are mapped to SUKI's telemetry columns.
  * Victron-specific paths (solar total) use the Victron SignalK plugin conventions.
+ *
+ * v1.0.21 — Updated ingest endpoint (renamed Supabase Edge Function).
  *
  * v1.0.20 — Enforce minimum 30 s send interval to stay within Supabase free-plan
  *   edge-function quota. The interval is clamped in code regardless of the stored
@@ -447,9 +449,9 @@ module.exports = function (app) {
       const { api_key, interval_ms: _interval_ms = 30000 } = config || {};
       // Enforce minimum 30 s — clamps legacy configs stored with 5000 ms.
       const interval_ms = Math.max(_interval_ms, 30000);
-      const url = 'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/signalk-ingest';
+      const url = 'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/ingest-suki-8k2p';
       // Offline log buffer endpoint — same base URL, different function
-      const logUrl = url.replace('/signalk-ingest', '/ingest-log-entries');
+      const logUrl = url.replace('/ingest-suki-8k2p', '/ingest-log-entries');
 
       if (!api_key) {
         app.setPluginError('API key not configured — go to SUKI Dashboard → Settings → SignalK Bridge');
@@ -460,7 +462,7 @@ module.exports = function (app) {
 
       // ── Vessel metadata (read once at startup) ───────────────────────────────
       // MMSI and callsign are static vessel properties in SignalK — not a stream.
-      // We read them once and attach to the first batch so signalk-ingest can
+      // We read them once and attach to the first batch so ingest-suki-8k2p can
       // auto-populate boats.mmsi / boats.callsign without manual entry.
       let _vesselMeta = null;
       {
