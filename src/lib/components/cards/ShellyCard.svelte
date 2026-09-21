@@ -6,6 +6,11 @@
 	let devices = $state<Device[]>([]);
 	let loaded  = $state(false);
 
+	// Backoff state for Shelly Cloud rate limiting (429) — not reactive, just
+	// plain closure vars read/written inside fetchDevices().
+	let backoffUntil    = 0;
+	let consecutive429s  = 0;
+
 	const cfg = $derived($anchorConfig);
 
 	// Derived credential strings — $effect only re-runs when these actually change,
@@ -29,14 +34,15 @@
 		return null;
 	}
 
-	/** Fetch current state for one device via /device/status. */
-	async function fetchOneState(srv: string, key: string, id: string): Promise<0 | 1 | null> {
+	/** Fetch current state for one device via /device/status. Returns 'rate_limited' on 429. */
+	async function fetchOneState(srv: string, key: string, id: string): Promise<0 | 1 | null | 'rate_limited'> {
 		try {
 			const r = await fetch(`https://${srv}/device/status`, {
 				method:  'POST',
 				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 				body:    `auth_key=${encodeURIComponent(key)}&id=${encodeURIComponent(id)}`,
 			});
+			if (r.status === 429) return 'rate_limited';
 			if (!r.ok) return null;
 			const j = await r.json();
 			const ds = j?.data?.device_status as Record<string, unknown> | undefined;
@@ -47,11 +53,13 @@
 	async function fetchDevices() {
 		const api = apiBase();
 		if (!api) return;
+		if (Date.now() < backoffUntil) return;   // still cooling down from a recent 429
 		try {
 			// ── Step 1: device list (names + online status) ──────────────────────
 			// Note: list returns `devices` (metadata) only — no devices_status.
 			// Online flag lives in devsInfo[id].cloud_online.
-			const listRes  = await fetch(`https://${api.srv}/interface/device/list?auth_key=${api.key}`);
+			const listRes = await fetch(`https://${api.srv}/interface/device/list?auth_key=${api.key}`);
+			if (listRes.status === 429) { applyBackoff(); return; }
 			const listJson = await listRes.json();
 
 			const devsInfo: Record<string, Record<string, unknown>> = listJson?.data?.devices ?? {};
@@ -74,18 +82,29 @@
 
 			loaded = true;
 
-			// ── Step 2: per-device status — sequential to respect rate limit (≈1 req/s) ──
+			// ── Step 2: per-device status — sequential to respect rate limit ─────
+			// On 429, stop polling for the rest of this cycle and back off the next
+			// cycle (exponential, capped) instead of hammering the API every 30s.
 			for (const id of ids) {
-				await new Promise(r => setTimeout(r, 1000));
+				await new Promise(r => setTimeout(r, 1500));
 				const state = await fetchOneState(api.srv, api.key, id);
+				if (state === 'rate_limited') { applyBackoff(); return; }
 				if (state !== null) {
 					devices = devices.map(d => d.id === id ? { ...d, state } : d);
 				}
 			}
+			consecutive429s = 0;   // full cycle completed without hitting a rate limit
 
 		} catch {
 			loaded = true;
 		}
+	}
+
+	/** Exponential backoff (30s → 1/2/4/8 min, capped) after a 429 from Shelly Cloud. */
+	function applyBackoff() {
+		consecutive429s++;
+		const delayMs = Math.min(30_000 * 2 ** consecutive429s, 8 * 60_000);
+		backoffUntil = Date.now() + delayMs;
 	}
 
 	async function toggle(dev: Device) {
