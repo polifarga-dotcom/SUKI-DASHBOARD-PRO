@@ -296,7 +296,7 @@
 		if (meteoWind) startWindParticles();
 	}
 
-	const API = `https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/public-boat-tracker`;
+	const API = `https://lzvwhzzscsjeivtviyjm.supabase.co/functions/v1/public-boat-tracker`;
 
 	const CARDS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
 	function cardinal(deg: number | null) { return deg != null ? CARDS[Math.round(((deg%360)+360)%360/22.5)%16] : '—'; }

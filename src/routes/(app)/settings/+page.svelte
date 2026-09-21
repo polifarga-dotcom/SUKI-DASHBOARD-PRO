@@ -1275,7 +1275,7 @@
 		<h2>System</h2>
 		<div class="info-row"><span class="lbl">Build</span><span class="build-ver">{version}</span></div>
 		{#if isSuperAdmin}
-		<div class="info-row"><span class="lbl">Supabase</span><code>mtcmxrmykvthybwrlnvz</code></div>
+		<div class="info-row"><span class="lbl">Supabase</span><code>lzvwhzzscsjeivtviyjm</code></div>
 		{/if}
 		<button class="btn btn-danger mt" onclick={signOut}>Sign out</button>
 	</section>

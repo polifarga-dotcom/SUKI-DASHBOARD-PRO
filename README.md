@@ -20,7 +20,7 @@ npm run dev
 
 `.env` (bereits vorhanden):
 ```
-PUBLIC_SUPABASE_URL=https://mtcmxrmykvthybwrlnvz.supabase.co
+PUBLIC_SUPABASE_URL=https://lzvwhzzscsjeivtviyjm.supabase.co
 PUBLIC_SUPABASE_ANON_KEY=...
 ```
 
