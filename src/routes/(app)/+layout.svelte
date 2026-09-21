@@ -112,6 +112,7 @@
 			telemetry.set(row);
 			dataStale.set(dataAge(row.updated_at));
 		} else {
+			console.error('[fetchTelemetry] boat_id=', boat.id, 'error=', error);
 			dataStale.set(true);
 		}
 
