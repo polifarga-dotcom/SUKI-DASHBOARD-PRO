@@ -101,6 +101,8 @@
 	async function fetchTelemetry() {
 		const boat = $currentBoat;
 		const gen  = fetchGen;                          // snapshot at call time
+		// @ts-expect-error — temporary debug, supabaseUrl is internal but readable
+		console.log('[fetchTelemetry] boat=', boat, 'supabaseUrl=', supabase.supabaseUrl);
 		if (!boat) { dataStale.set(true); return; }
 		const { data: row, error } = await supabase
 			.from('telemetry')
