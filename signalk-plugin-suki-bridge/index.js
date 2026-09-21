@@ -17,6 +17,8 @@
  * Standard SignalK paths are mapped to SUKI's telemetry columns.
  * Victron-specific paths (solar total) use the Victron SignalK plugin conventions.
  *
+ * v1.0.22 — Moved to a new Supabase project (fresh org, separate billing quota).
+ *
  * v1.0.21 — Updated ingest endpoint (renamed Supabase Edge Function).
  *
  * v1.0.20 — Enforce minimum 30 s send interval to stay within Supabase free-plan
@@ -449,7 +451,7 @@ module.exports = function (app) {
       const { api_key, interval_ms: _interval_ms = 30000 } = config || {};
       // Enforce minimum 30 s — clamps legacy configs stored with 5000 ms.
       const interval_ms = Math.max(_interval_ms, 30000);
-      const url = 'https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/ingest-suki-8k2p';
+      const url = 'https://lzvwhzzscsjeivtviyjm.supabase.co/functions/v1/ingest-suki-8k2p';
       // Offline log buffer endpoint — same base URL, different function
       const logUrl = url.replace('/ingest-suki-8k2p', '/ingest-log-entries');
 

@@ -48,7 +48,7 @@ Data is batched and sent every 5 seconds (configurable).
 | Field | Description | Default |
 |---|---|---|
 | `api_key` | API Key from SUKI Dashboard Settings | *(required)* |
-| `endpoint` | Ingest URL from SUKI Dashboard Settings | `https://mtcmxrmykvthybwrlnvz.supabase.co/functions/v1/ingest-suki-8k2p` |
+| `endpoint` | Ingest URL from SUKI Dashboard Settings | `https://lzvwhzzscsjeivtviyjm.supabase.co/functions/v1/ingest-suki-8k2p` |
 | `interval_ms` | Send interval in milliseconds | `5000` |
 
 ## License
