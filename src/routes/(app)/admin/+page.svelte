@@ -2,6 +2,7 @@
 	import { supabase } from '$lib/supabase.js';
 	import { onMount } from 'svelte';
 	import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 
 	let isSuperAdmin = $state(false);
 	let checking = $state(true);
@@ -38,6 +39,29 @@
 		actionMsg = msg;
 		clearTimeout(actionMsgTimeout);
 		actionMsgTimeout = setTimeout(() => (actionMsg = ''), 3000);
+	}
+
+	// ── Confirm dialog (replaces window.confirm(), which silently no-ops in
+	// standalone/installed PWA mode on several mobile browsers) ──────────────
+	let confirmState = $state<{
+		open: boolean;
+		title: string;
+		message: string;
+		action: (() => Promise<void>) | null;
+	}>({ open: false, title: '', message: '', action: null });
+
+	function askConfirm(title: string, message: string, action: () => Promise<void>) {
+		confirmState = { open: true, title, message, action };
+	}
+
+	async function handleConfirm() {
+		const action = confirmState.action;
+		confirmState = { ...confirmState, open: false };
+		if (action) await action();
+	}
+
+	function handleCancelConfirm() {
+		confirmState = { ...confirmState, open: false };
 	}
 
 	async function loadUsers() {
@@ -98,15 +122,20 @@
 		}
 	}
 
-	async function deleteUser(u: AdminUser) {
-		if (!confirm(`Delete ${u.email} permanently? This cannot be undone.`)) return;
-		try {
-			await callAction({ action: 'delete_user', user_id: u.id });
-			users = users.filter(x => x.id !== u.id);
-			showMsg(`${u.email} deleted`);
-		} catch (e: unknown) {
-			showMsg('Error: ' + (e as Error).message);
-		}
+	function deleteUser(u: AdminUser) {
+		askConfirm(
+			'Delete user',
+			`Delete ${u.email} permanently? This cannot be undone.`,
+			async () => {
+				try {
+					await callAction({ action: 'delete_user', user_id: u.id });
+					users = users.filter(x => x.id !== u.id);
+					showMsg(`${u.email} deleted`);
+				} catch (e: unknown) {
+					showMsg('Error: ' + (e as Error).message);
+				}
+			}
+		);
 	}
 
 	async function setPassword(u: AdminUser) {
@@ -123,17 +152,22 @@
 		}
 	}
 
-	async function deleteBoat(b: BoatSummaryItem) {
-		if (!confirm(`Delete "${b.name}" and ALL data?\nTrips, log entries, config — everything. This cannot be undone.`)) return;
-		try {
-			await callAction({ action: 'delete_boat', boat_id: b.id });
-			for (const u of users) u.boats = u.boats.filter(bm => bm.boat_id !== b.id);
-			allBoats = allBoats.filter(ab => ab.id !== b.id);
-			delete boatStatus[b.id];
-			showMsg(`"${b.name}" deleted`);
-		} catch (e: unknown) {
-			showMsg('Error: ' + (e as Error).message);
-		}
+	function deleteBoat(b: BoatSummaryItem) {
+		askConfirm(
+			'Delete boat',
+			`Delete "${b.name}" and ALL data?\nTrips, log entries, config — everything. This cannot be undone.`,
+			async () => {
+				try {
+					await callAction({ action: 'delete_boat', boat_id: b.id });
+					for (const u of users) u.boats = u.boats.filter(bm => bm.boat_id !== b.id);
+					allBoats = allBoats.filter(ab => ab.id !== b.id);
+					delete boatStatus[b.id];
+					showMsg(`"${b.name}" deleted`);
+				} catch (e: unknown) {
+					showMsg('Error: ' + (e as Error).message);
+				}
+			}
+		);
 	}
 
 	async function toggleBoatMembership(boat_id: string, boat_name: string) {
@@ -147,15 +181,20 @@
 		}
 	}
 
-	async function removeFromBoat(user: AdminUser, boat_id: string, boat_name: string) {
-		if (!confirm(`Remove ${user.email} from ${boat_name}?`)) return;
-		try {
-			await callAction({ action: 'remove_from_boat', user_id: user.id, boat_id });
-			user.boats = user.boats.filter(b => b.boat_id !== boat_id);
-			showMsg(`Removed from ${boat_name}`);
-		} catch (e: unknown) {
-			showMsg('Error: ' + (e as Error).message);
-		}
+	function removeFromBoat(user: AdminUser, boat_id: string, boat_name: string) {
+		askConfirm(
+			'Remove from boat',
+			`Remove ${user.email} from ${boat_name}?`,
+			async () => {
+				try {
+					await callAction({ action: 'remove_from_boat', user_id: user.id, boat_id });
+					user.boats = user.boats.filter(b => b.boat_id !== boat_id);
+					showMsg(`Removed from ${boat_name}`);
+				} catch (e: unknown) {
+					showMsg('Error: ' + (e as Error).message);
+				}
+			}
+		);
 	}
 
 	function relTime(iso: string | null): string {
@@ -457,6 +496,14 @@
 
 </div>
 {/if}
+
+<ConfirmDialog
+	open={confirmState.open}
+	title={confirmState.title}
+	message={confirmState.message}
+	onconfirm={handleConfirm}
+	oncancel={handleCancelConfirm}
+/>
 
 <style>
 	.denied {
