@@ -31,13 +31,11 @@ jobs:
           PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: suki-dashboard-pro
-          directory: .svelte-kit/cloudflare
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: pages deploy .svelte-kit/cloudflare --project-name=suki-dashboard-pro --branch=${{ github.ref_name }}
 
   prune-db:
     runs-on: ubuntu-latest
