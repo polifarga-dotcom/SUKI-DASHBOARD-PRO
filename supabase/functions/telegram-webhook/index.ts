@@ -1,7 +1,14 @@
 /**
  * telegram-webhook — receives updates from Telegram for @SukiProBot
  *
- * No JWT required — Telegram calls this endpoint directly.
+ * No JWT required — Telegram calls this endpoint directly. Authenticity is
+ * instead verified via Telegram's own webhook secret-token mechanism: the
+ * secret is registered with `setWebhook` (secret_token param) and Telegram
+ * echoes it back on every call in the X-Telegram-Bot-Api-Secret-Token
+ * header. Any request missing or mismatching it is rejected before any
+ * update is parsed — without this, anyone who finds this function's URL
+ * could POST forged "updates" (e.g. fake /mute commands for a chat_id they
+ * don't own, or fake /start subscriptions).
  *
  * Commands:
  *   /start <boat_code>  → subscribe chat to anchor alerts for that boat
@@ -19,9 +26,13 @@ const admin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
-async function getBotToken(): Promise<string | null> {
-  const { data } = await admin.from('system_config').select('value').eq('key', 'telegram_bot_token').single();
+async function getConfigValue(key: string): Promise<string | null> {
+  const { data } = await admin.from('system_config').select('value').eq('key', key).single();
   return data?.value ?? null;
+}
+
+async function getBotToken(): Promise<string | null> {
+  return getConfigValue('telegram_bot_token');
 }
 
 async function sendReply(botToken: string, chatId: number | string, text: string) {
@@ -35,6 +46,13 @@ async function sendReply(botToken: string, chatId: number | string, text: string
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
     return new Response('ok', { status: 200 });
+  }
+
+  // ── Verify this is genuinely Telegram calling, not a forged request ──────
+  const expectedSecret = await getConfigValue('telegram_webhook_secret');
+  const providedSecret = req.headers.get('X-Telegram-Bot-Api-Secret-Token');
+  if (!expectedSecret || providedSecret !== expectedSecret) {
+    return new Response('unauthorized', { status: 401 });
   }
 
   let update: any;
