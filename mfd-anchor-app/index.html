@@ -73,24 +73,33 @@
   }
   button { cursor: pointer; border: none; background: none; color: inherit; font: inherit; }
 
+  /* NOTE ON SPACING: this file uses margin-based spacing between flex
+     children throughout, never CSS `gap` on a flex container. Flexbox
+     `gap` only shipped in Chrome 84 (2020) — Chrome 69 (the Zeus's
+     QtWebEngine) silently ignores it, collapsing all flex spacing to 0.
+     (`gap` on CSS Grid, used for #data-cells below, is fine — grid-gap
+     landed in Chrome 57, well before 69.) */
   #app {
     display: flex; flex-direction: column; height: 100%;
-    padding: 8px; gap: 8px;
+    padding: 8px;
   }
+  #app > *:not(:last-child) { margin-bottom: 8px; }
 
   /* ── Header ─────────────────────────────────────────────────────────── */
   #hdr {
     display: flex; align-items: center; justify-content: space-between;
-    flex-wrap: wrap; row-gap: 4px;
+    flex-wrap: wrap;
     min-height: var(--header-h); flex: 0 0 auto; padding: 4px 2px;
   }
+  #hdr > *:not(:last-child) { margin-right: 8px; }
   #hdr h1 {
     font-size: 16px; margin: 0; font-weight: 700; flex: 1 1 auto; min-width: 0;
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  #hdr h1 svg { flex: 0 0 auto; }
-  #badges { display: flex; gap: 6px; }
+  #hdr h1 svg { flex: 0 0 auto; margin-right: 8px; }
+  #badges { display: flex; }
+  #badges > *:not(:last-child) { margin-right: 6px; }
   .badge {
     font-size: 10px; padding: 3px 8px; border-radius: 10px;
     background: var(--card2); color: var(--muted); border: 1px solid var(--border);
@@ -111,8 +120,9 @@
 
   .map-btns {
     position: absolute; right: 8px; top: 8px; z-index: 600;
-    display: flex; flex-direction: column; gap: 4px;
+    display: flex; flex-direction: column;
   }
+  .map-btns > *:not(:last-child) { margin-bottom: 4px; }
   .map-btn {
     width: 34px; height: 34px;
     background: rgba(13,13,13,0.88); border: 1px solid var(--border);
@@ -133,18 +143,22 @@
   .cell {
     background: var(--card); border: 1px solid var(--border);
     border-radius: 8px; padding: 7px 4px;
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    display: flex; flex-direction: column; align-items: center;
   }
+  .cell > *:not(:last-child) { margin-bottom: 3px; }
   .cell-label { font-size: 9px; color: var(--muted); letter-spacing: .5px; }
   .cell-val   { font-size: 13px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
 
   /* ── Control buttons ────────────────────────────────────────────────── */
-  #ctrl-row { display: flex; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
+  #ctrl-row { display: flex; flex: 0 0 auto; flex-wrap: wrap; }
+  #ctrl-row > * { margin: 0 6px 6px 0; }
+  #ctrl-row > *:last-child { margin-right: 0; }
   .ctrl-btn {
     flex: 1 1 0; min-width: 0; padding: 11px 6px; border-radius: 8px;
     font-size: 13px; font-weight: 600;
-    display: flex; align-items: center; justify-content: center; gap: 6px;
+    display: flex; align-items: center; justify-content: center;
   }
+  .ctrl-btn svg { flex-shrink: 0; margin-right: 6px; }
   .ctrl-btn:disabled { opacity: .4; }
   .ctrl-btn.primary { background: var(--accent); color: #000; }
   .ctrl-btn.danger  { background: #7f1d1d; color: var(--red); border: 1px solid var(--red); }
@@ -154,17 +168,20 @@
   .ctrl-btn.ghost.silence:active { color: var(--red); border-color: var(--red); }
 
   #gps-warn {
-    display: none; align-items: center; gap: 6px; justify-content: center;
+    display: none; align-items: center; justify-content: center;
     color: var(--amber); font-size: 12px; padding: 2px 0; flex: 0 0 auto;
   }
+  #gps-warn svg { margin-right: 6px; flex-shrink: 0; }
 
   /* ── GPS input block ────────────────────────────────────────────────── */
   #gps-input-block {
-    display: none; flex-direction: column; gap: 8px; padding: 10px;
+    display: none; flex-direction: column; padding: 10px;
     background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
     flex: 0 0 auto;
   }
-  .gps-input-row { display: flex; align-items: center; gap: 10px; }
+  #gps-input-block > *:not(:last-child) { margin-bottom: 8px; }
+  .gps-input-row { display: flex; align-items: center; }
+  .gps-input-row > *:not(:last-child) { margin-right: 10px; }
   .gps-lbl { font-size: 11px; color: var(--muted); width: 26px; flex-shrink: 0; }
   .gps-field {
     flex: 1; padding: 8px 10px; background: var(--card2); border: 1px solid var(--border);
@@ -175,12 +192,16 @@
   /* ── Sliders ────────────────────────────────────────────────────────── */
   #sliders {
     background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
-    padding: 8px; display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto;
+    padding: 8px; display: flex; flex-direction: column; flex: 0 0 auto;
   }
-  .srow { display: flex; flex-direction: column; gap: 4px; }
-  .slabel { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
-  .sval { font-size: 12px; font-weight: 600; color: var(--text); }
-  .sctrl { display: flex; align-items: center; gap: 8px; }
+  #sliders > *:not(:last-child) { margin-bottom: 8px; }
+  .srow { display: flex; flex-direction: column; }
+  .srow > *:not(:last-child) { margin-bottom: 4px; }
+  .slabel { font-size: 12px; color: var(--muted); display: flex; align-items: center; }
+  .slabel > *:not(:last-child) { margin-right: 8px; }
+  .sval { font-size: 12px; font-weight: 600; color: var(--text); margin-left: 8px; margin-right: 8px; }
+  .sctrl { display: flex; align-items: center; }
+  .sctrl > *:not(:last-child) { margin-right: 8px; }
   .sbtn {
     width: 30px; height: 30px; background: var(--card2); border: 1px solid var(--border);
     border-radius: 8px; color: var(--text); font-size: 16px; font-weight: 300;
@@ -215,9 +236,10 @@
   #alarm-overlay {
     display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     z-index: 999; flex-direction: column; align-items: center; justify-content: center;
-    gap: 14px; text-align: center; padding: 20px;
+    text-align: center; padding: 20px;
     animation: apulse 1s ease-in-out infinite alternate;
   }
+  #alarm-overlay > *:not(:last-child) { margin-bottom: 14px; }
   @keyframes apulse {
     from { background: rgba(120,0,0,.93); }
     to   { background: rgba(200,0,0,.97); }
@@ -226,16 +248,18 @@
   #alarm-overlay .alarm-icon { width: 64px; height: 64px; color: #fff; }
   #alarm-overlay h2 { font-size: 28px; margin: 0; font-weight: 900; color: #fff; letter-spacing: 3px; }
   #alarm-overlay p { font-size: 15px; margin: 0; color: #ffcccc; }
-  #alarm-overlay .btn-grid { width: 100%; max-width: 420px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  #alarm-overlay .btn-grid { width: 100%; max-width: 420px; display: flex; flex-wrap: wrap; justify-content: center; }
+  #alarm-overlay .btn-grid > * { margin: 0 5px 10px; }
   .alarm-mute-btn {
     padding: 12px 22px; background: rgba(255,255,255,.15); border: 2px solid #fff;
     border-radius: 8px; color: #fff; font-size: 15px; font-weight: 600;
   }
   .alarm-silence-btn {
-    padding: 12px 22px; display: flex; align-items: center; gap: 8px;
+    padding: 12px 22px; display: flex; align-items: center;
     background: rgba(0,0,0,.5); border: 2px solid rgba(255,80,80,.8);
     border-radius: 8px; color: #ff8080; font-size: 15px; font-weight: 700;
   }
+  .alarm-silence-btn svg { margin-right: 8px; }
 </style>
 </head>
 <body>
@@ -457,12 +481,28 @@
   window.addEventListener('resize', fixMapSize);
   window.addEventListener('orientationchange', function () { setTimeout(fixMapSize, 200); });
 
+  // Default view: ~400 m across the visible map area, centered on the boat.
+  // Uses getBoundsZoom against a real 400 m box (via destinationPoint) so it
+  // comes out correct regardless of container size or latitude — a fixed
+  // Leaflet zoom level does NOT correspond to a fixed real-world distance.
+  var DEFAULT_VIEW_SPAN_M = 400;
+  function setDefaultView(lat, lon) {
+    map.invalidateSize(); // ensure the container size is current before computing a fit
+    var half = DEFAULT_VIEW_SPAN_M / 2;
+    var n = destinationPoint(lat, lon, 0, half);
+    var s = destinationPoint(lat, lon, 180, half);
+    var e = destinationPoint(lat, lon, 90, half);
+    var w = destinationPoint(lat, lon, 270, half);
+    var bounds = L.latLngBounds([n, s, e, w]);
+    map.setView([lat, lon], map.getBoundsZoom(bounds, false));
+  }
+
   $('zoom-in').addEventListener('click', function () { map.zoomIn(); });
   $('zoom-out').addEventListener('click', function () { map.zoomOut(); });
   els.followBtn.addEventListener('click', function () {
     state.followMode = true;
     els.followBtn.className = 'map-btn active';
-    if (state.position && state.position.lat != null) map.panTo([state.position.lat, state.position.lon]);
+    if (state.position && state.position.lat != null) setDefaultView(state.position.lat, state.position.lon);
   });
   map.on('dragstart', function () { state.followMode = false; els.followBtn.className = 'map-btn'; });
 
@@ -489,6 +529,7 @@
     if (pos && pos.lat != null && pos.lon != null) {
       var bIcon = divIcon(boatIconHtml(hdg), [26, 26]);
       if (!boatMarker) {
+        setDefaultView(pos.lat, pos.lon); // first-ever fix: start at the ~400 m default view
         boatMarker = L.marker([pos.lat, pos.lon], { icon: bIcon, zIndexOffset: 200 }).addTo(map);
       } else {
         boatMarker.setLatLng([pos.lat, pos.lon]);
@@ -540,8 +581,8 @@
         var windPos = destinationPoint(centerLat, centerLon, windBearing, ringRadius);
         var arrowRot = ((hdg + pos.awa_deg + 180) % 360 + 360) % 360;
         var arrowHtml =
-          '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">' +
-          '<svg width="24" height="24" viewBox="0 0 24 24" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(' + arrowRot + 'deg);display:block;"><path d="M12 3 L19 19 L12 16 L5 19 Z"/></svg>' +
+          '<div style="display:flex;flex-direction:column;align-items:center;">' +
+          '<svg width="24" height="24" viewBox="0 0 24 24" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(' + arrowRot + 'deg);display:block;margin-bottom:2px;"><path d="M12 3 L19 19 L12 16 L5 19 Z"/></svg>' +
           '<span class="awa-label">' + pos.aws_kn.toFixed(1) + ' kn</span></div>';
         var windIcon = divIcon(arrowHtml, [50, 46], [25, 12]);
         if (!windArrowMarker) { windArrowMarker = L.marker(windPos, { icon: windIcon, interactive: false }).addTo(map); }
