@@ -21,6 +21,14 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+// Module-scope client for the helper functions below (getAppBotToken,
+// sendTelegram) which run outside the request handler's own `supabase`
+// local. Both point at the same project with the service role key.
+const admin = createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+);
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -333,7 +341,9 @@ Deno.serve(async (req: Request) => {
         `⚓ <b>ANCHOR ALARM — ${boatName}</b>\n` +
         `Distance: <b>${Math.round(dist)} m</b> (radius: ${watch.radius_m} m)\n` +
         `Position: ${gps.lat.toFixed(5)}, ${gps.lon.toFixed(5)}` +
-        (notifyCount > 0 ? `\nAlert #${notifyCount + 1}` : '');
+        (notifyCount > 0 ? `\nAlert #${notifyCount + 1}` : '') +
+        `\n\nNo access to the app? Reply <b>/mute</b> to this bot to stop repeat Telegram alerts ` +
+        `(Pushover keeps firing). <b>/unmute</b> re-enables them.`;
 
       // Telegram: skip if muted
       if (!watch.alarm_telegram_muted) {
