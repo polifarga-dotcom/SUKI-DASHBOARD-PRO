@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>SUKI Anchor Watch</title>
+<!--
+  MFD Anchor Watch — standalone kiosk client for the B&G Zeus chartplotter.
+
+  Runs inside the Zeus's built-in browser (QtWebEngine 5.12.9 / Chrome 69),
+  so this file is deliberately plain HTML/CSS/vanilla JS: no ES modules, no
+  optional chaining (?.), no nullish coalescing (??), no framework, no
+  Supabase JS SDK. All reads/writes go through the mfd-anchor Edge Function
+  via plain XMLHttpRequest, authenticated with a static per-boat api key.
+
+  Design tokens (colors, spacing, button styles) are copied from
+  SUKI DASHBOARD PRO's src/app.css and the anchor page's own <style> block,
+  so this looks like the same app, not a reskin. No emoji/GIF icons
+  anywhere — old Chromium's color-emoji font renders those inconsistently;
+  every icon here is inline SVG (same rule as the rest of SUKI Dashboard Pro).
+
+  This app does NOT evaluate the anchor alarm — that is done server-side by
+  the anchor-check cron function regardless of whether this page is open.
+  Setting/clearing the anchor here just writes anchor_config, exactly like
+  the SUKI Dashboard Pro anchor page does — so the alarm is armed system-wide
+  the moment you set it here.
+
+  Hybrid data source: live boat position/heading/wind/depth is read directly
+  from the local SignalK server (192.168.0.100:3000) every 3s — same LAN,
+  fresh, no internet dependency. Only the anchor watch state goes through
+  Supabase. Two header badges (GPS / cloud) keep the two failure modes
+  visually distinct.
+
+  The map does NOT rotate to heading-up (unlike the old Cerbo dashboard) —
+  north-up, with the boat icon itself rotated by heading. This keeps the
+  wind/anchor overlays as plain geographic Leaflet markers instead of
+  screen-space math against a CSS-rotated container, which is simpler and
+  less prone to the "everything looks shifted" class of bug on an unfamiliar
+  embedded browser.
+
+  Hosted + served from the Pi-hole Raspberry Pi (192.168.0.100) via Node-RED;
+  never deployed to the Cerbo GX.
+-->
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<style>
+  /* ── Design tokens — copied from SUKI DASHBOARD PRO src/app.css ────────── */
+  :root {
+    --bg: #000000;
+    --card: #0d0d0d;
+    --card2: #1a1a1a;
+    --border: #252525;
+    --text: #ffffff;
+    --muted: #aaaaaa;
+    --accent: #00c8ff;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --r: 10px;
+    --header-h: 52px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    max-width: 100vw; overflow-x: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 14px;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  button { cursor: pointer; border: none; background: none; color: inherit; font: inherit; }
+
+  #app {
+    display: flex; flex-direction: column; height: 100%;
+    padding: 8px; gap: 8px;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────── */
+  #hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; row-gap: 4px;
+    min-height: var(--header-h); flex: 0 0 auto; padding: 4px 2px;
+  }
+  #hdr h1 {
+    font-size: 16px; margin: 0; font-weight: 700; flex: 1 1 auto; min-width: 0;
+    display: flex; align-items: center; gap: 8px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #hdr h1 svg { flex: 0 0 auto; }
+  #badges { display: flex; gap: 6px; }
+  .badge {
+    font-size: 10px; padding: 3px 8px; border-radius: 10px;
+    background: var(--card2); color: var(--muted); border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .badge.live { background: rgba(34,197,94,.12); color: var(--green); border-color: var(--green); }
+  .badge.stale { background: rgba(245,158,11,.12); color: var(--amber); border-color: var(--amber); }
+  .badge.down { background: rgba(239,68,68,.12); color: var(--red); border-color: var(--red); }
+
+  /* ── Map ────────────────────────────────────────────────────────────── */
+  #map-box {
+    position: relative; flex: 1 1 auto; min-height: 160px;
+    border-radius: var(--r); border: 1px solid var(--border);
+    overflow: hidden; background: #111;
+  }
+  #map-box.alarming { border-color: var(--red); }
+  #map { position: absolute; top: 0; right: 0; bottom: 0; left: 0; }
+
+  .map-btns {
+    position: absolute; right: 8px; top: 8px; z-index: 600;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .map-btn {
+    width: 34px; height: 34px;
+    background: rgba(13,13,13,0.88); border: 1px solid var(--border);
+    border-radius: 7px; color: var(--text);
+    font-size: 17px; display: flex; align-items: center; justify-content: center;
+  }
+  .map-btn.active { border-color: var(--green); color: var(--green); }
+
+  .pos-age {
+    position: absolute; bottom: 6px; right: 8px; z-index: 600;
+    font-size: 10px; color: rgba(255,255,255,.75); background: rgba(0,0,0,.4);
+    padding: 2px 6px; border-radius: 3px; white-space: nowrap;
+  }
+  .pos-age.stale { color: rgba(255,160,0,.9); }
+
+  /* ── Data cells (DIST / DEPTH / SCOPE / BEARING) ───────────────────────── */
+  #data-cells { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; flex: 0 0 auto; }
+  .cell {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 4px;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+  }
+  .cell-label { font-size: 9px; color: var(--muted); letter-spacing: .5px; }
+  .cell-val   { font-size: 13px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+
+  /* ── Control buttons ────────────────────────────────────────────────── */
+  #ctrl-row { display: flex; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; }
+  .ctrl-btn {
+    flex: 1 1 0; min-width: 0; padding: 11px 6px; border-radius: 8px;
+    font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .ctrl-btn:disabled { opacity: .4; }
+  .ctrl-btn.primary { background: var(--accent); color: #000; }
+  .ctrl-btn.danger  { background: #7f1d1d; color: var(--red); border: 1px solid var(--red); }
+  .ctrl-btn.warning { background: #78350f; color: var(--amber); border: 1px solid var(--amber); }
+  .ctrl-btn.ghost   { background: var(--card2); color: var(--text); border: 1px solid var(--border); flex: 0 0 auto; padding: 11px 12px; }
+  .ctrl-btn.ghost.active { color: var(--amber); border-color: var(--amber); }
+  .ctrl-btn.ghost.silence:active { color: var(--red); border-color: var(--red); }
+
+  #gps-warn {
+    display: none; align-items: center; gap: 6px; justify-content: center;
+    color: var(--amber); font-size: 12px; padding: 2px 0; flex: 0 0 auto;
+  }
+
+  /* ── GPS input block ────────────────────────────────────────────────── */
+  #gps-input-block {
+    display: none; flex-direction: column; gap: 8px; padding: 10px;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+    flex: 0 0 auto;
+  }
+  .gps-input-row { display: flex; align-items: center; gap: 10px; }
+  .gps-lbl { font-size: 11px; color: var(--muted); width: 26px; flex-shrink: 0; }
+  .gps-field {
+    flex: 1; padding: 8px 10px; background: var(--card2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 13px; outline: none;
+  }
+  .gps-field:focus { border-color: var(--accent); }
+
+  /* ── Sliders ────────────────────────────────────────────────────────── */
+  #sliders {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+    padding: 8px; display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto;
+  }
+  .srow { display: flex; flex-direction: column; gap: 4px; }
+  .slabel { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .sval { font-size: 12px; font-weight: 600; color: var(--text); }
+  .sctrl { display: flex; align-items: center; gap: 8px; }
+  .sbtn {
+    width: 30px; height: 30px; background: var(--card2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 16px; font-weight: 300;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .sbtn:active { border-color: var(--accent); color: var(--accent); }
+  .auto-badge { font-size: 9px; color: var(--green); border: 1px solid var(--green); border-radius: 3px; padding: 1px 5px; }
+  .reset-btn { font-size: 10px; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 4px; padding: 1px 6px; }
+
+  input[type=range] {
+    flex: 1; -webkit-appearance: none; appearance: none;
+    height: 4px; background: var(--border); border-radius: 2px; outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 22px; height: 16px; border-radius: 4px;
+    background: var(--accent); border: 2px solid var(--bg); box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  /* ── Leaflet overlay markers (all inline SVG, no emoji) ────────────────── */
+  .awa-label {
+    font-size: 11px; font-weight: 700; color: var(--amber);
+    background: rgba(0,0,0,.8); padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+  }
+  .north-pill {
+    background: rgba(0,0,0,.78); color: var(--accent); font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 10px; border: 1px solid var(--accent);
+    letter-spacing: 1px; white-space: nowrap;
+  }
+
+  /* ── Full-screen alarm overlay ──────────────────────────────────────── */
+  #alarm-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 999; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; text-align: center; padding: 20px;
+    animation: apulse 1s ease-in-out infinite alternate;
+  }
+  @keyframes apulse {
+    from { background: rgba(120,0,0,.93); }
+    to   { background: rgba(200,0,0,.97); }
+  }
+  #alarm-overlay.show { display: flex; }
+  #alarm-overlay .alarm-icon { width: 64px; height: 64px; color: #fff; }
+  #alarm-overlay h2 { font-size: 28px; margin: 0; font-weight: 900; color: #fff; letter-spacing: 3px; }
+  #alarm-overlay p { font-size: 15px; margin: 0; color: #ffcccc; }
+  #alarm-overlay .btn-grid { width: 100%; max-width: 420px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .alarm-mute-btn {
+    padding: 12px 22px; background: rgba(255,255,255,.15); border: 2px solid #fff;
+    border-radius: 8px; color: #fff; font-size: 15px; font-weight: 600;
+  }
+  .alarm-silence-btn {
+    padding: 12px 22px; display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,.5); border: 2px solid rgba(255,80,80,.8);
+    border-radius: 8px; color: #ff8080; font-size: 15px; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="hdr">
+    <h1>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2.2"/><line x1="12" y1="7.5" x2="12" y2="21"/><line x1="7" y1="10" x2="17" y2="10"/><path d="M4 15a8 8 0 0 0 16 0"/></svg>
+      SUKI Anchor Watch
+    </h1>
+    <div id="badges">
+      <span id="cloud-badge" class="badge" title="Supabase anchor sync">cloud: connecting…</span>
+      <span id="conn-badge" class="badge" title="Local SignalK GPS/instruments">GPS: connecting…</span>
+    </div>
+  </div>
+
+  <div id="map-box"><div id="map"></div>
+    <div class="map-btns">
+      <button class="map-btn" id="zoom-in">+</button>
+      <button class="map-btn" id="zoom-out">−</button>
+      <button class="map-btn" id="follow-btn" title="Center on boat">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="22" y2="12"/></svg>
+      </button>
+    </div>
+    <div class="pos-age" id="pos-age" style="display:none;"></div>
+  </div>
+
+  <div id="data-cells">
+    <div class="cell"><div class="cell-label">DIST</div><div class="cell-val" id="cell-dist">—</div></div>
+    <div class="cell"><div class="cell-label">DEPTH</div><div class="cell-val" id="cell-depth">—</div></div>
+    <div class="cell" id="cell-scope-box"><div class="cell-label" id="cell-scope-label">SCOPE</div><div class="cell-val" id="cell-scope">—</div></div>
+    <div class="cell"><div class="cell-label">BEARING</div><div class="cell-val" id="cell-bearing">—</div></div>
+  </div>
+
+  <div id="gps-warn">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    No GPS position available
+  </div>
+
+  <div id="ctrl-row">
+    <button class="ctrl-btn primary" id="btn-set">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><line x1="12" y1="7" x2="12" y2="21"/><line x1="7.5" y1="10" x2="16.5" y2="10"/><path d="M4.5 15a7.5 7.5 0 0 0 15 0"/></svg>
+      <span id="btn-set-label">Set Anchor</span>
+    </button>
+    <button class="ctrl-btn ghost" id="btn-drop">Drop Now</button>
+    <button class="ctrl-btn ghost" id="btn-restore" style="display:none;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7v6h6"/><path d="M21 17A9 9 0 0 0 6 5.3L3 8"/></svg>
+      Restore
+    </button>
+    <button class="ctrl-btn ghost" id="btn-gps" title="Set anchor by GPS coordinates">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      GPS
+    </button>
+    <button class="ctrl-btn warning" id="btn-mute" style="display:none;">Mute</button>
+    <button class="ctrl-btn ghost silence" id="btn-silence" style="display:none;" title="Stop all anchor alarm notifications immediately">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      Silence
+    </button>
+  </div>
+
+  <div id="gps-input-block">
+    <div class="gps-input-row">
+      <label class="gps-lbl">Lat</label>
+      <input class="gps-field" type="text" inputmode="decimal" placeholder="54.12345" id="gps-lat-field">
+    </div>
+    <div class="gps-input-row">
+      <label class="gps-lbl">Lon</label>
+      <input class="gps-field" type="text" inputmode="decimal" placeholder="10.12345" id="gps-lon-field">
+    </div>
+    <button class="ctrl-btn primary" id="btn-gps-set">Set Anchor Here</button>
+  </div>
+
+  <div id="sliders">
+    <div class="srow">
+      <div class="slabel">Distance from Anchor <span class="sval" id="chain-badge">0 m</span></div>
+      <div class="sctrl">
+        <button class="sbtn" id="chain-minus">−</button>
+        <input type="range" id="chain-slider" min="0" max="120" step="1" value="0">
+        <button class="sbtn" id="chain-plus">+</button>
+      </div>
+    </div>
+    <div class="srow">
+      <div class="slabel">Alarm radius <span class="sval" id="radius-badge">50 m</span></div>
+      <div class="sctrl">
+        <button class="sbtn" id="radius-minus">−</button>
+        <input type="range" id="radius-slider" min="10" max="300" step="5" value="50">
+        <button class="sbtn" id="radius-plus">+</button>
+      </div>
+    </div>
+    <div class="srow">
+      <div class="slabel">
+        Bearing <span class="sval" id="brg-badge">0°</span>
+        <button class="reset-btn" id="brg-reset" style="display:none;">↑ Heading</button>
+        <span class="auto-badge" id="brg-auto">auto</span>
+      </div>
+      <div class="sctrl">
+        <button class="sbtn" id="brg-minus">−</button>
+        <input type="range" id="brg-slider" min="0" max="359" step="1" value="0">
+        <button class="sbtn" id="brg-plus">+</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="alarm-overlay">
+  <svg class="alarm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2.2"/><line x1="12" y1="7.5" x2="12" y2="21"/><line x1="7" y1="10" x2="17" y2="10"/><path d="M4 15a8 8 0 0 0 16 0"/></svg>
+  <h2>ANCHOR ALARM</h2>
+  <p id="alarm-detail">Dragging — check position immediately.</p>
+  <div class="btn-grid">
+    <button class="alarm-mute-btn" id="alarm-mute">Mute Telegram</button>
+    <button class="alarm-silence-btn" id="alarm-silence">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      Silence All
+    </button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Boat-specific configuration ─────────────────────────────────────────
+  var MFD_API_KEY = 'mfd-b00c60fed1bb860778d4c704eb12a8804884377bffafca83'; // SUKI, anchor_config.mfd_api_key
+  var FN_URL       = 'https://lzvwhzzscsjeivtviyjm.supabase.co/functions/v1/mfd-anchor';
+  var SK_URL       = 'http://192.168.0.100:3000/signalk/v1/api/vessels/self';
+  var POLL_MS      = 3000;
+
+  var CARDINALS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  function bearingCardinal(deg) {
+    if (deg == null) return '—';
+    return CARDINALS[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+  }
+
+  // ── Pure geo math (mirrors src/lib/utils/geo.ts in the Pro app) ────────
+  var EARTH_R = 6371000;
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return EARTH_R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function bearingTo(lat1, lon1, lat2, lon2) {
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+    var x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+      Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+
+  function destinationPoint(lat, lon, bearingDeg, distM) {
+    var brng = bearingDeg * Math.PI / 180;
+    var d = distM / EARTH_R;
+    var lat1 = lat * Math.PI / 180;
+    var lon1 = lon * Math.PI / 180;
+    var lat2 = Math.asin(Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brng));
+    var lon2 = lon1 + Math.atan2(
+      Math.sin(brng) * Math.sin(d) * Math.cos(lat1),
+      Math.cos(d) - Math.sin(lat1) * Math.sin(lat2)
+    );
+    return [lat2 * 180 / Math.PI, ((lon2 * 180 / Math.PI) + 540) % 360 - 180];
+  }
+
+  // scope color thresholds — mirrors src/lib/utils/units.ts scopeStatus()
+  function scopeStatus(scope) {
+    if (scope == null) return { label: '—', color: 'var(--muted)', bg: 'transparent' };
+    if (scope > 5)      return { label: 'Safe',      color: 'var(--green)', bg: 'rgba(34,197,94,.1)' };
+    if (scope >= 3)     return { label: 'Marginal',  color: 'var(--amber)', bg: 'rgba(245,158,11,.1)' };
+    return                     { label: 'Dangerous', color: 'var(--red)',   bg: 'rgba(239,68,68,.1)' };
+  }
+
+  // ── DOM shortcuts ────────────────────────────────────────────────────
+  function $(id) { return document.getElementById(id); }
+
+  var els = {
+    connBadge: $('conn-badge'), cloudBadge: $('cloud-badge'),
+    gpsWarn: $('gps-warn'), posAge: $('pos-age'),
+    cellDist: $('cell-dist'), cellDepth: $('cell-depth'),
+    cellScope: $('cell-scope'), cellScopeLabel: $('cell-scope-label'), cellScopeBox: $('cell-scope-box'),
+    cellBearing: $('cell-bearing'),
+    chainSlider: $('chain-slider'), chainBadge: $('chain-badge'),
+    radiusSlider: $('radius-slider'), radiusBadge: $('radius-badge'),
+    brgSlider: $('brg-slider'), brgBadge: $('brg-badge'), brgReset: $('brg-reset'), brgAuto: $('brg-auto'),
+    btnSet: $('btn-set'), btnSetLabel: $('btn-set-label'),
+    btnDrop: $('btn-drop'), btnRestore: $('btn-restore'), btnGps: $('btn-gps'),
+    btnMute: $('btn-mute'), btnSilence: $('btn-silence'),
+    gpsInputBlock: $('gps-input-block'), gpsLatField: $('gps-lat-field'), gpsLonField: $('gps-lon-field'), btnGpsSet: $('btn-gps-set'),
+    mapBox: $('map-box'),
+    overlay: $('alarm-overlay'), alarmDetail: $('alarm-detail'),
+    alarmMute: $('alarm-mute'), alarmSilence: $('alarm-silence'),
+    followBtn: $('follow-btn'),
+  };
+
+  // ── App state ────────────────────────────────────────────────────────
+  var state = {
+    position: null,     // { lat, lon, hdg_deg, awa_deg, aws_kn, depth_m, age_s } — from local SignalK
+    anchor: null,       // { active, lat, lon, radius_m, chain_length_m, bearing_deg, alarming, alarm_telegram_muted, anchor_depth_at_set } — from Supabase
+    skInFlight: false,
+    cloudInFlight: false,
+    cloudOk: false,
+    bearingManual: false,
+    followMode: true,
+  };
+
+  // ── Leaflet map (north-up; boat icon itself carries the heading rotation) ──
+  var map = L.map('map', { zoomControl: false, attributionControl: false }).setView([54.0, 12.0], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, subdomains: 'abc' }).addTo(map);
+
+  // Leaflet needs a correct container size at init time; embedded webviews
+  // often report a stale/zero size on first paint, which is what makes
+  // everything look "shifted" until a resize forces a relayout.
+  function fixMapSize() { if (map) map.invalidateSize(); }
+  setTimeout(fixMapSize, 150);
+  setTimeout(fixMapSize, 600);
+  window.addEventListener('resize', fixMapSize);
+  window.addEventListener('orientationchange', function () { setTimeout(fixMapSize, 200); });
+
+  $('zoom-in').addEventListener('click', function () { map.zoomIn(); });
+  $('zoom-out').addEventListener('click', function () { map.zoomOut(); });
+  els.followBtn.addEventListener('click', function () {
+    state.followMode = true;
+    els.followBtn.className = 'map-btn active';
+    if (state.position && state.position.lat != null) map.panTo([state.position.lat, state.position.lon]);
+  });
+  map.on('dragstart', function () { state.followMode = false; els.followBtn.className = 'map-btn'; });
+
+  function divIcon(html, size, anchor) {
+    return L.divIcon({ className: '', html: html, iconSize: size, iconAnchor: anchor || [size[0] / 2, size[1] / 2] });
+  }
+  function boatIconHtml(rot) {
+    return '<div style="width:26px;height:26px;transform:rotate(' + rot + 'deg);transform-origin:50% 50%;transition:transform .25s linear;filter:drop-shadow(0 1px 4px rgba(0,0,0,.8));">' +
+      '<svg width="26" height="26" viewBox="0 0 24 24" fill="#00c8ff"><path d="M12 2 L19 20 L12 16 L5 20 Z"/></svg></div>';
+  }
+  var ancIconHtml =
+    '<svg width="24" height="30" viewBox="0 0 32 40" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))">' +
+    '<path d="M16 0 C7 0 0 7 0 16 c0 11 16 24 16 24 s16-13 16-24 C32 7 25 0 16 0 z" fill="#f59e0b" stroke="#0a1929" stroke-width="1.5"/>' +
+    '<g transform="translate(16,15)" stroke="#0a1929" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round">' +
+    '<circle cx="0" cy="-7" r="2.2"/><line x1="0" y1="-5" x2="0" y2="9"/><line x1="-4" y1="-1" x2="4" y2="-1"/><path d="M-6 5 a6 6 0 0 0 12 0"/></g></svg>';
+
+  var boatMarker = null, ancMarker = null, radiusCircle = null, chainLine = null;
+  var windArrowMarker = null, northPillMarker = null;
+
+  function updateMap() {
+    var pos = state.position, anc = state.anchor;
+    var hdg = (pos && pos.hdg_deg != null) ? pos.hdg_deg : 0;
+
+    if (pos && pos.lat != null && pos.lon != null) {
+      var bIcon = divIcon(boatIconHtml(hdg), [26, 26]);
+      if (!boatMarker) {
+        boatMarker = L.marker([pos.lat, pos.lon], { icon: bIcon, zIndexOffset: 200 }).addTo(map);
+      } else {
+        boatMarker.setLatLng([pos.lat, pos.lon]);
+        boatMarker.setIcon(bIcon);
+      }
+      if (state.followMode) map.panTo([pos.lat, pos.lon], { animate: true, duration: 0.3 });
+    }
+
+    var haveAnchor = anc && anc.active && anc.lat != null && anc.lon != null;
+
+    if (haveAnchor) {
+      var aIcon = divIcon(ancIconHtml, [24, 30], [12, 30]);
+      if (!ancMarker) { ancMarker = L.marker([anc.lat, anc.lon], { icon: aIcon }).addTo(map); }
+      else { ancMarker.setLatLng([anc.lat, anc.lon]); }
+
+      var ringColor = anc.alarming ? '#ef4444' : '#00c8ff';
+      if (!radiusCircle) {
+        radiusCircle = L.circle([anc.lat, anc.lon], {
+          radius: anc.radius_m, color: ringColor, fillColor: ringColor, fillOpacity: .04, weight: 2, dashArray: '6 4',
+        }).addTo(map);
+      } else {
+        radiusCircle.setLatLng([anc.lat, anc.lon]);
+        radiusCircle.setRadius(anc.radius_m);
+        radiusCircle.setStyle({ color: ringColor, fillColor: ringColor });
+      }
+
+      if (pos && pos.lat != null) {
+        var line = [[pos.lat, pos.lon], [anc.lat, anc.lon]];
+        if (!chainLine) { chainLine = L.polyline(line, { color: '#00c8ff', weight: 2, dashArray: '4,4', opacity: .85 }).addTo(map); }
+        else { chainLine.setLatLngs(line); }
+      }
+    } else {
+      if (ancMarker)    { map.removeLayer(ancMarker);    ancMarker = null; }
+      if (radiusCircle) { map.removeLayer(radiusCircle); radiusCircle = null; }
+      if (chainLine)    { map.removeLayer(chainLine);    chainLine = null; }
+    }
+
+    // ── Wind indicator + North pill — real-time from SignalK, always shown
+    //    when we have a position. Placed on the alarm ring when the anchor
+    //    is active (matches the Pro app), otherwise on a fixed 30 m ring
+    //    around the boat so wind is visible even before the anchor is set. ──
+    if (pos && pos.lat != null) {
+      var centerLat = haveAnchor ? anc.lat : pos.lat;
+      var centerLon = haveAnchor ? anc.lon : pos.lon;
+      var ringRadius = haveAnchor ? anc.radius_m : 30;
+
+      if (pos.awa_deg != null && pos.aws_kn != null) {
+        var windBearing = ((hdg + pos.awa_deg) % 360 + 360) % 360;
+        var windPos = destinationPoint(centerLat, centerLon, windBearing, ringRadius);
+        var arrowRot = ((hdg + pos.awa_deg + 180) % 360 + 360) % 360;
+        var arrowHtml =
+          '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">' +
+          '<svg width="24" height="24" viewBox="0 0 24 24" fill="#f59e0b" stroke="#0a1929" stroke-width="1.4" stroke-linejoin="round" style="transform:rotate(' + arrowRot + 'deg);display:block;"><path d="M12 3 L19 19 L12 16 L5 19 Z"/></svg>' +
+          '<span class="awa-label">' + pos.aws_kn.toFixed(1) + ' kn</span></div>';
+        var windIcon = divIcon(arrowHtml, [50, 46], [25, 12]);
+        if (!windArrowMarker) { windArrowMarker = L.marker(windPos, { icon: windIcon, interactive: false }).addTo(map); }
+        else { windArrowMarker.setLatLng(windPos); windArrowMarker.setIcon(windIcon); }
+      } else if (windArrowMarker) {
+        map.removeLayer(windArrowMarker); windArrowMarker = null;
+      }
+
+      var northPos = destinationPoint(centerLat, centerLon, 0, ringRadius);
+      var northHtml = '<div class="north-pill">N</div>';
+      var northIcon = divIcon(northHtml, [26, 20]);
+      if (!northPillMarker) { northPillMarker = L.marker(northPos, { icon: northIcon, interactive: false }).addTo(map); }
+      else { northPillMarker.setLatLng(northPos); northPillMarker.setIcon(northIcon); }
+    } else {
+      if (windArrowMarker)  { map.removeLayer(windArrowMarker);  windArrowMarker = null; }
+      if (northPillMarker)  { map.removeLayer(northPillMarker);  northPillMarker = null; }
+    }
+  }
+
+  // ── UI rendering ─────────────────────────────────────────────────────
+  function renderStatus() {
+    var pos = state.position;
+    if (!pos || pos.lat == null) {
+      els.connBadge.textContent = 'GPS: no data'; els.connBadge.className = 'badge down';
+      els.posAge.style.display = 'none';
+    } else if (pos.age_s == null || pos.age_s > 15) {
+      els.connBadge.textContent = 'GPS: stale (' + (pos.age_s != null ? pos.age_s + 's' : '?') + ')'; els.connBadge.className = 'badge stale';
+    } else {
+      els.connBadge.textContent = 'GPS: live'; els.connBadge.className = 'badge live';
+    }
+    if (pos && pos.age_s != null) {
+      els.posAge.style.display = 'block';
+      els.posAge.className = 'pos-age' + (pos.age_s > 30 ? ' stale' : '');
+      els.posAge.textContent = 'boat position updated ' + pos.age_s + 's ago';
+    }
+    els.gpsWarn.style.display = (pos && pos.lat != null) ? 'none' : 'flex';
+
+    els.cloudBadge.textContent = state.cloudOk ? 'cloud: synced' : 'cloud: offline';
+    els.cloudBadge.className = 'badge ' + (state.cloudOk ? 'live' : 'down');
+
+    els.mapBox.className = (state.anchor && state.anchor.alarming) ? 'alarming' : '';
+  }
+
+  function computeDist() {
+    var pos = state.position, anc = state.anchor;
+    if (anc && anc.active && anc.lat != null && pos && pos.lat != null) return haversine(pos.lat, pos.lon, anc.lat, anc.lon);
+    return null;
+  }
+  function computeBearing() {
+    var pos = state.position, anc = state.anchor;
+    if (anc && anc.active && anc.lat != null && pos && pos.lat != null) return bearingTo(pos.lat, pos.lon, anc.lat, anc.lon);
+    return null;
+  }
+  function computeScope() {
+    var anc = state.anchor;
+    if (!anc || anc.anchor_depth_at_set == null || anc.anchor_depth_at_set <= 0.5) return null;
+    var chainLen = anc.active ? computeDist() : parseFloat(els.chainSlider.value);
+    if (chainLen == null || chainLen <= 0) return null;
+    return chainLen / anc.anchor_depth_at_set;
+  }
+
+  function renderCells() {
+    var pos = state.position, anc = state.anchor;
+    var dist = computeDist();
+    els.cellDist.textContent = dist != null ? Math.round(dist) + ' m' : '—';
+    els.cellDepth.textContent = (pos && pos.depth_m != null) ? pos.depth_m.toFixed(1) + ' m' : '—';
+
+    var scope = computeScope();
+    var ss = scopeStatus(scope);
+    els.cellScopeLabel.textContent = scope != null ? ss.label.toUpperCase() : 'SCOPE';
+    els.cellScopeLabel.style.color = ss.color;
+    els.cellScope.textContent = scope != null ? scope.toFixed(1) + ':1' : '—';
+    els.cellScope.style.color = ss.color;
+    els.cellScopeBox.style.backgroundColor = ss.bg;
+
+    var brg = computeBearing();
+    els.cellBearing.textContent = brg != null ? bearingCardinal(brg) + ' ' + Math.round(brg) + '°' : '—';
+  }
+
+  function renderButtons() {
+    var anc = state.anchor, pos = state.position;
+    var active = !!(anc && anc.active);
+    var alarming = !!(anc && anc.alarming);
+
+    if (active) {
+      els.btnSet.className = 'ctrl-btn danger'; els.btnSetLabel.textContent = 'Clear Anchor';
+      els.btnSet.disabled = false;
+    } else {
+      els.btnSet.className = 'ctrl-btn primary'; els.btnSetLabel.textContent = 'Set Anchor';
+      els.btnSet.disabled = !(pos && pos.lat != null);
+    }
+    els.btnDrop.style.display = active ? 'none' : 'flex';
+    els.btnDrop.disabled = !(pos && pos.lat != null);
+    els.btnRestore.style.display = (!active && anc && anc.lat != null) ? 'flex' : 'none';
+    els.btnMute.style.display = alarming ? 'flex' : 'none';
+    els.btnSilence.style.display = active ? 'flex' : 'none';
+  }
+
+  function renderSlidersFromAnchor() {
+    var anc = state.anchor;
+    if (!anc) return;
+    if (document.activeElement !== els.chainSlider) {
+      els.chainSlider.value = anc.chain_length_m || 0;
+      els.chainBadge.textContent = Math.round(anc.chain_length_m || 0) + ' m';
+    }
+    if (document.activeElement !== els.radiusSlider) {
+      els.radiusSlider.value = anc.radius_m || 50;
+      els.radiusBadge.textContent = Math.round(anc.radius_m || 50) + ' m';
+    }
+    if (document.activeElement !== els.brgSlider && !state.bearingManual) {
+      els.brgSlider.value = anc.bearing_deg || 0;
+      els.brgBadge.textContent = Math.round(anc.bearing_deg || 0) + '°';
+    }
+    els.brgReset.style.display = state.bearingManual ? 'inline-block' : 'none';
+    els.brgAuto.style.display = state.bearingManual ? 'none' : 'inline-block';
+  }
+
+  function renderAlarmOverlay() {
+    var anc = state.anchor;
+    if (anc && anc.alarming) {
+      els.overlay.className = 'show';
+      var scope = computeScope();
+      els.alarmDetail.textContent = scope != null ? 'Scope: ' + scope.toFixed(1) + ':1' : 'Position unknown';
+    } else {
+      els.overlay.className = '';
+    }
+  }
+
+  function render() {
+    renderStatus();
+    renderCells();
+    renderButtons();
+    renderAlarmOverlay();
+    renderSlidersFromAnchor();
+    updateMap();
+  }
+
+  // ── Networking ───────────────────────────────────────────────────────
+  function rad2deg(r) { return r == null ? null : ((r * 180 / Math.PI) + 360) % 360; }
+  function ms2kn(ms)  { return ms == null ? null : Math.round(ms * 1.94384 * 10) / 10; }
+
+  function pollSignalK() {
+    if (state.skInFlight) return;
+    state.skInFlight = true;
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', SK_URL, true);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      state.skInFlight = false;
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          var d = JSON.parse(xhr.responseText);
+          var nav = (d && d.navigation) || {};
+          var env = (d && d.environment) || {};
+          var wind = env.wind || {};
+          var depth = env.depth || {};
+          var posNode = nav.position || null;
+          var hdgNode = nav.headingTrue || nav.headingMagnetic || null;
+          if (posNode && posNode.value && posNode.value.latitude != null) {
+            var tsMs = posNode.timestamp ? new Date(posNode.timestamp).getTime() : Date.now();
+            state.position = {
+              lat: posNode.value.latitude, lon: posNode.value.longitude,
+              hdg_deg: hdgNode ? rad2deg(hdgNode.value) : null,
+              awa_deg: wind.angleApparent ? rad2deg(wind.angleApparent.value) : null,
+              aws_kn: wind.speedApparent ? ms2kn(wind.speedApparent.value) : null,
+              depth_m: (depth.belowKeel || depth.belowTransducer) ? (depth.belowKeel || depth.belowTransducer).value : null,
+              age_s: Math.max(0, Math.round((Date.now() - tsMs) / 1000)),
+            };
+          } else { state.position = null; }
+        } catch (e) { state.position = null; }
+      } else { state.position = null; }
+      render();
+    };
+    xhr.onerror = function () { state.skInFlight = false; state.position = null; render(); };
+    xhr.send();
+  }
+
+  function pollCloud() {
+    if (state.cloudInFlight) return;
+    state.cloudInFlight = true;
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', FN_URL + '?key=' + encodeURIComponent(MFD_API_KEY), true);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      state.cloudInFlight = false;
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { state.anchor = JSON.parse(xhr.responseText).anchor; state.cloudOk = true; }
+        catch (e) { state.cloudOk = false; }
+      } else { state.cloudOk = false; }
+      render();
+    };
+    xhr.onerror = function () { state.cloudInFlight = false; state.cloudOk = false; render(); };
+    xhr.send();
+  }
+
+  function poll() { pollSignalK(); pollCloud(); }
+
+  function postAction(action, params, cb) {
+    if (!state.cloudOk) {
+      window.alert('Cloud sync is offline — cannot ' + action.replace(/_/g, ' ') + ' right now.');
+      if (cb) cb(false);
+      return;
+    }
+    var body = { api_key: MFD_API_KEY, action: action };
+    for (var k in params) { if (params.hasOwnProperty(k)) body[k] = params[k]; }
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', FN_URL, true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { var data = JSON.parse(xhr.responseText); if (data.anchor) state.anchor = data.anchor; } catch (e) {}
+        render();
+        if (cb) cb(true);
+      } else { if (cb) cb(false); }
+    };
+    xhr.onerror = function () { if (cb) cb(false); };
+    xhr.send(JSON.stringify(body));
+  }
+
+  // ── Slider wiring ────────────────────────────────────────────────────
+  function wireSlider(slider, badge, unit, minusBtn, plusBtn, onCommit) {
+    function updateBadge() { badge.textContent = slider.value + unit; }
+    slider.addEventListener('input', function () { updateBadge(); renderCells(); });
+    slider.addEventListener('change', function () { updateBadge(); onCommit(parseFloat(slider.value)); });
+    minusBtn.addEventListener('click', function () {
+      slider.value = Math.max(parseFloat(slider.min), parseFloat(slider.value) - parseFloat(slider.step));
+      updateBadge(); renderCells(); onCommit(parseFloat(slider.value));
+    });
+    plusBtn.addEventListener('click', function () {
+      slider.value = Math.min(parseFloat(slider.max), parseFloat(slider.value) + parseFloat(slider.step));
+      updateBadge(); renderCells(); onCommit(parseFloat(slider.value));
+    });
+    updateBadge();
+  }
+
+  wireSlider(els.chainSlider, els.chainBadge, ' m', $('chain-minus'), $('chain-plus'), function (v) {
+    if (state.anchor && state.anchor.active) postAction('update_settings', { chain_length_m: v });
+  });
+  wireSlider(els.radiusSlider, els.radiusBadge, ' m', $('radius-minus'), $('radius-plus'), function (v) {
+    if (state.anchor && state.anchor.active) postAction('update_settings', { radius_m: v });
+  });
+  wireSlider(els.brgSlider, els.brgBadge, '°', $('brg-minus'), $('brg-plus'), function (v) {
+    state.bearingManual = true;
+    if (state.anchor && state.anchor.active) postAction('update_settings', { bearing_deg: v });
+  });
+  els.brgReset.addEventListener('click', function () {
+    state.bearingManual = false;
+    if (state.position && state.position.hdg_deg != null) {
+      els.brgSlider.value = state.position.hdg_deg;
+      els.brgBadge.textContent = Math.round(state.position.hdg_deg) + '°';
+      if (state.anchor && state.anchor.active) postAction('update_settings', { bearing_deg: state.position.hdg_deg });
+    }
+  });
+
+  // ── Button actions ───────────────────────────────────────────────────
+  els.btnSet.addEventListener('click', function () {
+    var anc = state.anchor, pos = state.position;
+    if (anc && anc.active) { postAction('clear_anchor', {}); return; }
+    if (!pos || pos.lat == null) { els.gpsWarn.style.display = 'flex'; return; }
+    var chain = parseFloat(els.chainSlider.value), radius = parseFloat(els.radiusSlider.value), brg = parseFloat(els.brgSlider.value);
+    var dest = destinationPoint(pos.lat, pos.lon, brg, chain);
+    postAction('set_anchor', { lat: dest[0], lon: dest[1], radius_m: radius, chain_length_m: chain, bearing_deg: brg, anchor_depth_at_set: pos.depth_m });
+  });
+
+  els.btnDrop.addEventListener('click', function () {
+    var pos = state.position;
+    if (!pos || pos.lat == null) { els.gpsWarn.style.display = 'flex'; return; }
+    postAction('drop_anchor_now', { lat: pos.lat, lon: pos.lon, hdg_deg: pos.hdg_deg, depth_m: pos.depth_m });
+  });
+
+  els.btnRestore.addEventListener('click', function () { postAction('set_anchor', {
+    lat: state.anchor.lat, lon: state.anchor.lon,
+    radius_m: state.anchor.radius_m, chain_length_m: state.anchor.chain_length_m, bearing_deg: state.anchor.bearing_deg,
+    anchor_depth_at_set: state.anchor.anchor_depth_at_set,
+  }); });
+
+  els.btnGps.addEventListener('click', function () {
+    var show = els.gpsInputBlock.style.display !== 'flex';
+    els.gpsInputBlock.style.display = show ? 'flex' : 'none';
+    els.btnGps.className = show ? 'ctrl-btn ghost active' : 'ctrl-btn ghost';
+  });
+  els.btnGpsSet.addEventListener('click', function () {
+    var lat = parseFloat(els.gpsLatField.value), lon = parseFloat(els.gpsLonField.value);
+    if (!isFinite(lat) || !isFinite(lon)) { window.alert('Invalid coordinates.'); return; }
+    postAction('set_anchor_by_gps', { lat: lat, lon: lon, anchor_depth_at_set: state.position ? state.position.depth_m : null }, function (ok) {
+      if (!ok || !state.position || state.position.lat == null) return;
+      var brg = Math.round(bearingTo(state.position.lat, state.position.lon, lat, lon)) % 360;
+      var chain = Math.min(Math.round(haversine(state.position.lat, state.position.lon, lat, lon)), 120);
+      state.bearingManual = true;
+      postAction('update_settings', { bearing_deg: brg, chain_length_m: chain });
+    });
+    els.gpsInputBlock.style.display = 'none';
+    els.btnGps.className = 'ctrl-btn ghost';
+  });
+
+  function doMute() { postAction('mute_alarm', {}); }
+  function doSilence() {
+    if (!window.confirm('Silence all anchor alerts and clear the watch?')) return;
+    postAction('silence_alarm', {});
+  }
+  els.btnMute.addEventListener('click', doMute);
+  els.btnSilence.addEventListener('click', doSilence);
+  els.alarmMute.addEventListener('click', doMute);
+  els.alarmSilence.addEventListener('click', doSilence);
+
+  // ── Boot ─────────────────────────────────────────────────────────────
+  poll();
+  setInterval(poll, POLL_MS);
+})();
+</script>
+</body>
+</html>
