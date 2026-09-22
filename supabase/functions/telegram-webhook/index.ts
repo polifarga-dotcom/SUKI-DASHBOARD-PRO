@@ -171,18 +171,36 @@ Deno.serve(async (req: Request) => {
 
   // ── /status ─────────────────────────────────────────────────────────────
   if (text.startsWith('/status')) {
-    const { data: subs } = await admin
+    // telegram_subscribers and anchor_config are siblings under boats (both
+    // FK boat_id -> boats.id) with no direct FK between them, so PostgREST
+    // can't embed anchor_config(...) through telegram_subscribers — that
+    // embed silently errors and (since the error was never checked) used to
+    // read as "no subscriptions". Fetch mute state separately instead.
+    const { data: subs, error: subsErr } = await admin
       .from('telegram_subscribers')
-      .select('boat_id, boats(name), anchor_config(alarm_telegram_muted)')
+      .select('boat_id, boats(name)')
       .eq('chat_id', chatIdStr);
+
+    if (subsErr) {
+      console.error('[telegram-webhook] /status subs query error:', subsErr.message);
+      await sendReply(botToken, chatId, 'Sorry, something went wrong checking your subscriptions.');
+      return new Response('ok', { status: 200 });
+    }
 
     if (!subs || subs.length === 0) {
       await sendReply(botToken, chatId, 'You are not subscribed to any SUKI alerts.');
       return new Response('ok', { status: 200 });
     }
 
+    const boatIds = subs.map((s: any) => s.boat_id);
+    const { data: cfgs } = await admin
+      .from('anchor_config')
+      .select('boat_id, alarm_telegram_muted')
+      .in('boat_id', boatIds);
+    const mutedByBoat = new Map((cfgs ?? []).map((c: any) => [c.boat_id, c.alarm_telegram_muted]));
+
     const lines = subs.map((s: any) => {
-      const muted = s.anchor_config?.alarm_telegram_muted;
+      const muted = mutedByBoat.get(s.boat_id);
       return `⚓ <b>${s.boats?.name ?? s.boat_id}</b> — ${muted ? '🔇 muted' : '🔔 active'}`;
     });
     await sendReply(botToken, chatId, `Your SUKI subscriptions:\n\n${lines.join('\n')}`);
