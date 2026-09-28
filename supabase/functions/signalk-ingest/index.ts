@@ -173,7 +173,8 @@ Deno.serve(async (req: Request) => {
       if (safe['nav_lat']    == null) safe['nav_lat']    = vrm.nav_lat;
       if (safe['nav_lon']    == null) safe['nav_lon']    = vrm.nav_lon;
       if (safe['nav_sog_ms'] == null && vrm.nav_sog_ms != null) safe['nav_sog_ms'] = vrm.nav_sog_ms;
-      console.log(`[signalk-ingest] VRM GPS fallback: ${vrm.nav_lat.toFixed(5)},${vrm.nav_lon.toFixed(5)}`);
+      // Routine (fires on every call for boats without direct GPS) — not logged,
+      // it was the single biggest driver of this project's log-ingestion quota.
     }
   }
 
@@ -211,6 +212,7 @@ Deno.serve(async (req: Request) => {
     return json({ error: error.message }, 500);
   }
 
-  console.log(`[signalk-ingest] boat=${cfg.boat_id} fields=${Object.keys(safe).length}`);
+  // Routine success — not logged (fires every ~30s per boat; was the single
+  // biggest driver of this project's log-ingestion quota). Errors above still log.
   return json({ ok: true, fields: Object.keys(safe).length });
 });

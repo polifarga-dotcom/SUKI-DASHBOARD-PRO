@@ -239,8 +239,10 @@ Deno.serve(async (req: Request) => {
     return json({ error: watchErr.message }, 500);
   }
 
+  // Routine per-tick logging removed (fired every minute regardless of state —
+  // was a top driver of this project's log-ingestion quota). Errors/exceptional
+  // states below still log; `results` in the response covers routine status.
   const results: { boat: string; status: string; dist_m?: number }[] = [];
-  console.log(`[anchor-check] checking ${watches?.length ?? 0} active watches`);
 
   for (const watch of watches ?? []) {
     const boatName: string = (watch.boats as { name: string } | null)?.name ?? watch.boat_id ?? 'Unknown';
@@ -260,12 +262,6 @@ Deno.serve(async (req: Request) => {
 
     const nowMs = Date.now();
     const alarmDelaySec = watch.alarm_delay_s ?? 60;
-
-    console.log(
-      `[anchor-check] ${boatName}: dist=${Math.round(dist)}m radius=${watch.radius_m}m ` +
-      `dragging=${dragging} alarming=${watch.alarming} muted=${watch.alarm_telegram_muted} ` +
-      `count=${watch.alarm_notify_count ?? 0} src=${gps.source}`
-    );
 
     // ── STATE 1: Back in range ────────────────────────────────────────────────
     if (!dragging) {
