@@ -17,6 +17,14 @@
  * Standard SignalK paths are mapped to SUKI's telemetry columns.
  * Victron-specific paths (solar total) use the Victron SignalK plugin conventions.
  *
+ * v1.0.26 — Fix GPS position never resolving on boats with multiple conflicting
+ *   N2K position sources and no preferred-source configured: the delta-stream
+ *   subscription (streambundle.getSelfBus) silently never fired, so every
+ *   single batch hit ingest-suki-8k2p's external VRM API fallback — the
+ *   single biggest driver of the project's Supabase log-ingestion quota.
+ *   Now reads navigation.position via app.getSelfPath() at send time instead,
+ *   the same resolution the SignalK REST API/admin UI already use correctly.
+ *
  * v1.0.22 — Moved to a new Supabase project (fresh org, separate billing quota).
  *
  * v1.0.21 — Updated ingest endpoint (renamed Supabase Edge Function).
@@ -521,24 +529,30 @@ module.exports = function (app) {
         }
       });
 
-      // ── Extra: Victron/Venus GPS compound position object ────────────────────
-      // Standard NMEA devices emit navigation.position.latitude / .longitude as
-      // separate numeric sub-paths, handled above. Victron/Venus OS GPS sources
-      // emit the parent path navigation.position as a compound object
-      // { latitude: number, longitude: number }. This extra subscription catches
-      // that object and extracts the coordinates. Sub-path values take priority;
-      // the compound handler only fills nav_lat / nav_lon if they're still null.
-      try {
-        const posUnsub = app.streambundle.getSelfBus('navigation.position').onValue(({ value }) => {
-          if (value && typeof value === 'object' &&
-              value.latitude != null && value.longitude != null) {
-            if (pending['nav_lat'] == null) pending['nav_lat'] = value.latitude;
-            if (pending['nav_lon'] == null) pending['nav_lon'] = value.longitude;
+      // ── GPS position: read directly at send time instead of subscribing ──────
+      // 2026-09-28 finding: this boat has two conflicting N2K position sources
+      // (two n2k-ydnu device instances both publishing navigation.position), and
+      // with no preferred source configured in SignalK's own Data Connections
+      // settings, app.streambundle.getSelfBus('navigation.position') / .latitude
+      // / .longitude never emits a single resolved value — confirmed empirically
+      // (zero events over several minutes of live traffic, both as the compound
+      // object and as separate leaf sub-paths). ingest-suki-8k2p was silently
+      // falling back to an extra VRM API call on every single 30 s tick as a
+      // result — the single biggest driver of this project's Supabase log-
+      // ingestion quota. app.getSelfPath() resolves the same way the SignalK
+      // REST API and admin UI do (which do show a value), so read the position
+      // that way at send time instead of relying on the delta-stream subscription.
+      function readSelfPosition() {
+        try {
+          const pos = app.getSelfPath('navigation.position');
+          const value = pos && pos.value ? pos.value : pos;
+          if (value && typeof value === 'object' && value.latitude != null && value.longitude != null) {
+            return { latitude: value.latitude, longitude: value.longitude };
           }
-        });
-        unsubscribes.push(posUnsub);
-      } catch (e) {
-        app.debug(`Could not subscribe to navigation.position compound: ${e.message}`);
+        } catch (e) {
+          app.debug(`getSelfPath(navigation.position) failed: ${e.message}`);
+        }
+        return null;
       }
 
       // Wakespeed chargingMode subscriptions are handled inside discoverDynamicPaths()
@@ -557,6 +571,20 @@ module.exports = function (app) {
         const payload = { ...pending, ...pendingStr };
         pending    = {};
         pendingStr = {};
+
+        // Delta-stream subscription for navigation.position doesn't resolve
+        // on this boat (two conflicting N2K sources, no preferred source set —
+        // see readSelfPosition() above), so fill GPS here from the same
+        // resolved value the SignalK REST API/admin UI use, before ever
+        // reaching for the external VRM fallback below.
+        if (payload.nav_lat == null || payload.nav_lon == null) {
+          const pos = readSelfPosition();
+          if (pos) {
+            if (payload.nav_lat == null) payload.nav_lat = pos.latitude;
+            if (payload.nav_lon == null) payload.nav_lon = pos.longitude;
+          }
+        }
+
         // _battSocVenusSeen / _battSocVenusLast are NOT reset here — they persist
         // across cycles so that once a Venus source is seen, N2K is always suppressed.
 
