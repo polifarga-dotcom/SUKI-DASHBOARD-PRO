@@ -23,6 +23,11 @@
  *            update_settings | lift_anchor | clear_anchor |
  *            mute_alarm | silence_alarm
  *   → { ok: true, anchor } | { error }
+ *
+ * lift_anchor / clear_anchor / silence_alarm write the anchor that is being
+ * lifted to anchor_history (latest 3 kept) — same as clearAnchor() on the
+ * Pro app's anchor page, so "Past anchors" there also lists anchors lifted
+ * from the Zeus MFD or the ESP32 mini dashboard.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -90,6 +95,35 @@ async function resolveBoat(supabase: any, apiKey: string) {
     .eq('mfd_api_key', apiKey)
     .maybeSingle();
   return data ?? null;
+}
+
+// Mirrors clearAnchor() in src/routes/(app)/anchor/+page.svelte: insert the
+// lifted anchor, then prune to the latest 3 entries per boat.
+// deno-lint-ignore no-explicit-any
+async function writeAnchorHistory(supabase: any, boatId: string): Promise<void> {
+  const { data: cur } = await supabase
+    .from('anchor_config')
+    .select('active, lat, lon, radius_m, chain_length_m, bearing_deg')
+    .eq('boat_id', boatId)
+    .maybeSingle();
+  if (!cur?.active || cur.lat == null || cur.lon == null) return;
+  const { error } = await supabase.from('anchor_history').insert({
+    boat_id: boatId,
+    lat: cur.lat, lon: cur.lon,
+    radius_m: Math.round(cur.radius_m ?? 50),
+    chain_length_m: Math.round(cur.chain_length_m ?? 0),
+    bearing_deg: Math.round(cur.bearing_deg ?? 0) % 360,
+  });
+  if (error) { console.error('[mfd-anchor] history insert error:', error.message); return; }
+  const { data: old } = await supabase
+    .from('anchor_history')
+    .select('id')
+    .eq('boat_id', boatId)
+    .order('cleared_at', { ascending: false })
+    .range(3, 100);
+  if (old && old.length > 0) {
+    await supabase.from('anchor_history').delete().in('id', old.map((r: { id: number }) => r.id));
+  }
 }
 
 async function cancelPushoverByTag(appToken: string | null, tag: string): Promise<void> {
@@ -215,6 +249,7 @@ Deno.serve(async (req: Request) => {
     }
     case 'lift_anchor':
     case 'clear_anchor': {
+      await writeAnchorHistory(supabase, boatId);
       patch = { active: false, alarming: false };
       break;
     }
@@ -223,6 +258,7 @@ Deno.serve(async (req: Request) => {
       break;
     }
     case 'silence_alarm': {
+      await writeAnchorHistory(supabase, boatId);
       const pushoverTag = `anchor_${boatId.substring(0, 8)}`;
       await cancelPushoverByTag((boat.pushover_app_token as string | null) ?? null, pushoverTag);
       patch = {
