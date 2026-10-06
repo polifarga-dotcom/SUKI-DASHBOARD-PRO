@@ -1,0 +1,1331 @@
+{
+  "id": "057ae48bc2fee831",
+  "label": "ESP32 Mini Dashboard",
+  "disabled": false,
+  "info": "Backend für das Waveshare ESP32-S3 7\" Mini-Dashboard. Quelle: SUKI DASHBOARD PRO/esp32-mini-dashboard/nodered (build_flow.py). Nicht im Editor ändern — wird beim nächsten Deploy überschrieben.",
+  "nodes": [
+    {
+      "id": "eb4e27d7d9f1197e",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "SK batt",
+      "x": 140,
+      "y": 60,
+      "wires": [
+        [
+          "1631402de9ee8c28"
+        ]
+      ],
+      "props": [
+        {
+          "p": "topic",
+          "v": "batt",
+          "vt": "str"
+        },
+        {
+          "p": "url",
+          "v": "http://192.168.0.100:3000/signalk/v1/api/vessels/self/electrical/batteries",
+          "vt": "str"
+        },
+        {
+          "p": "requestTimeout",
+          "v": "3000",
+          "vt": "num"
+        }
+      ],
+      "repeat": "2",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "1",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "961a99188d8cdadc",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "SK wind",
+      "x": 140,
+      "y": 100,
+      "wires": [
+        [
+          "1631402de9ee8c28"
+        ]
+      ],
+      "props": [
+        {
+          "p": "topic",
+          "v": "wind",
+          "vt": "str"
+        },
+        {
+          "p": "url",
+          "v": "http://192.168.0.100:3000/signalk/v1/api/vessels/self/environment/wind",
+          "vt": "str"
+        },
+        {
+          "p": "requestTimeout",
+          "v": "3000",
+          "vt": "num"
+        }
+      ],
+      "repeat": "2",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "1",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "3a734a519ab34aa8",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "SK nav",
+      "x": 140,
+      "y": 140,
+      "wires": [
+        [
+          "1631402de9ee8c28"
+        ]
+      ],
+      "props": [
+        {
+          "p": "topic",
+          "v": "nav",
+          "vt": "str"
+        },
+        {
+          "p": "url",
+          "v": "http://192.168.0.100:3000/signalk/v1/api/vessels/self/navigation",
+          "vt": "str"
+        },
+        {
+          "p": "requestTimeout",
+          "v": "3000",
+          "vt": "num"
+        }
+      ],
+      "repeat": "2",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "1",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "eac5309207b55a6d",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "SK tanks",
+      "x": 140,
+      "y": 180,
+      "wires": [
+        [
+          "1631402de9ee8c28"
+        ]
+      ],
+      "props": [
+        {
+          "p": "topic",
+          "v": "tanks",
+          "vt": "str"
+        },
+        {
+          "p": "url",
+          "v": "http://192.168.0.100:3000/signalk/v1/api/vessels/self/tanks",
+          "vt": "str"
+        },
+        {
+          "p": "requestTimeout",
+          "v": "3000",
+          "vt": "num"
+        }
+      ],
+      "repeat": "5",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "1",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "c97b563944d64d5f",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "SK baro",
+      "x": 140,
+      "y": 220,
+      "wires": [
+        [
+          "1631402de9ee8c28"
+        ]
+      ],
+      "props": [
+        {
+          "p": "topic",
+          "v": "baro",
+          "vt": "str"
+        },
+        {
+          "p": "url",
+          "v": "http://192.168.0.100:3000/signalk/v1/api/vessels/self/environment/outside/pressure",
+          "vt": "str"
+        },
+        {
+          "p": "requestTimeout",
+          "v": "3000",
+          "vt": "num"
+        }
+      ],
+      "repeat": "2",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "1",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "b53dec41cb63f1e5",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "SK prop",
+      "x": 140,
+      "y": 260,
+      "wires": [
+        [
+          "1631402de9ee8c28"
+        ]
+      ],
+      "props": [
+        {
+          "p": "topic",
+          "v": "prop",
+          "vt": "str"
+        },
+        {
+          "p": "url",
+          "v": "http://192.168.0.100:3000/signalk/v1/api/vessels/self/propulsion",
+          "vt": "str"
+        },
+        {
+          "p": "requestTimeout",
+          "v": "3000",
+          "vt": "num"
+        }
+      ],
+      "repeat": "2",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "1",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "20c55ad75f7b2b51",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "SK depth",
+      "x": 140,
+      "y": 300,
+      "wires": [
+        [
+          "1631402de9ee8c28"
+        ]
+      ],
+      "props": [
+        {
+          "p": "topic",
+          "v": "depth",
+          "vt": "str"
+        },
+        {
+          "p": "url",
+          "v": "http://192.168.0.100:3000/signalk/v1/api/vessels/self/environment/depth",
+          "vt": "str"
+        },
+        {
+          "p": "requestTimeout",
+          "v": "3000",
+          "vt": "num"
+        }
+      ],
+      "repeat": "2",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "1",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "1f14f8c0647aef75",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "Anker (Supabase)",
+      "x": 150,
+      "y": 340,
+      "wires": [
+        [
+          "b0058f43fa23d5a1"
+        ]
+      ],
+      "props": [
+        {
+          "p": "topic",
+          "v": "anchor",
+          "vt": "str"
+        },
+        {
+          "p": "requestTimeout",
+          "v": "6000",
+          "vt": "num"
+        }
+      ],
+      "repeat": "5",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "1",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "1631402de9ee8c28",
+      "type": "http request",
+      "z": "057ae48bc2fee831",
+      "name": "SignalK GET",
+      "x": 360,
+      "y": 100,
+      "wires": [
+        [
+          "0bec6115feb58e70"
+        ]
+      ],
+      "method": "GET",
+      "ret": "obj",
+      "paytoqs": "ignore",
+      "url": "",
+      "tls": "",
+      "persist": false,
+      "proxy": "",
+      "insecureHTTPParser": false,
+      "authType": "",
+      "senderr": false,
+      "headers": []
+    },
+    {
+      "id": "b0058f43fa23d5a1",
+      "type": "http request",
+      "z": "057ae48bc2fee831",
+      "name": "Supabase GET",
+      "x": 360,
+      "y": 200,
+      "wires": [
+        [
+          "56e3d9e69df897ac"
+        ]
+      ],
+      "method": "GET",
+      "ret": "obj",
+      "paytoqs": "ignore",
+      "url": "https://lzvwhzzscsjeivtviyjm.supabase.co/functions/v1/mfd-anchor?key=mfd-b00c60fed1bb860778d4c704eb12a8804884377bffafca83",
+      "tls": "",
+      "persist": false,
+      "proxy": "",
+      "insecureHTTPParser": false,
+      "authType": "",
+      "senderr": false,
+      "headers": []
+    },
+    {
+      "id": "0bec6115feb58e70",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "SK speichern",
+      "x": 560,
+      "y": 100,
+      "wires": [],
+      "func": "if (msg.statusCode === 200 && msg.payload && typeof msg.payload === 'object') {\n    flow.set('sk_' + msg.topic, { data: msg.payload, t: Date.now() });\n}\nreturn null;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "56e3d9e69df897ac",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Anker speichern",
+      "x": 560,
+      "y": 200,
+      "wires": [],
+      "func": "const prev = flow.get('anchor') || {};\nif (msg.statusCode === 200 && msg.payload && typeof msg.payload === 'object' && msg.payload.anchor !== undefined) {\n    flow.set('anchor', { data: msg.payload, t: Date.now() });\n} else {\n    prev.err = msg.statusCode || String(msg.payload).slice(0, 120);\n    flow.set('anchor', prev);\n}\nreturn null;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "56825d81e19d6012",
+      "type": "mqtt in",
+      "z": "057ae48bc2fee831",
+      "name": "Cerbo 0",
+      "x": 150,
+      "y": 880,
+      "wires": [
+        [
+          "77fe9223e562bc9e"
+        ]
+      ],
+      "topic": "N/+/system/0/#",
+      "qos": "0",
+      "datatype": "json",
+      "broker": "480c43bd8072dfc0",
+      "nl": false,
+      "rap": true,
+      "rh": 0,
+      "inputs": 0
+    },
+    {
+      "id": "9b5a51778afca1f5",
+      "type": "mqtt in",
+      "z": "057ae48bc2fee831",
+      "name": "Cerbo 1",
+      "x": 150,
+      "y": 920,
+      "wires": [
+        [
+          "77fe9223e562bc9e"
+        ]
+      ],
+      "topic": "N/+/solarcharger/+/History/Daily/0/Yield",
+      "qos": "0",
+      "datatype": "json",
+      "broker": "480c43bd8072dfc0",
+      "nl": false,
+      "rap": true,
+      "rh": 0,
+      "inputs": 0
+    },
+    {
+      "id": "afbbb95c850da756",
+      "type": "mqtt in",
+      "z": "057ae48bc2fee831",
+      "name": "Cerbo 2",
+      "x": 150,
+      "y": 960,
+      "wires": [
+        [
+          "77fe9223e562bc9e"
+        ]
+      ],
+      "topic": "N/+/vebus/+/Ac/ActiveIn/L1/V",
+      "qos": "0",
+      "datatype": "json",
+      "broker": "480c43bd8072dfc0",
+      "nl": false,
+      "rap": true,
+      "rh": 0,
+      "inputs": 0
+    },
+    {
+      "id": "77fe9223e562bc9e",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Victron speichern",
+      "x": 400,
+      "y": 920,
+      "wires": [
+        [
+          "b94a5ca78f489c8f"
+        ]
+      ],
+      "func": "// N/<portal>/system/0/Dc/Battery/Soc → vic['system/0/Dc/Battery/Soc'] = value\nconst parts = msg.topic.split('/');\nconst vic = flow.get('vic') || {};\nvic[parts.slice(2).join('/')] = msg.payload && typeof msg.payload === 'object' ? msg.payload.value : null;\nvic._t = Date.now();\nflow.set('vic', vic);\nif (!flow.get('vic_portal')) { flow.set('vic_portal', parts[1]); return { topic: 'R/' + parts[1] + '/keepalive', payload: '' }; }\nreturn null;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "b17d6b341fccc7f7",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "Keepalive 30 s",
+      "x": 140,
+      "y": 1000,
+      "wires": [
+        [
+          "c74c2b47226eb8ec"
+        ]
+      ],
+      "props": [],
+      "repeat": "30",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "2",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "c74c2b47226eb8ec",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Keepalive bauen",
+      "x": 400,
+      "y": 1000,
+      "wires": [
+        [
+          "b94a5ca78f489c8f"
+        ]
+      ],
+      "func": "// Venus OS publiziert N/-Topics nur, solange regelmäßig ein Keepalive kommt\nconst p = flow.get('vic_portal');\nreturn p ? { topic: 'R/' + p + '/keepalive', payload: '' } : null;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "b94a5ca78f489c8f",
+      "type": "mqtt out",
+      "z": "057ae48bc2fee831",
+      "name": "Cerbo keepalive",
+      "x": 640,
+      "y": 960,
+      "wires": [],
+      "topic": "",
+      "qos": "0",
+      "retain": "false",
+      "respTopic": "",
+      "contentType": "",
+      "userProps": "",
+      "correl": "",
+      "expiry": "",
+      "broker": "480c43bd8072dfc0"
+    },
+    {
+      "id": "56d22bd2c7105393",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "Wetter 30 min",
+      "x": 140,
+      "y": 1080,
+      "wires": [
+        [
+          "39303370d20d495b"
+        ]
+      ],
+      "props": [],
+      "repeat": "1800",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "15",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "39303370d20d495b",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Wetter URL",
+      "x": 360,
+      "y": 1080,
+      "wires": [
+        [
+          "7c92aaab79bc0b46"
+        ]
+      ],
+      "func": "// Position: live aus SignalK, sonst letzte bekannte aus Supabase\nconst nav = flow.get('sk_nav');\nlet lat = null, lon = null;\nif (nav && nav.data && nav.data.position && nav.data.position.value) {\n    lat = nav.data.position.value.latitude; lon = nav.data.position.value.longitude;\n} else {\n    const a = flow.get('anchor');\n    const p = a && a.data && a.data.position;\n    if (p) { lat = p.lat; lon = p.lon; }\n}\nif (typeof lat !== 'number' || typeof lon !== 'number') { node.status({ fill: 'yellow', text: 'keine Position' }); return null; }\nmsg.lat = lat; msg.lon = lon;\nmsg.url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat.toFixed(3) + '&longitude=' + lon.toFixed(3) +\n    '&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m' +\n    '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,' +\n    'wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset' +\n    '&wind_speed_unit=kn&timezone=auto&forecast_days=4';\nmsg.requestTimeout = 15000;\nreturn msg;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "7c92aaab79bc0b46",
+      "type": "http request",
+      "z": "057ae48bc2fee831",
+      "name": "Open-Meteo GET",
+      "x": 560,
+      "y": 1080,
+      "wires": [
+        [
+          "a271ad45abd77b8d"
+        ]
+      ],
+      "method": "GET",
+      "ret": "obj",
+      "paytoqs": "ignore",
+      "url": "",
+      "tls": "",
+      "persist": false,
+      "proxy": "",
+      "insecureHTTPParser": false,
+      "authType": "",
+      "senderr": false,
+      "headers": []
+    },
+    {
+      "id": "a271ad45abd77b8d",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Wetter speichern",
+      "x": 760,
+      "y": 1080,
+      "wires": [
+        [
+          "2b46c54bf6b0fdf2"
+        ]
+      ],
+      "func": "if (msg.statusCode !== 200 || !msg.payload || !msg.payload.daily) {\n    node.status({ fill: 'red', text: 'Fehler ' + msg.statusCode });\n    return null;\n}\nflow.set('wx', { data: msg.payload, t: Date.now(), lat: msg.lat, lon: msg.lon });\nnode.status({ fill: 'green', text: 'ok ' + new Date().toLocaleTimeString() });\n// Mond pro Tag bei met.no (Auf-/Untergang + Phase), Offset = Zeitzone der Position\nconst off = msg.payload.utc_offset_seconds || 0;\nconst sign = off < 0 ? '-' : '+', a = Math.abs(off);\nconst offset = sign + String(Math.floor(a / 3600)).padStart(2, '0') + ':' + String(Math.floor((a % 3600) / 60)).padStart(2, '0');\nfor (const date of msg.payload.daily.time) {\n    node.send({\n        date: date,\n        url: 'https://api.met.no/weatherapi/sunrise/3.0/moon?lat=' + msg.lat.toFixed(3) + '&lon=' + msg.lon.toFixed(3) +\n            '&date=' + date + '&offset=' + encodeURIComponent(offset),\n        headers: { 'User-Agent': 'SUKI-MiniDash/1.0 (sailing yacht dashboard)' },\n        requestTimeout: 15000,\n    });\n}\nreturn null;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "2b46c54bf6b0fdf2",
+      "type": "http request",
+      "z": "057ae48bc2fee831",
+      "name": "met.no GET",
+      "x": 960,
+      "y": 1080,
+      "wires": [
+        [
+          "14c73f2d1ee5507e"
+        ]
+      ],
+      "method": "GET",
+      "ret": "obj",
+      "paytoqs": "ignore",
+      "url": "",
+      "tls": "",
+      "persist": false,
+      "proxy": "",
+      "insecureHTTPParser": false,
+      "authType": "",
+      "senderr": false,
+      "headers": []
+    },
+    {
+      "id": "14c73f2d1ee5507e",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Mond speichern",
+      "x": 1160,
+      "y": 1080,
+      "wires": [],
+      "func": "const p = msg.payload && msg.payload.properties;\nif (msg.statusCode !== 200 || !p) return null;\nconst moon = flow.get('moon') || {};\nmoon[msg.date] = { rise: p.moonrise && p.moonrise.time, set: p.moonset && p.moonset.time, phase: p.moonphase };\n// nur die letzten 8 Tage behalten\nObject.keys(moon).sort().slice(0, -8).forEach((k) => delete moon[k]);\nflow.set('moon', moon);\nreturn null;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "3863bcc86926881b",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "Motor laden (Start)",
+      "x": 160,
+      "y": 1160,
+      "wires": [
+        [
+          "25d39d7ee95ed36c"
+        ]
+      ],
+      "props": [],
+      "repeat": "",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "0.5",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "25d39d7ee95ed36c",
+      "type": "file in",
+      "z": "057ae48bc2fee831",
+      "name": "Motor lesen",
+      "x": 380,
+      "y": 1160,
+      "wires": [
+        [
+          "4e0928cb2c4adb3d"
+        ]
+      ],
+      "filename": "/home/admin/esp-dash/engine.json",
+      "filenameType": "str",
+      "format": "utf8",
+      "chunk": false,
+      "sendError": false,
+      "encoding": "none",
+      "allProps": false
+    },
+    {
+      "id": "4e0928cb2c4adb3d",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Motor übernehmen",
+      "x": 600,
+      "y": 1160,
+      "wires": [],
+      "func": "try { const v = JSON.parse(msg.payload); if (!flow.get('eng_last')) flow.set('eng_last', v); } catch (e) {}\nreturn null;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "6e8378b863af71b9",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "Motor sichern 5 min",
+      "x": 160,
+      "y": 1200,
+      "wires": [
+        [
+          "1a3441530758cba2"
+        ]
+      ],
+      "props": [],
+      "repeat": "300",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "60",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "1a3441530758cba2",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Motor geändert?",
+      "x": 380,
+      "y": 1200,
+      "wires": [
+        [
+          "90aeb2d746489b72"
+        ]
+      ],
+      "func": "const v = flow.get('eng_last');\nif (!v || !v.t || v.t === context.get('savedT')) return null;\ncontext.set('savedT', v.t);\nreturn { payload: JSON.stringify(v) };",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "90aeb2d746489b72",
+      "type": "file",
+      "z": "057ae48bc2fee831",
+      "name": "Motor schreiben",
+      "x": 600,
+      "y": 1200,
+      "wires": [],
+      "filename": "/home/admin/esp-dash/engine.json",
+      "filenameType": "str",
+      "appendNewline": false,
+      "createDir": true,
+      "overwriteFile": "true",
+      "encoding": "utf8"
+    },
+    {
+      "id": "e838c8b967c51781",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "Tick 1 s",
+      "x": 130,
+      "y": 280,
+      "wires": [
+        [
+          "550ddacae7ff5b8a"
+        ]
+      ],
+      "props": [],
+      "repeat": "1",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "3",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "550ddacae7ff5b8a",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Auswertung",
+      "x": 340,
+      "y": 280,
+      "wires": [],
+      "func": "// ESP32 Mini Dashboard — Auswertung (läuft jede Sekunde)\n// Liest die zwischengespeicherten SignalK-/Supabase-Daten aus dem Flow-Context,\n// wertet Schwellwerte mit Hysterese aus und legt den fertigen Display-State\n// in flow.state ab. Der ESP32 und der Browser-Simulator holen nur noch diesen\n// State ab — die gesamte Logik lebt hier, die Firmware ist ein reines Display.\n\nconst DEF = {\n    windAlarmOn: true, windAlarmKn: 25, windHystKn: 2, windSource: 'auto', windAvgSec: 10, windWinMin: 2,\n    battAlarmOn: true, battLowSoc: 30, battHystSoc: 3, battLowVolt: 0, battInstance: 'auto',\n    waterAlarmOn: true, waterLowPct: 15, waterHystPct: 3, waterInstance: 'auto',\n    engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true,\n    fuelCurve: '800:0.8,1000:1.2,1500:2.2,2000:3.8,2500:6.2,3000:9.5',\n    baroAlarmOn: true, baroLowHpa: 995, baroHystHpa: 1, baroWinMin: 2,\n    anchorAlarmOn: true, anchorLocalFallback: true,\n    ackMinutes: 5, staleSec: 30, tz: 'Europe/Rome', testUntil: 0, night: false,\n    soundOn: true, soundNight: 'short',\n};\nconst cfg = Object.assign({}, DEF, flow.get('cfg') || {});\nconst now = Date.now();\nconst MS2KN = 1.943844;\n\nconst ageS = (ts) => (ts ? (now - new Date(ts).getTime()) / 1000 : Infinity);\nconst isNum = (v) => typeof v === 'number' && isFinite(v);\nconst r1 = (v) => (isNum(v) ? Math.round(v * 10) / 10 : null);\nconst leaf = (o) => (o && typeof o === 'object' && 'value' in o ? o : null);\n\nconst alarms = [];   // { key, text }\nconst warns = [];    // text\n\n// ── Batterie ──────────────────────────────────────────────────────────────\nconst skB = flow.get('sk_batt');\nconst bTree = (skB && skB.data && typeof skB.data === 'object') ? skB.data : {};\nconst batts = Object.keys(bTree)\n    .filter((k) => bTree[k] && typeof bTree[k] === 'object')\n    .map((k) => {\n        const b = bTree[k];\n        const soc = leaf(b.capacity && b.capacity.stateOfCharge);\n        const v = leaf(b.voltage);\n        const a = leaf(b.current);\n        return {\n            id: k,\n            name: (leaf(b.name) && b.name.value) || null,\n            soc: soc && isNum(soc.value) ? soc.value * 100 : null,\n            socTs: soc ? soc.timestamp : null,\n            v: v && isNum(v.value) ? v.value : null,\n            vTs: v ? v.timestamp : null,\n            a: a && isNum(a.value) ? a.value : null,\n        };\n    })\n    .sort((x, y) => (parseFloat(x.id) || 0) - (parseFloat(y.id) || 0));\nflow.set('batt_list', batts.map((b) => ({ id: b.id, soc: r1(b.soc), v: r1(b.v), a: r1(b.a) })));\n\nlet bat = null;\nif (cfg.battInstance !== 'auto') bat = batts.find((b) => b.id === String(cfg.battInstance)) || null;\n// Auto: kleinste Instanz mit SOC (gleiche Regel wie das SignalK-Plugin der Pro App)\nif (!bat) bat = batts.find((b) => b.soc != null) || batts.find((b) => b.v != null) || null;\n\nconst batt = { st: 'na', soc: null, v: null, a: null, id: bat ? bat.id : null, thr: cfg.battLowSoc };\nif (bat && Math.min(ageS(bat.socTs), ageS(bat.vTs)) < cfg.staleSec && skB && ageS(skB.t) < cfg.staleSec) {\n    batt.soc = bat.soc != null ? Math.round(bat.soc) : null;\n    batt.v = bat.v != null ? Math.round(bat.v * 100) / 100 : null;\n    batt.a = r1(bat.a);\n    let low = context.get('battLow') || false;\n    if (batt.soc != null) {\n        if (!low && batt.soc < cfg.battLowSoc) low = true;\n        else if (low && batt.soc >= cfg.battLowSoc + cfg.battHystSoc) low = false;\n    } else if (cfg.battLowVolt > 0 && batt.v != null) {\n        if (!low && batt.v < cfg.battLowVolt) low = true;\n        else if (low && batt.v >= cfg.battLowVolt + 0.2) low = false;\n    }\n    context.set('battLow', low);\n    batt.st = low && cfg.battAlarmOn ? 'alarm' : 'ok';\n    if (batt.st === 'alarm') {\n        alarms.push({ key: 'batt', text: batt.soc != null\n            ? `BATTERY ${batt.soc} % < ${cfg.battLowSoc} %`\n            : `BATTERY ${batt.v} V < ${cfg.battLowVolt} V` });\n    }\n} else {\n    warns.push('No battery data');\n}\n\n// ── Frischwasser ──────────────────────────────────────────────────────────\nconst skT = flow.get('sk_tanks');\nconst fwTree = (skT && skT.data && skT.data.freshWater && typeof skT.data.freshWater === 'object') ? skT.data.freshWater : {};\nconst tanks = Object.keys(fwTree)\n    .filter((k) => fwTree[k] && typeof fwTree[k] === 'object')\n    .map((k) => {\n        const lvl = leaf(fwTree[k].currentLevel), cap = leaf(fwTree[k].capacity);\n        return { id: k, lvl: lvl && isNum(lvl.value) ? lvl.value * 100 : null, ts: lvl ? lvl.timestamp : null,\n            capL: cap && isNum(cap.value) ? cap.value * 1000 : null };\n    })\n    .sort((x, y) => (parseFloat(x.id) || 0) - (parseFloat(y.id) || 0));\nflow.set('tank_list', tanks.map((t) => ({ id: t.id, pct: r1(t.lvl), capL: t.capL != null ? Math.round(t.capL) : null })));\n\nlet tank = null;\nif (cfg.waterInstance !== 'auto') tank = tanks.find((t) => t.id === String(cfg.waterInstance)) || null;\nif (!tank) tank = tanks.find((t) => t.lvl != null) || null;\n\nconst water = { st: 'na', pct: null, l: null, cap: null, id: tank ? tank.id : null, thr: cfg.waterLowPct };\nif (tank && tank.lvl != null && ageS(tank.ts) < cfg.staleSec && ageS(skT.t) < cfg.staleSec) {\n    water.pct = Math.round(tank.lvl);\n    if (tank.capL != null) { water.cap = Math.round(tank.capL); water.l = Math.round(tank.capL * tank.lvl / 100); }\n    let low = context.get('waterLow') || false;\n    if (!low && water.pct < cfg.waterLowPct) low = true;\n    else if (low && water.pct >= cfg.waterLowPct + cfg.waterHystPct) low = false;\n    context.set('waterLow', low);\n    water.st = low && cfg.waterAlarmOn ? 'alarm' : 'ok';\n    if (water.st === 'alarm') alarms.push({ key: 'water', text: `WATER ${water.pct} % < ${cfg.waterLowPct} %` });\n} else {\n    warns.push('No tank data');\n}\n\n// ── Wind ──────────────────────────────────────────────────────────────────\nconst skW = flow.get('sk_wind');\nconst wTree = (skW && skW.data) || {};\nconst tws = leaf(wTree.speedTrue), aws = leaf(wTree.speedApparent);\nlet wsrc = null;\nif (cfg.windSource === 'true') wsrc = tws ? ['TWS', tws] : null;\nelse if (cfg.windSource === 'apparent') wsrc = aws ? ['AWS', aws] : null;\nelse wsrc = (tws && ageS(tws.timestamp) < cfg.staleSec) ? ['TWS', tws] : (aws ? ['AWS', aws] : null);\n\n// Verlauf (10 min) für Mittelwert und Böen-Maximum\nlet hist = flow.get('wind_hist') || [];\nif (wsrc && isNum(wsrc[1].value) && ageS(wsrc[1].timestamp) < cfg.staleSec) {\n    const t = new Date(wsrc[1].timestamp).getTime();\n    if (!hist.length || hist[hist.length - 1][0] !== t) hist.push([t, wsrc[1].value * MS2KN]);\n}\nhist = hist.filter((h) => now - h[0] < 6 * 3600000);  // 6 h für das Verlaufsdiagramm\nflow.set('wind_hist', hist);\n\nconst wind = { st: 'na', kn: null, max: null, src: wsrc ? wsrc[0] : null, thr: cfg.windAlarmKn };\nconst recent = hist.filter((h) => now - h[0] < cfg.windAvgSec * 1000);\nif (recent.length && skW && ageS(skW.t) < cfg.staleSec) {\n    wind.kn = r1(recent.reduce((s, h) => s + h[1], 0) / recent.length);\n    const last10 = hist.filter((h) => now - h[0] < 600000);\n    wind.max = r1(Math.max.apply(null, last10.map((h) => h[1])));\n    // 60 gemittelte Punkte über windWinMin, wie beim Barometer\n    const wWin = cfg.windWinMin * 60000, wStart = now - wWin, WN = 60;\n    const wSum = new Array(WN).fill(0), wCnt = new Array(WN).fill(0);\n    for (const h of hist) {\n        if (h[0] < wStart) continue;\n        const i = Math.min(WN - 1, Math.floor((h[0] - wStart) / wWin * WN));\n        wSum[i] += h[1]; wCnt[i]++;\n    }\n    wind.hist = wSum.map((v, i) => (wCnt[i] ? Math.round(v / wCnt[i] * 10) / 10 : null));\n    wind.win = cfg.windWinMin;\n    let high = context.get('windHigh') || false;\n    if (!high && wind.kn >= cfg.windAlarmKn) high = true;\n    else if (high && wind.kn < cfg.windAlarmKn - cfg.windHystKn) high = false;\n    context.set('windHigh', high);\n    wind.st = high && cfg.windAlarmOn ? 'alarm' : 'ok';\n    if (wind.st === 'alarm') alarms.push({ key: 'wind', text: `WIND ${wind.kn} kn >= ${cfg.windAlarmKn} kn` });\n} else {\n    warns.push('No wind data');\n}\n\n// ── Barometer ─────────────────────────────────────────────────────────────\n// Verlauf bis 6 h im Flow-Context; ans Display gehen 60 gemittelte Punkte über baroWinMin\nconst skP = flow.get('sk_baro');\nconst pLeaf = skP && leaf(skP.data);\nlet bHist = flow.get('baro_hist') || [];\nif (pLeaf && isNum(pLeaf.value) && ageS(pLeaf.timestamp) < cfg.staleSec) {\n    const t = new Date(pLeaf.timestamp).getTime();\n    if (!bHist.length || bHist[bHist.length - 1][0] !== t) bHist.push([t, pLeaf.value / 100]);\n}\nbHist = bHist.filter((h) => now - h[0] < 6 * 3600000);\nflow.set('baro_hist', bHist);\n\nconst baro = { st: 'na', hpa: null, thr: cfg.baroLowHpa, d: null, win: cfg.baroWinMin, hist: [] };\nif (pLeaf && isNum(pLeaf.value) && ageS(pLeaf.timestamp) < cfg.staleSec && ageS(skP.t) < cfg.staleSec) {\n    baro.hpa = r1(pLeaf.value / 100);\n    const winMs = cfg.baroWinMin * 60000, start = now - winMs, N = 60;\n    const sums = new Array(N).fill(0), cnt = new Array(N).fill(0);\n    for (const h of bHist) {\n        if (h[0] < start) continue;\n        const i = Math.min(N - 1, Math.floor((h[0] - start) / winMs * N));\n        sums[i] += h[1]; cnt[i]++;\n    }\n    baro.hist = sums.map((v, i) => (cnt[i] ? Math.round(v / cnt[i] * 10) / 10 : null));\n    const inWin = bHist.filter((h) => h[0] >= start);\n    if (inWin.length > 1) baro.d = r1(inWin[inWin.length - 1][1] - inWin[0][1]);\n    let low = context.get('baroLow') || false;\n    if (!low && baro.hpa < cfg.baroLowHpa) low = true;\n    else if (low && baro.hpa >= cfg.baroLowHpa + cfg.baroHystHpa) low = false;\n    context.set('baroLow', low);\n    baro.st = low && cfg.baroAlarmOn ? 'alarm' : 'ok';\n    if (baro.st === 'alarm') alarms.push({ key: 'baro', text: `PRESSURE ${baro.hpa} hPa < ${cfg.baroLowHpa} hPa` });\n} else {\n    warns.push('No pressure data');\n}\n\n// ── Anker (Supabase via mfd-anchor Edge Function) ─────────────────────────\nconst cloud = flow.get('anchor') || {};\nconst cloudOk = cloud.t && ageS(cloud.t) < Math.max(cfg.staleSec, 30);\nconst anc = (cloud.data && cloud.data.anchor) || null;\nconst skN = flow.get('sk_nav');\nconst pos = skN && skN.data && leaf(skN.data.position);\nconst posOk = pos && pos.value && ageS(pos.timestamp) < cfg.staleSec;\n\nfunction haversine(lat1, lon1, lat2, lon2) {\n    const R = 6371000, toR = Math.PI / 180;\n    const dLat = (lat2 - lat1) * toR, dLon = (lon2 - lon1) * toR;\n    const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * toR) * Math.cos(lat2 * toR) * Math.sin(dLon / 2) ** 2;\n    return 2 * R * Math.asin(Math.sqrt(x));\n}\n\nconst anchor = { st: 'na', act: false, dist: null, rad: null, cloud: !!cloudOk };\nif (anc) {\n    anchor.act = !!anc.active;\n    anchor.rad = isNum(anc.radius_m) ? Math.round(anc.radius_m) : null;\n    if (anchor.act && posOk && isNum(anc.lat) && isNum(anc.lon)) {\n        anchor.dist = Math.round(haversine(pos.value.latitude, pos.value.longitude, anc.lat, anc.lon));\n    }\n    if (!anchor.act) {\n        anchor.st = 'off';\n    } else if (cloudOk && anc.alarming) {\n        anchor.st = 'alarm';\n    } else if (!cloudOk && cfg.anchorLocalFallback && anchor.dist != null && anchor.rad != null) {\n        // Cloud weg (z.B. Starlink): lokale Driftprüfung mit zuletzt bekannter Ankerposition\n        let since = context.get('localDragSince') || 0;\n        if (anchor.dist > anchor.rad) { if (!since) since = now; } else since = 0;\n        context.set('localDragSince', since);\n        const delay = (isNum(anc.alarm_delay_s) ? anc.alarm_delay_s : 10) * 1000;\n        anchor.st = since && now - since >= delay ? 'alarm' : 'ok';\n    } else {\n        anchor.st = 'ok';\n    }\n    if (anchor.st === 'alarm' && cfg.anchorAlarmOn) {\n        alarms.push({ key: 'anchor', text: cloudOk ? 'ANCHOR ALARM' : `ANCHOR DRAG ${anchor.dist} m (local)` });\n    } else if (anchor.st === 'alarm') {\n        anchor.st = 'ok';\n    }\n}\nif (!cloudOk) warns.push(anc ? 'Cloud offline - anchor status last known' : 'Cloud offline - anchor status unknown');\n\n// ── Victron Energy Flow (lokaler MQTT-Broker des Cerbo GX) ────────────────\nconst vic = flow.get('vic') || {};\nconst vNum = (k) => (isNum(vic[k]) ? vic[k] : null);\nconst V = (k) => vNum('system/0/' + k);\nconst r0 = (v) => (isNum(v) ? Math.round(v) : null);\nconst sumPh = (prefix) => {\n    let s = null;\n    for (const ph of ['L1', 'L2', 'L3']) { const v = V(prefix + '/' + ph + '/Power'); if (v != null) s = (s || 0) + v; }\n    return s;\n};\nconst vicKeys = (re) => Object.keys(vic).filter((k) => re.test(k) && isNum(vic[k])).map((k) => vic[k]);\nfunction fmtTTG(s) {\n    if (!isNum(s) || s <= 0) return '';\n    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);\n    return d > 0 ? `${d}d ${h}h` : `${h}h ${Math.floor((s % 3600) / 60)}m`;\n}\nconst SYS_STATE = { 0: 'Off', 1: 'Low power', 2: 'Fault', 3: 'Bulk', 4: 'Absorption', 5: 'Float', 6: 'Storage',\n    7: 'Equalize', 8: 'Passthru', 9: 'Inverting', 10: 'Assisting', 11: 'Power supply', 244: 'Sustain',\n    252: 'Ext. control', 256: 'Discharging', 257: 'Sustain', 258: 'Recharge', 259: 'Scheduled' };\n\nlet energy = { ok: false };\nif (vic._t && now - vic._t < 60000) {\n    const src = V('Ac/ActiveIn/Source');               // 240 = nicht verbunden\n    const shoreW = sumPh('Ac/ActiveIn');\n    const shoreV = vicKeys(/^vebus\\/\\d+\\/Ac\\/ActiveIn\\/L1\\/V$/)[0];\n    const pvDay = vicKeys(/^solarcharger\\/\\d+\\/History\\/Daily\\/0\\/Yield$/);\n    const invP = V('Dc/InverterCharger/Power') != null ? V('Dc/InverterCharger/Power') : V('Dc/Vebus/Power');\n    const bState = V('Dc/Battery/State');              // 0 idle, 1 charging, 2 discharging\n    energy = {\n        ok: true,\n        shore: { on: src != null && src !== 240 && ((shoreW || 0) > 5 || (shoreV || 0) > 50), w: r0(shoreW), v: r0(shoreV) },\n        inv: { st: SYS_STATE[V('SystemState/State')] || '--', w: r0(invP) },\n        ac: { w: r0(sumPh('Ac/ConsumptionOnOutput') != null ? sumPh('Ac/ConsumptionOnOutput') : sumPh('Ac/Consumption')) },\n        pv: { w: r0(V('Dc/Pv/Power')), a: r1(V('Dc/Pv/Current')),\n            today: pvDay.length ? Math.round(pvDay.reduce((a, b) => a + b, 0) * 100) / 100 : null },\n        bat: { soc: r0(V('Dc/Battery/Soc')), v: V('Dc/Battery/Voltage') != null ? Math.round(V('Dc/Battery/Voltage') * 100) / 100 : null,\n            a: r1(V('Dc/Battery/Current')), w: r0(V('Dc/Battery/Power')),\n            st: ['Idle', 'Charging', 'Discharging'][bState] || '--', ttg: fmtTTG(V('Dc/Battery/TimeToGo')) },\n        dc: { w: r0(V('Dc/System/Power')) },\n    };\n}\n\n// ── Wetter (Open-Meteo, alle 30 min) + Mond (met.no) für Screen 3 ─────────\nconst WMO = (c) => {\n    if (c === 0) return ['sun', 'Clear'];\n    if (c === 1) return ['partly', 'Mainly clear'];\n    if (c === 2) return ['partly', 'Partly cloudy'];\n    if (c === 3) return ['cloud', 'Overcast'];\n    if (c === 45 || c === 48) return ['fog', 'Fog'];\n    if (c >= 51 && c <= 57) return ['rain', 'Drizzle'];\n    if (c >= 61 && c <= 67) return ['rain', 'Rain'];\n    if (c >= 71 && c <= 77) return ['snow', 'Snow'];\n    if (c >= 80 && c <= 82) return ['rain', 'Showers'];\n    if (c === 85 || c === 86) return ['snow', 'Snow showers'];\n    if (c >= 95) return ['storm', 'Thunderstorm'];\n    return ['cloud', '--'];\n};\nconst DIR8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];\nconst dir8 = (d) => (isNum(d) ? DIR8[Math.round(((d % 360) + 360) % 360 / 45) % 8] : '');\nconst hm = (iso) => (typeof iso === 'string' && iso.length >= 16 ? iso.substr(11, 5) : '--');\nconst DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];\nconst MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];\nconst moonName = (p) => (!isNum(p) ? '' : p < 11 || p >= 349 ? 'New moon' : p < 79 ? 'Waxing crescent' : p < 101 ? 'First quarter'\n    : p < 169 ? 'Waxing gibbous' : p < 191 ? 'Full moon' : p < 259 ? 'Waning gibbous' : p < 281 ? 'Last quarter' : 'Waning crescent');\n\nconst wxc = flow.get('wx');\nconst moon = flow.get('moon') || {};\nlet weather = { ok: false };\nif (wxc && wxc.data && wxc.data.daily && wxc.data.current) {\n    const d = wxc.data.daily, c = wxc.data.current;\n    const day = (i) => {\n        const date = d.time[i], m = moon[date] || {};\n        const dt = new Date(date + 'T12:00:00Z');\n        const ic = WMO(d.weather_code[i]);\n        return {\n            dow: DOW[dt.getUTCDay()], date: dt.getUTCDate() + ' ' + MON[dt.getUTCMonth()],\n            ic: ic[0], txt: ic[1], max: r0(d.temperature_2m_max[i]), min: r0(d.temperature_2m_min[i]),\n            ws: r0(d.wind_speed_10m_max[i]), wg: r0(d.wind_gusts_10m_max[i]), wd: dir8(d.wind_direction_10m_dominant[i]),\n            pp: r0(d.precipitation_probability_max[i]), ps: r1(d.precipitation_sum[i]),\n            sr: hm(d.sunrise[i]), ss: hm(d.sunset[i]), mr: hm(m.rise), ms: hm(m.set), mp: isNum(m.phase) ? Math.round(m.phase) : null,\n        };\n    };\n    const ic = WMO(c.weather_code);\n    const today = day(0);\n    const mp = moon[d.time[0]] ? moon[d.time[0]].phase : null;\n    weather = {\n        ok: true,\n        upd: new Date(wxc.t).toLocaleTimeString('en-GB', { timeZone: cfg.tz, hour: '2-digit', minute: '2-digit' }),\n        old: now - wxc.t > 3 * 3600000,   // Vorhersage älter als 3 h (kein Internet)\n        cur: { t: r0(c.temperature_2m), ic: ic[0], txt: ic[1], night: c.is_day === 0,\n            ws: r0(c.wind_speed_10m), wg: r0(c.wind_gusts_10m), wd: dir8(c.wind_direction_10m) },\n        today: today,\n        mp: isNum(mp) ? Math.round(mp) : null, mpn: moonName(mp),\n        days: [1, 2, 3].filter((i) => i < d.time.length).map(day),\n    };\n}\n\n// ── Motor (SignalK propulsion.* — nur vorhanden, solange der Motor läuft) ──\nconst skE = flow.get('sk_prop');\nconst eTree = (skE && skE.data && typeof skE.data === 'object' && ageS(skE.t) < cfg.staleSec) ? skE.data : {};\nconst ORDER = { main: 0, port: 1, starboard: 2 };\nconst eId = Object.keys(eTree).filter((k) => eTree[k] && typeof eTree[k] === 'object')\n    .sort((a, b) => (ORDER[a] !== undefined ? ORDER[a] : 9) - (ORDER[b] !== undefined ? ORDER[b] : 9) || a.localeCompare(b))[0];\nconst E = eId ? eTree[eId] : {};\nconst lv = (o) => (leaf(o) && isNum(o.value) && ageS(o.timestamp) < cfg.staleSec ? o.value : null);\nconst rpmHz = lv(E.revolutions);\nconst rpm = rpmHz != null ? Math.round(rpmHz * 60) : null;\nconst tempK = lv(E.temperature) != null ? lv(E.temperature) : lv(E.coolantTemperature);\nconst runS = lv(E.runTime);\nconst rateM3s = E.fuel ? lv(E.fuel.rate) : null;\n// Letzte bekannte Werte merken (werden in engine.json auf dem Pi gesichert)\nconst last = flow.get('eng_last') || {};\nif (runS != null) last.hours = runS / 3600;\nif (tempK != null) last.tempC = tempK - 273.15;\nif (runS != null || tempK != null) last.t = now;\nflow.set('eng_last', last);\nconst running = rpm != null && rpm > 50;\n\n// Verbrauch: Sensor (fuel.rate) bevorzugt, sonst Kurve l/h über Drehzahl, linear interpoliert\nfunction curveLph(r) {\n    const pts = String(cfg.fuelCurve).split(',').map((p) => p.split(':').map(Number))\n        .filter((p) => p.length === 2 && isNum(p[0]) && isNum(p[1])).sort((a, b) => a[0] - b[0]);\n    if (!pts.length) return null;\n    if (r <= pts[0][0]) return pts[0][1] * r / pts[0][0];\n    for (let i = 1; i < pts.length; i++) {\n        if (r <= pts[i][0]) return pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * (r - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0]);\n    }\n    return pts[pts.length - 1][1];\n}\nlet lph = null, est = false;\nif (cfg.fuelUseSensor && rateM3s != null && rateM3s > 0) lph = rateM3s * 3.6e6;\nelse if (running) { lph = curveLph(rpm); est = true; }\n\n// Dieseltank: tanks.fuel.* oder tanks.diesel.*\nconst tTree = (skT && skT.data) || {};\nconst fuelTanks = [];\n['fuel', 'diesel'].forEach((type) => {\n    const g = tTree[type];\n    if (!g || typeof g !== 'object') return;\n    Object.keys(g).forEach((k) => {\n        const lvl = leaf(g[k] && g[k].currentLevel), cap = leaf(g[k] && g[k].capacity);\n        fuelTanks.push({ id: type + '.' + k, lvl: lvl && isNum(lvl.value) && ageS(lvl.timestamp) < cfg.staleSec ? lvl.value : null,\n            capL: cap && isNum(cap.value) ? cap.value * 1000 : null });\n    });\n});\nfuelTanks.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));\nflow.set('fuel_list', fuelTanks.map((t) => ({ id: t.id, pct: t.lvl != null ? Math.round(t.lvl * 100) : null, capL: t.capL != null ? Math.round(t.capL) : null })));\nlet ft = cfg.fuelInstance !== 'auto' ? fuelTanks.find((t) => t.id === cfg.fuelInstance) : null;\nif (!ft) ft = fuelTanks.find((t) => t.lvl != null) || null;\nconst fuelL = ft && ft.lvl != null && ft.capL != null ? ft.lvl * ft.capL : null;\n\n// Reichweite bei aktuellem Verbrauch (+ SOG für Seemeilen)\nconst sogLeaf = skN && skN.data && leaf(skN.data.speedOverGround);\nconst sog = sogLeaf && isNum(sogLeaf.value) && ageS(sogLeaf.timestamp) < cfg.staleSec ? sogLeaf.value * MS2KN : null;\nconst rangeH = running && lph && fuelL != null ? fuelL / lph : null;\nconst engine = {\n    on: running, rpm: rpm != null ? rpm : (eId ? 0 : null), max: cfg.engMaxRpm, red: cfg.engRedRpm,\n    g0: cfg.engGreenFrom, g1: cfg.engGreenTo,\n    temp: last.tempC != null ? Math.round(last.tempC) : null, tempLive: tempK != null,\n    hrs: last.hours != null ? Math.round(last.hours * 10) / 10 : null,\n    lph: lph != null ? Math.round(lph * 10) / 10 : null, est: est,\n    fuelPct: ft && ft.lvl != null ? Math.round(ft.lvl * 100) : null, fuelL: fuelL != null ? Math.round(fuelL) : null,\n    fuelCap: ft && ft.capL != null ? Math.round(ft.capL) : null,\n    rangeH: rangeH != null ? Math.round(rangeH * 10) / 10 : null,\n    rangeNm: rangeH != null && sog != null && sog > 0.5 ? Math.round(rangeH * sog) : null,\n    sog: sog != null ? r1(sog) : null,\n};\n\n// ── Anker-Screen (Karte, Werte, Einstellungen) ───────────────────────────\nconst skD = flow.get('sk_depth');\nconst dLeaf = skD && skD.data && (leaf(skD.data.belowSurface) || leaf(skD.data.belowTransducer));\nconst depthM = dLeaf && isNum(dLeaf.value) && ageS(dLeaf.timestamp) < cfg.staleSec ? dLeaf.value : null;\nconst hdgLeaf = skN && skN.data && (leaf(skN.data.headingTrue) || leaf(skN.data.headingMagnetic));\nconst hdgDeg = hdgLeaf && isNum(hdgLeaf.value) && ageS(hdgLeaf.timestamp) < cfg.staleSec ? ((hdgLeaf.value * 180 / Math.PI) % 360 + 360) % 360 : null;\nconst toR = Math.PI / 180;\nfunction bearingTo(la1, lo1, la2, lo2) {\n    const y = Math.sin((lo2 - lo1) * toR) * Math.cos(la2 * toR);\n    const x = Math.cos(la1 * toR) * Math.sin(la2 * toR) - Math.sin(la1 * toR) * Math.cos(la2 * toR) * Math.cos((lo2 - lo1) * toR);\n    return (Math.atan2(y, x) / toR + 360) % 360;\n}\n// Track (Breadcrumb): alle 10 s eine Position, max. 2 h, nur solange der Anker aktiv ist\nlet track = flow.get('anc_track') || [];\nif (anc && anc.active && posOk) {\n    const lastT = track.length ? track[track.length - 1][0] : 0;\n    if (now - lastT > 10000) track.push([now, pos.value.latitude, pos.value.longitude]);\n} else if (anc && !anc.active) track = [];\ntrack = track.filter((p) => now - p[0] < 2 * 3600000);\nflow.set('anc_track', track);\nconst ancMap = {\n    lat: anc && isNum(anc.lat) ? anc.lat : null, lon: anc && isNum(anc.lon) ? anc.lon : null,\n    chain: anc && isNum(anc.chain_length_m) ? Math.round(anc.chain_length_m) : null,\n    brg: anc && isNum(anc.bearing_deg) ? Math.round(anc.bearing_deg) : null,\n    delay: anc && isNum(anc.alarm_delay_s) ? anc.alarm_delay_s : null,\n    alarming: !!(anc && anc.alarming), muted: !!(anc && anc.alarm_telegram_muted),\n    dset: anc && isNum(anc.anchor_depth_at_set) ? r1(anc.anchor_depth_at_set) : null,\n    blat: posOk ? pos.value.latitude : null, blon: posOk ? pos.value.longitude : null,\n    hdg: hdgDeg != null ? Math.round(hdgDeg) : null, depth: depthM != null ? r1(depthM) : null,\n    btoa: null, scope: null, track: [],\n};\nif (ancMap.lat != null && ancMap.blat != null) {\n    ancMap.btoa = Math.round(bearingTo(ancMap.blat, ancMap.blon, ancMap.lat, ancMap.lon));\n    ancMap.boff = [Math.round((ancMap.blon - ancMap.lon) * 111320 * Math.cos(ancMap.lat * toR)), Math.round((ancMap.blat - ancMap.lat) * 111320)];\n    const dist = anchor.dist;\n    if (anc.active && dist != null && ancMap.dset != null && ancMap.dset > 0.5) ancMap.scope = r1(dist / ancMap.dset);\n    // Track relativ zum Anker in Metern (Ost, Nord), max. 120 Punkte\n    const mLat = 111320, mLon = 111320 * Math.cos(ancMap.lat * toR);\n    const step = Math.max(1, Math.ceil(track.length / 120));\n    ancMap.track = track.filter((_, i) => i % step === 0 || i === track.length - 1)\n        .map((p) => [Math.round((p[2] - ancMap.lon) * mLon), Math.round((p[1] - ancMap.lat) * mLat)]);\n}\nanchor.map = ancMap;\n\n// ── Test-Alarm ────────────────────────────────────────────────────────────\nif (cfg.testUntil && now < cfg.testUntil) alarms.push({ key: 'test', text: 'TEST ALARM' });\n\n// ── Quittierung: gilt nur für die Alarme, die beim Quittieren aktiv waren ──\nconst ack = flow.get('ack') || { until: 0, keys: [] };\nconst acked = now < ack.until;\nconst blink = alarms.some((a) => !acked || ack.keys.indexOf(a.key) < 0);\n\nconst state = {\n    v: 1,\n    ts: Math.round(now / 1000),\n    time: new Date(now).toLocaleTimeString('en-GB', { timeZone: cfg.tz, hour: '2-digit', minute: '2-digit' }),\n    utc: new Date(now).toISOString().slice(11, 16),\n    status: alarms.length ? 'alarm' : (warns.length ? 'warn' : 'ok'),\n    blink: blink,\n    night: !!cfg.night,\n    // Ton am Display: 'full' = Piepen im Blinktakt, 'short' = kurzer Pieps alle 2 s, 'off'\n    beep: !blink || !cfg.soundOn ? 'off' : (cfg.night ? cfg.soundNight : 'full'),\n    acked: alarms.length > 0 && !blink,\n    msg: alarms.length ? alarms.map((a) => a.text).join('  |  ') : warns.join('  |  '),\n    batt: batt,\n    energy: energy,\n    weather: weather,\n    engine: engine,\n    water: water,\n    wind: wind,\n    baro: baro,\n    anchor: anchor,\n    alarmKeys: alarms.map((a) => a.key),\n};\nflow.set('state', state);\nreturn null;\n",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "309457be798b756f",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "Config laden (Start)",
+      "x": 160,
+      "y": 340,
+      "wires": [
+        [
+          "273258781591b8e5"
+        ]
+      ],
+      "props": [],
+      "repeat": "",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "0.5",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "273258781591b8e5",
+      "type": "file in",
+      "z": "057ae48bc2fee831",
+      "name": "Config lesen",
+      "x": 380,
+      "y": 340,
+      "wires": [
+        [
+          "314233766e0fc64e"
+        ]
+      ],
+      "filename": "/home/admin/esp-dash/config.json",
+      "filenameType": "str",
+      "format": "utf8",
+      "chunk": false,
+      "sendError": false,
+      "encoding": "none",
+      "allProps": false
+    },
+    {
+      "id": "314233766e0fc64e",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Config übernehmen",
+      "x": 600,
+      "y": 340,
+      "wires": [],
+      "func": "try { flow.set('cfg', JSON.parse(msg.payload)); node.status({ fill: 'green', text: 'geladen' }); }\ncatch (e) { node.status({ fill: 'yellow', text: 'Defaults' }); }\nreturn null;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "b7c75b8486d9c089",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "GET config",
+      "x": 150,
+      "y": 400,
+      "wires": [
+        [
+          "56bc21a36ddb03a9"
+        ]
+      ],
+      "url": "/esp-dash/api/config",
+      "method": "get",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "39b32c09fa0a7aa0",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "POST config",
+      "x": 150,
+      "y": 440,
+      "wires": [
+        [
+          "56bc21a36ddb03a9"
+        ]
+      ],
+      "url": "/esp-dash/api/config",
+      "method": "post",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "56bc21a36ddb03a9",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Config API",
+      "x": 380,
+      "y": 420,
+      "wires": [
+        [
+          "93cc535070dae21b"
+        ],
+        [
+          "8e0a70a15398472d"
+        ]
+      ],
+      "func": "// GET → { config, batteries } | POST → validieren, speichern, Datei schreiben\nconst DEF = { windAlarmOn: true, windAlarmKn: 25, windHystKn: 2, windSource: 'auto', windAvgSec: 10, windWinMin: 2,\n    battAlarmOn: true, battLowSoc: 30, battHystSoc: 3, battLowVolt: 0, battInstance: 'auto',\n    waterAlarmOn: true, waterLowPct: 15, waterHystPct: 3, waterInstance: 'auto',\n    baroAlarmOn: true, baroLowHpa: 995, baroHystHpa: 1, baroWinMin: 2,\n    engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true, fuelCurve: '800:0.8,1000:1.2,1500:2.2,2000:3.8,2500:6.2,3000:9.5',\n    anchorAlarmOn: true, anchorLocalFallback: true, ackMinutes: 5, staleSec: 30, tz: 'Europe/Rome', testUntil: 0, night: false,\n    soundOn: true, soundNight: 'short' };\nconst RANGE = { windWinMin: [1, 360], windAlarmKn: [5, 80], windHystKn: [0, 10], windAvgSec: [2, 120], battLowSoc: [5, 95],\n    battHystSoc: [0, 20], battLowVolt: [0, 60], waterLowPct: [0, 95], waterHystPct: [0, 20], baroLowHpa: [900, 1050], baroHystHpa: [0, 10], baroWinMin: [1, 360], engMaxRpm: [1000, 6000], engRedRpm: [500, 6000], engGreenFrom: [0, 6000], engGreenTo: [0, 6000], ackMinutes: [1, 120], staleSec: [5, 300] };\nconst BOOL = ['night', 'soundOn', 'baroAlarmOn', 'fuelUseSensor', 'windAlarmOn', 'battAlarmOn', 'waterAlarmOn', 'anchorAlarmOn', 'anchorLocalFallback'];\nconst cfg = Object.assign({}, DEF, flow.get('cfg') || {});\n\nif (msg.req.method === 'POST') {\n    const b = msg.payload || {};\n    for (const k of Object.keys(RANGE)) {\n        if (b[k] === undefined) continue;\n        const v = Number(b[k]);\n        if (!isFinite(v) || v < RANGE[k][0] || v > RANGE[k][1]) {\n            msg.statusCode = 400; msg.payload = { error: k + ' out of range ' + RANGE[k].join('-') }; return [msg, null];\n        }\n        cfg[k] = v;\n    }\n    for (const k of BOOL) if (b[k] !== undefined) cfg[k] = !!b[k];\n    if (['auto', 'true', 'apparent'].indexOf(b.windSource) >= 0) cfg.windSource = b.windSource;\n    if (['full', 'short', 'off'].indexOf(b.soundNight) >= 0) cfg.soundNight = b.soundNight;\n    if (typeof b.battInstance === 'string' && /^[\\w-]{1,20}$/.test(b.battInstance)) cfg.battInstance = b.battInstance;\n    if (typeof b.fuelInstance === 'string' && /^[\\w.-]{1,30}$/.test(b.fuelInstance)) cfg.fuelInstance = b.fuelInstance;\n    if (typeof b.fuelCurve === 'string') {\n        const ok = b.fuelCurve.split(',').every((p) => /^\\s*\\d+\\s*:\\s*\\d+(\\.\\d+)?\\s*$/.test(p));\n        if (!ok) { msg.statusCode = 400; msg.payload = { error: 'Fuel curve: format rpm:l/h, e.g. 1000:1.2,2000:3.8' }; return [msg, null]; }\n        cfg.fuelCurve = b.fuelCurve.replace(/\\s/g, '');\n    }\n    if (typeof b.waterInstance === 'string' && /^[\\w-]{1,20}$/.test(b.waterInstance)) cfg.waterInstance = b.waterInstance;\n    if (typeof b.tz === 'string' && b.tz) {\n        try { new Date().toLocaleString('en-GB', { timeZone: b.tz }); cfg.tz = b.tz; }\n        catch (e) { msg.statusCode = 400; msg.payload = { error: 'Unknown time zone' }; return [msg, null]; }\n    }\n    if (b.testSeconds !== undefined) cfg.testUntil = Date.now() + Math.min(300, Math.max(0, Number(b.testSeconds) || 0)) * 1000;\n    flow.set('cfg', cfg);\n    const file = { payload: JSON.stringify(cfg, null, 2) };\n    msg.payload = { ok: true, config: cfg };\n    return [msg, file];\n}\nmsg.payload = { config: cfg, batteries: flow.get('batt_list') || [], tanks: flow.get('tank_list') || [], fuelTanks: flow.get('fuel_list') || [] };\nreturn [msg, null];",
+      "outputs": 2,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "93cc535070dae21b",
+      "type": "http response",
+      "z": "057ae48bc2fee831",
+      "name": "config antwort",
+      "x": 600,
+      "y": 400,
+      "wires": [],
+      "statusCode": "",
+      "headers": {
+        "Cache-Control": "no-store"
+      }
+    },
+    {
+      "id": "8e0a70a15398472d",
+      "type": "file",
+      "z": "057ae48bc2fee831",
+      "name": "Config schreiben",
+      "x": 610,
+      "y": 440,
+      "wires": [],
+      "filename": "/home/admin/esp-dash/config.json",
+      "filenameType": "str",
+      "appendNewline": false,
+      "createDir": true,
+      "overwriteFile": "true",
+      "encoding": "utf8"
+    },
+    {
+      "id": "370dadcc35d9fc53",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "GET state",
+      "x": 150,
+      "y": 520,
+      "wires": [
+        [
+          "aedbdd46046da0ac"
+        ]
+      ],
+      "url": "/esp-dash/api/state",
+      "method": "get",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "aedbdd46046da0ac",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "State",
+      "x": 360,
+      "y": 520,
+      "wires": [
+        [
+          "2a7e7b1fe9eb02c8"
+        ]
+      ],
+      "func": "msg.payload = flow.get('state') || { v: 1, status: 'warn', blink: false, msg: 'Starting ...',\n    batt: { st: 'na' }, energy: { ok: false }, weather: { ok: false }, engine: {}, water: { st: 'na' }, baro: { st: 'na', hist: [] }, wind: { st: 'na', hist: [] }, anchor: { st: 'na' } };\nreturn msg;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "2a7e7b1fe9eb02c8",
+      "type": "http response",
+      "z": "057ae48bc2fee831",
+      "name": "state antwort",
+      "x": 560,
+      "y": 520,
+      "wires": [],
+      "statusCode": "",
+      "headers": {
+        "Cache-Control": "no-store"
+      }
+    },
+    {
+      "id": "a0031b3005b33c0f",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "POST ack",
+      "x": 150,
+      "y": 580,
+      "wires": [
+        [
+          "10cbaefbd14eb35b"
+        ]
+      ],
+      "url": "/esp-dash/api/ack",
+      "method": "post",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "10cbaefbd14eb35b",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Quittieren",
+      "x": 360,
+      "y": 580,
+      "wires": [
+        [
+          "9f4b7bb6a01b96de"
+        ]
+      ],
+      "func": "const cfg = flow.get('cfg') || {};\nconst st = flow.get('state') || {};\nflow.set('ack', { until: Date.now() + (cfg.ackMinutes || 5) * 60000, keys: st.alarmKeys || [] });\nnode.status({ fill: 'blue', text: 'quittiert ' + new Date().toLocaleTimeString() });\nmsg.payload = { ok: true };\nreturn msg;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "9f4b7bb6a01b96de",
+      "type": "http response",
+      "z": "057ae48bc2fee831",
+      "name": "ack antwort",
+      "x": 560,
+      "y": 580,
+      "wires": [],
+      "statusCode": "",
+      "headers": {}
+    },
+    {
+      "id": "ccd509c71362feed",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "POST anchor-up",
+      "x": 150,
+      "y": 620,
+      "wires": [
+        [
+          "f5ca107f82b8509c"
+        ]
+      ],
+      "url": "/esp-dash/api/anchor-up",
+      "method": "post",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "f5ca107f82b8509c",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Anker-up Request",
+      "x": 380,
+      "y": 620,
+      "wires": [
+        [
+          "3085b9a80f2bbab3"
+        ]
+      ],
+      "func": "// silence_alarm = Anker inaktiv + Alarm aus + Eskalation zurück + Pushover widerrufen\n// (wie der Zeus-MFD-Client). dryRun: nur Auth/Erreichbarkeit prüfen, ändert nichts.\nconst dry = !!(msg.payload && msg.payload.dryRun);\nmsg.dryRun = dry;\nmsg.url = 'https://lzvwhzzscsjeivtviyjm.supabase.co/functions/v1/mfd-anchor';\nmsg.method = 'POST';\nmsg.headers = { 'content-type': 'application/json' };\nmsg.requestTimeout = 8000;\nmsg.payload = { api_key: 'mfd-b00c60fed1bb860778d4c704eb12a8804884377bffafca83', action: dry ? 'dry_run_noop' : 'silence_alarm' };\nnode.status({ fill: 'yellow', text: dry ? 'dry run' : 'sende anchor up' });\nreturn msg;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "3085b9a80f2bbab3",
+      "type": "http request",
+      "z": "057ae48bc2fee831",
+      "name": "Supabase POST",
+      "x": 590,
+      "y": 620,
+      "wires": [
+        [
+          "ccc6c35b2b7618ee"
+        ]
+      ],
+      "method": "POST",
+      "ret": "obj",
+      "paytoqs": "ignore",
+      "url": "",
+      "tls": "",
+      "persist": false,
+      "proxy": "",
+      "insecureHTTPParser": false,
+      "authType": "",
+      "senderr": false,
+      "headers": []
+    },
+    {
+      "id": "ccc6c35b2b7618ee",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Anker-up Antwort",
+      "x": 800,
+      "y": 620,
+      "wires": [
+        [
+          "7a71fc6ae1b177cb"
+        ]
+      ],
+      "func": "const code = msg.statusCode;\ndelete msg.headers;  // Antwort-Header der Edge Function nicht weiterreichen\nif (msg.dryRun) {\n    // Unbekannte Aktion → 400 heißt: Key gültig, Funktion erreichbar\n    const ok = code === 400 && msg.payload && /Unknown action/.test(msg.payload.error || '');\n    msg.statusCode = ok ? 200 : 502;\n    msg.payload = { ok: ok, dryRun: true, upstream: code };\n} else if (code === 200 && msg.payload && msg.payload.ok) {\n    // Cache sofort aktualisieren, damit Display/Simulator nicht auf den nächsten 5-s-Poll warten\n    const prev = flow.get('anchor') || {};\n    const data = Object.assign({}, prev.data || {}, { anchor: msg.payload.anchor });\n    flow.set('anchor', { data: data, t: Date.now() });\n    context.set('localDragSince', 0);\n    node.status({ fill: 'green', text: 'anchor up ' + new Date().toLocaleTimeString() });\n    msg.payload = { ok: true };\n} else {\n    node.status({ fill: 'red', text: 'Fehler ' + code });\n    msg.statusCode = 502;\n    msg.payload = { ok: false, error: (msg.payload && msg.payload.error) || ('upstream ' + code) };\n}\nreturn msg;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "7a71fc6ae1b177cb",
+      "type": "http response",
+      "z": "057ae48bc2fee831",
+      "name": "anchor-up antwort",
+      "x": 1000,
+      "y": 620,
+      "wires": [],
+      "statusCode": "",
+      "headers": {}
+    },
+    {
+      "id": "fe77beee007fbabe",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "POST anchor",
+      "x": 150,
+      "y": 720,
+      "wires": [
+        [
+          "2d122dd3f332c13f"
+        ]
+      ],
+      "url": "/esp-dash/api/anchor",
+      "method": "post",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "2d122dd3f332c13f",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Anker-Aktion bauen",
+      "x": 380,
+      "y": 720,
+      "wires": [
+        [
+          "f1a9eb37f62654eb"
+        ],
+        [
+          "052a1e41b26c08f6"
+        ]
+      ],
+      "func": "const b = msg.payload || {};\nconst st = flow.get('state') || {};\nconst m = (st.anchor && st.anchor.map) || {};\nconst toR = Math.PI / 180;\nfunction dest(lat, lon, brg, d) {\n    const R = 6371000, a = brg * toR, dr = d / R, la1 = lat * toR, lo1 = lon * toR;\n    const la2 = Math.asin(Math.sin(la1) * Math.cos(dr) + Math.cos(la1) * Math.sin(dr) * Math.cos(a));\n    const lo2 = lo1 + Math.atan2(Math.sin(a) * Math.sin(dr) * Math.cos(la1), Math.cos(dr) - Math.sin(la1) * Math.sin(la2));\n    return [la2 / toR, ((lo2 / toR) + 540) % 360 - 180];\n}\nconst num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);\nlet body = null, err = null;\nswitch (b.action) {\n    case 'drop_now':        // wie \"Drop Anchor Now\" der Pro App: Bug-Position, Radius = 6 × Tiefe\n        if (m.blat == null) { err = 'no GPS position'; break; }\n        body = { action: 'drop_anchor_now', lat: m.blat, lon: m.blon, hdg_deg: m.hdg != null ? m.hdg : 0, depth_m: m.depth };\n        break;\n    case 'set': {          // wie \"Set Anchor\": Anker = Boot + Peilung × Kette\n        if (m.blat == null) { err = 'no GPS position'; break; }\n        const brg = num(b.bearing_deg) != null ? b.bearing_deg : (m.hdg != null ? m.hdg : 0);\n        const chain = num(b.chain_length_m) != null ? b.chain_length_m : 0;\n        const p = dest(m.blat, m.blon, brg, chain);\n        body = { action: 'set_anchor', lat: p[0], lon: p[1], radius_m: num(b.radius_m) != null ? b.radius_m : 50,\n            chain_length_m: chain, bearing_deg: brg, anchor_depth_at_set: m.depth };\n        break;\n    }\n    case 'restore':         // letzten Anker wieder scharf schalten (Position bleibt)\n        if (m.lat == null) { err = 'no previous anchor'; break; }\n        body = { action: 'set_anchor', lat: m.lat, lon: m.lon, radius_m: st.anchor.rad || 50,\n            chain_length_m: m.chain || 0, bearing_deg: m.brg || 0, anchor_depth_at_set: m.dset };\n        break;\n    case 'move': {         // Kette/Peilung bei aktivem Anker → Anker neu projizieren (wie Pro App)\n        if (m.blat == null) { err = 'no GPS position'; break; }\n        if (m.alarming) { err = 'not while alarming'; break; }\n        const brg = num(b.bearing_deg) != null ? b.bearing_deg : (m.brg || 0);\n        const chain = num(b.chain_length_m) != null ? b.chain_length_m : (m.chain || 0);\n        const p = dest(m.blat, m.blon, brg, chain);\n        body = { action: 'set_anchor', lat: p[0], lon: p[1], radius_m: st.anchor.rad || 50,\n            chain_length_m: chain, bearing_deg: brg, anchor_depth_at_set: m.dset };\n        break;\n    }\n    case 'radius':\n        if (num(b.radius_m) == null) { err = 'radius_m required'; break; }\n        body = { action: 'update_settings', radius_m: b.radius_m };\n        break;\n    case 'up':   body = { action: 'silence_alarm' }; break;\n    case 'mute': body = { action: 'mute_alarm' }; break;\n    case 'dry':  body = { action: 'dry_run_noop' }; msg.dryRun = true; break;\n    default: err = 'unknown action';\n}\nif (err) { msg.statusCode = 400; msg.payload = { ok: false, error: err }; return [null, msg]; }\nbody.api_key = 'mfd-b00c60fed1bb860778d4c704eb12a8804884377bffafca83';\nmsg.url = 'https://lzvwhzzscsjeivtviyjm.supabase.co/functions/v1/mfd-anchor';\nmsg.method = 'POST';\nmsg.headers = { 'content-type': 'application/json' };\nmsg.requestTimeout = 8000;\nmsg.payload = body;\nnode.status({ fill: 'yellow', text: b.action });\nreturn [msg, null];",
+      "outputs": 2,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "f1a9eb37f62654eb",
+      "type": "http request",
+      "z": "057ae48bc2fee831",
+      "name": "Supabase POST 2",
+      "x": 590,
+      "y": 700,
+      "wires": [
+        [
+          "ccc6c35b2b7618ee"
+        ]
+      ],
+      "method": "POST",
+      "ret": "obj",
+      "paytoqs": "ignore",
+      "url": "",
+      "tls": "",
+      "persist": false,
+      "proxy": "",
+      "insecureHTTPParser": false,
+      "authType": "",
+      "senderr": false,
+      "headers": []
+    },
+    {
+      "id": "052a1e41b26c08f6",
+      "type": "http response",
+      "z": "057ae48bc2fee831",
+      "name": "anchor antwort",
+      "x": 600,
+      "y": 760,
+      "wires": [],
+      "statusCode": "",
+      "headers": {}
+    },
+    {
+      "id": "64ca8f7495e0067e",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "GET Simulator",
+      "x": 150,
+      "y": 660,
+      "wires": [
+        [
+          "37881a6041703662"
+        ]
+      ],
+      "url": "/esp-dash",
+      "method": "get",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "37881a6041703662",
+      "type": "template",
+      "z": "057ae48bc2fee831",
+      "name": "Simulator HTML",
+      "x": 360,
+      "y": 660,
+      "wires": [
+        [
+          "a4a0540a8d198084"
+        ]
+      ],
+      "field": "payload",
+      "fieldType": "msg",
+      "format": "html",
+      "syntax": "plain",
+      "template": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>SUKI Mini Dash</title>\n<style>\n  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:\"DejaVu Sans\",Verdana,Arial,sans-serif;overflow:hidden}\n  #wrap{position:absolute;left:50%;top:50%;width:800px;height:480px;transform-origin:center;}\n  #scr{position:absolute;inset:0;background:#000;outline:1px solid #222;cursor:pointer;user-select:none}\n  #scr.red{background:#d00000}\n  .hdr{position:absolute;left:16px;right:16px;top:10px;height:50px;display:flex;align-items:center;justify-content:space-between}\n  .boat{font-size:30px;font-weight:bold;letter-spacing:2px}\n  .time{font-size:30px;color:#bbb}\n  .red .time{color:#fff}\n  .utc{font-size:18px;color:#777;margin-left:12px}\n  .red .utc{color:#fff}\n  .stat{display:flex;align-items:center;gap:12px;font-size:22px;font-weight:bold}\n  .dot{width:30px;height:30px;border-radius:50%;background:#555}\n  .dot.ok{background:#00d000;box-shadow:0 0 14px #00d000}\n  .dot.warn{background:#ffa000}\n  .dot.alarm{background:#ff2020}\n  .red .dot.alarm{background:#fff}\n  .tile{position:absolute;top:72px;width:248px;height:320px;border:2px solid #333;border-radius:14px;box-sizing:border-box}\n  .tile.alarm{border:5px solid #ff2020}\n  .red .tile{border-color:#fff}\n  .tile.half{height:154px}\n  .tile.h2{top:238px}\n  .httl{position:absolute;top:11px;left:16px;font-size:17px;color:#999;letter-spacing:1px}\n  .hthr{position:absolute;top:12px;right:16px;font-size:15px;color:#777}\n  .hbig{position:absolute;top:40px;left:0;right:0;text-align:center;font-size:56px;font-weight:bold;line-height:1}\n  .hbig small{font-size:24px;font-weight:normal;margin-left:4px}\n  .hbar{position:absolute;left:24px;right:24px;top:104px;height:8px;border-radius:4px;background:#222}\n  .hbar i{display:block;height:100%;border-radius:4px;background:#00d000}\n  .hsub{position:absolute;top:120px;left:0;right:0;text-align:center;font-size:18px;color:#bbb}\n  .red .httl,.red .hthr,.red .hsub{color:#fff}\n  .hbig.aw{font-size:44px;top:46px}\n  .hbig.aw small{font-size:18px}\n  /* Anker aktiv: Wort höher, Distanz darunter, Button unten */\n  #ta.act .hbig.aw{top:36px;font-size:38px} #ta.act .hsub{top:80px}\n  .aup{position:absolute;left:16px;right:16px;top:108px;height:34px;border-radius:8px;border:2px solid #888;background:#111;color:#ddd;font:bold 16px \"DejaVu Sans\",Verdana,sans-serif;letter-spacing:2px;cursor:pointer;z-index:2}\n  .aup.confirm{background:#ffa000;border-color:#ffa000;color:#000}\n  .aup.busy{opacity:.6}\n  .aup.err{border-color:#ff3030;color:#ff3030}\n  .night .aup{background:#100000;border-color:#700000;color:#a00000}\n  .night .aup.confirm{background:#a03000;border-color:#a03000;color:#000}\n  .red .aup{background:transparent;border-color:#fff;color:#fff}\n  .bchart{position:absolute;inset:0;width:100%;height:100%;border-radius:12px}\n  .ca{fill:rgba(42,157,244,.12)} .cl{fill:none;stroke:rgba(42,157,244,.45);stroke-width:2}\n  .alarm .ca{fill:rgba(255,48,48,.15)} .alarm .cl{stroke:rgba(255,48,48,.6)}\n  .night .ca{fill:rgba(160,0,0,.15)} .night .cl{stroke:rgba(160,0,0,.5)}\n  .red .ca{fill:rgba(255,255,255,.12)} .red .cl{stroke:rgba(255,255,255,.6)}\n  .httl,.hthr,.hbig,.hsub,.ttl,.big,.sub{z-index:1}\n  .t1{left:12px}.t2{left:276px}.t3{left:540px}\n  .ttl{position:absolute;top:14px;left:0;right:0;text-align:center;font-size:22px;color:#999;letter-spacing:3px}\n  .red .ttl,.red .sub{color:#fff}\n  .big{position:absolute;top:70px;left:0;right:0;text-align:center;font-size:92px;font-weight:bold;line-height:1}\n  .big small{font-size:34px;font-weight:normal;margin-left:4px}\n  .big.word{font-size:52px;top:92px}\n  .sub{position:absolute;left:0;right:0;text-align:center;font-size:22px;color:#bbb}\n  .s1{top:196px}.s2{top:232px}.s3{top:268px;font-size:18px;color:#777}\n  .bar{position:absolute;left:24px;right:24px;top:180px;height:10px;border-radius:5px;background:#222;display:none}\n  .bar i{display:block;height:100%;border-radius:5px;background:#00d000}\n  .water-c{color:#2a9df4}\n  .red .water-c{color:#fff}\n  .ok-c{color:#00d000}.warn-c{color:#ffa000}.alarm-c{color:#ff3030}\n  .red .ok-c,.red .warn-c,.red .alarm-c{color:#fff}\n  .ftr{position:absolute;left:16px;right:16px;top:398px;height:64px;display:flex;flex-direction:column;justify-content:center;text-align:center}\n  .msg{font-size:24px;font-weight:bold}\n  .hint{font-size:18px;color:#aaa;margin-top:4px}\n  .red .hint{color:#fff}\n  #gbtn{position:absolute;left:72px;top:2px;width:46px;height:46px;border-radius:50%;border:2px solid #444;color:#888;display:flex;align-items:center;justify-content:center;box-sizing:border-box}\n  .night #gbtn{border-color:#600000;color:#900000}\n  .red #gbtn{border-color:#fff;color:#fff}\n  #nbtn{position:absolute;left:16px;top:2px;width:46px;height:46px;box-sizing:border-box;border-radius:50%;border:2px solid #444;background:transparent;color:#888;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}\n  /* ── Nachtmodus: schwarz/rot ── */\n  #scr.night{color:#c00000}\n  .night .time{color:#a00000}\n  .night .ttl,.night .httl{color:#900000}\n  .night .sub,.night .hsub{color:#a00000}\n  .night .s3,.night .hthr,.night .utc{color:#700000}\n  .night .tile{border-color:#400000}\n  .night .tile.alarm{border-color:#ff2020}\n  .night .ok-c,.night .water-c{color:#d00000}\n  .night .warn-c{color:#d04000}\n  .night .dot.ok{background:#900000;box-shadow:none}\n  .night .dot.warn{background:#d04000}\n  .night .hbar{background:#200000}\n  .night .hbar i{background:#b00000 !important}\n  .night .hint{color:#900000}\n  .night #nbtn{border-color:#c00000;color:#c00000}\n  #scr.night.red{background:#900000}\n  #scr.night.red,#scr.night.red *{color:#000 !important;border-color:#000 !important}\n  .night.red .dot{background:#000 !important}\n  .night.red .hbar{background:#000}\n  /* ── Screen 2: Victron Energy Flow (Stil wie VictronCard der Pro App) ── */\n  .eb{position:absolute;width:220px;height:132px;box-sizing:border-box;background:#0d2d4a;border:1px solid #1e4466;border-radius:8px;padding:12px 14px}\n  .eb.ec{border-color:#3d6f9e}\n  .eb.on{background:#1565c0;border-color:#5f93d6}\n  .eh{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:600;color:rgba(255,255,255,.65)}\n  .eh svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}\n  .ev{font-size:38px;font-weight:300;color:#fff;margin-top:8px;font-variant-numeric:tabular-nums}\n  .ev.st{font-size:28px;margin-top:14px}\n  .ev small{font-size:20px;color:rgba(255,255,255,.55)}\n  .es{font-size:15px;color:rgba(255,255,255,.6);margin-top:2px;font-variant-numeric:tabular-nums}\n  .cn{position:absolute}\n  .cn.h::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:rgba(255,255,255,.08)}\n  .cn.v::before{content:'';position:absolute;top:0;bottom:0;left:0;width:3px;background:rgba(255,255,255,.08)}\n  .cn.on::before{background:rgba(100,170,255,.8)}\n  .cn.on::after{content:'';position:absolute;border:6px solid transparent}\n  .cn.h.r.on::after{top:-5px;border-left:10px solid #8cc8ff;animation:ar 1.1s linear infinite,af 1.1s ease-in-out infinite}\n  .cn.h.l.on::after{top:-5px;border-right:10px solid #8cc8ff;animation:al 1.1s linear infinite,af 1.1s ease-in-out infinite}\n  .cn.v.u.on::after{left:-5px;border-bottom:10px solid #8cc8ff;animation:au 1.1s linear infinite,af 1.1s ease-in-out infinite}\n  .cn.v.d.on::after{left:-5px;border-top:10px solid #8cc8ff;animation:ad 1.1s linear infinite,af 1.1s ease-in-out infinite}\n  @keyframes ar{from{left:-10px}to{left:calc(100% + 2px)}}\n  @keyframes al{from{right:-10px}to{right:calc(100% + 2px)}}\n  @keyframes au{from{bottom:-10px}to{bottom:calc(100% + 2px)}}\n  @keyframes ad{from{top:-10px}to{top:calc(100% + 2px)}}\n  @keyframes af{0%{opacity:0}15%{opacity:1}85%{opacity:1}100%{opacity:0}}\n  /* ── Screen 3: Wetter ── */\n  .wb{position:absolute;box-sizing:border-box;border:2px solid #333;border-radius:14px}\n  .wd{width:248px;height:118px}\n  .wb > div{position:absolute;white-space:nowrap}\n  .wicon svg{width:100%;height:100%}\n  .wttl{font-size:16px;color:#999;letter-spacing:2px}\n  .wbig{font-size:72px;font-weight:bold;line-height:1}\n  .wmm{font-size:20px;color:#bbb}\n  .wl1{font-size:20px;color:#ddd}\n  .wsep{left:470px;top:20px;bottom:20px;width:1px;background:#2a2a2a}\n  .wrow{left:494px;height:34px;display:flex;align-items:center;gap:14px;font-size:22px;color:#eee}\n  .wrow small{font-size:16px;color:#999;margin-left:8px}\n  .wsi{width:28px;height:28px;display:inline-flex}\n  .wsi svg{width:28px;height:28px}\n  .wupd{left:22px;top:166px;width:132px;text-align:center;font-size:12px;color:#555}\n  .wupd.old{color:#ffa000}\n  .wd .dt{left:18px;top:14px;font-size:15px;color:#999;letter-spacing:2px}\n  .wd .di{left:12px;top:42px;width:56px;height:56px}\n  .wd .dl{left:80px;display:flex;align-items:center;gap:7px;font-size:16px;color:#bbb}\n  .wd .dl b{font-size:24px;color:#fff;font-weight:bold}\n  .wd .dg{color:#777} .night .wd .dg{color:#700000} .red .wd .dg{color:#fff}\n  .wd .dl .wsi,.wd .dl .wsi svg{width:18px;height:18px}\n  .wx-wind{fill:none;stroke:#9fb4c8;stroke-width:2.2;stroke-linecap:round}\n  .wx-sun{fill:#ffc400} .wx-ray{stroke:#ffc400;stroke-width:3.5;stroke-linecap:round}\n  .wx-cl{fill:#c8cdd2} .wx-cl2{fill:#8a9096}\n  .wx-rain{stroke:#2a9df4;stroke-width:3.5;stroke-linecap:round} .wx-drop{fill:#2a9df4}\n  .wx-bolt{fill:#ffc400} .wx-fog{stroke:#c8cdd2;stroke-width:4;stroke-linecap:round}\n  .wx-moon{fill:#e8e4c8} .wx-mdark{fill:#2a2a2a}\n  .night .wb{border-color:#400000} .night .wsep{background:#300000}\n  .night .wmm,.night .wrow small,.night .wd .dl{color:#900000} .night .wrow,.night .wd .dl b{color:#c00000} .night .wx-wind{stroke:#a00000}\n  .red .wsep{background:#fff} .red .wx-wind{stroke:#fff}\n  .night .wttl,.night .wupd,.night .wl2,.night .wd .dt,.night .wd .dl{color:#900000}\n  .night .wbig,.night .wl1,.night .wsm,.night .wd .dl b{color:#c00000}\n  .night .wbig small{color:#900000}\n  .night .wx-sun,.night .wx-bolt,.night .wx-moon,.night .wx-drop{fill:#c00000} .night .wx-ray,.night .wx-rain{stroke:#c00000}\n  .night .wx-cl{fill:#700000} .night .wx-cl2{fill:#500000} .night .wx-fog{stroke:#700000} .night .wx-mdark{fill:#200000}\n  .red .wb{border-color:#fff} .red .wb div,.red .wb small,.red .wb b{color:#fff !important}\n  /* ── Screen 4: Motor ── */\n  .et{width:189px;height:100px}\n  .ev2{position:absolute;left:16px;top:34px;font-size:34px;font-weight:bold;white-space:nowrap}\n  .ev2 small{font-size:17px;font-weight:normal;color:#999;margin-left:5px}\n  .es2{position:absolute;left:16px;top:74px;font-size:14px;color:#777;white-space:nowrap}\n  .ebar{position:absolute;left:16px;right:16px;bottom:16px;height:8px;border-radius:4px;background:#222}\n  .ebar i{display:block;height:100%;border-radius:4px;background:#ffc400}\n  .efl{position:absolute;right:16px;top:46px;font-size:18px;color:#bbb;white-space:nowrap}\n  .night .efl{color:#800000} .red .efl{color:#fff} .red .ebar i{background:#fff}\n  .t-face{fill:url(#tface)} .t-bezel{fill:none;stroke:#3a3a3a;stroke-width:2}\n  .t-tick{stroke:#666;stroke-width:1.5} .t-maj{stroke:#eee;stroke-width:4} .t-num{fill:#ddd;font-size:20px;font-weight:bold;font-style:italic;font-family:inherit;text-anchor:middle;dominant-baseline:middle}\n  .t-track{stroke:#1c1c1c} .t-val{stroke:#4fc3f7} .t-valr{stroke:#ff3b30} .t-zg{stroke:#00c853} .t-zr{stroke:#e00000}\n  .t-ndl{fill:#ff3b30} .t-hub{fill:#222;stroke:#ff3b30;stroke-width:3}\n  .t-pill{fill:#111;stroke:#333;stroke-width:1.5} .t-rpm{fill:#fff;font-size:40px;font-weight:bold;font-style:italic;text-anchor:middle}\n  .t-unit{fill:#888;font-size:13px;text-anchor:middle;letter-spacing:3px} .t-logo{fill:#bbb}\n  .night .ev2{color:#c00000} .night .ev2 small,.night .es2{color:#800000} .night .ebar{background:#200000} .night .ebar i{background:#a00000}\n  .night .t-tick{stroke:#500000} .night .t-maj{stroke:#a00000} .night .t-num{fill:#900000} .night .t-track{stroke:#1a0000}\n  .night .t-val{stroke:#900000} .night .t-valr,.night .t-zr{stroke:#ff2020} .night .t-zg{stroke:#600000} .night .t-ndl{fill:#e00000}\n  .night .t-hub{fill:#100000;stroke:#e00000} .night .t-pill{fill:#0a0000;stroke:#300000} .night .t-rpm{fill:#c00000}\n  .night .t-unit,.night .t-logo{fill:#800000} .night .t-bezel{stroke:#300000} .night #tface stop{stop-color:#000 !important}\n  .night .ebar i{background:#a00000 !important}\n  .red .ev2,.red .es2,.red .ev2 small{color:#fff} .red .t-tick,.red .t-maj,.red .t-val,.red .t-valr,.red .t-zg,.red .t-zr,.red .t-bezel{stroke:#fff} .red .t-track{stroke:none} .red .t-ndl{fill:#fff} .red .t-hub{stroke:#fff;fill:none} .red .t-pill{fill:none;stroke:#fff} .red .t-logo{fill:#fff} .red #tface stop{stop-color:transparent !important}\n  .red .t-num,.red .t-rpm,.red .t-unit{fill:#fff}\n  /* ── Screen 5: Anker (wie Anchor-Seite der Pro App) ── */\n  .amap{position:absolute;left:12px;top:72px;width:476px;height:320px;border:2px solid #333;border-radius:14px;overflow:hidden;box-sizing:border-box}\n  #amap{position:absolute;inset:0;width:100%;height:100%;background:#050b12}\n  .r-ring{fill:none;stroke:#1d2b38;stroke-width:1;stroke-dasharray:3 5} .r-lbl{fill:#4a6070;font-size:11px}\n  .r-rad{fill-opacity:.08;stroke-width:2.5} .r-trk{fill:none;stroke:#00c8ff;stroke-width:1.6;opacity:.65}\n  .r-chain{stroke:#fff;stroke-width:1.5;stroke-dasharray:4 4;opacity:.6} .r-boat{fill:#00c8ff;stroke:#000;stroke-width:1}\n  .r-n{fill:#ddd;font-size:13px;font-weight:bold;text-anchor:middle} .r-nar{fill:#ddd} .r-scale{fill:#9ab;font-size:12px}\n  .night #amap{background:#000} .night .r-ring{stroke:#260000} .night .r-lbl,.night .r-scale{fill:#600000}\n  .night .r-trk{stroke:#900000} .night .r-chain{stroke:#900000} .night .r-boat{fill:#d00000} .night .r-n,.night .r-nar{fill:#900000}\n  .red #amap{background:transparent} .red .r-ring,.red .r-trk,.red .r-chain{stroke:#fff} .red .r-boat,.red .r-n,.red .r-nar,.red .r-lbl,.red .r-scale{fill:#fff}\n  .mbtns{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:8px;z-index:500}\n  .mbtns button{width:40px;height:40px;border-radius:50%;border:2px solid #555;background:rgba(0,0,0,.65);color:#ddd;font:bold 22px \"DejaVu Sans\",sans-serif;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}\n  .mnote{position:absolute;left:12px;bottom:8px;z-index:500;font-size:12px;color:#9ab}\n  .apanel{position:absolute;left:500px;top:72px;width:288px;height:320px}\n  .ahead{position:absolute;left:0;right:0;top:0;height:46px;border:2px solid #333;border-radius:12px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;box-sizing:border-box}\n  .ahead #a-st{font-size:24px;font-weight:bold;letter-spacing:1px}\n  .asub{font-size:15px;color:#aaa}\n  .apanel.alarm .ahead{border:4px solid #ff2020}\n  .acells{position:absolute;left:0;right:0;top:52px;display:grid;grid-template-columns:1fr 1fr;gap:5px}\n  .acells div{border:1px solid #2a2a2a;border-radius:8px;padding:2px 10px;height:30px;display:flex;flex-direction:column;justify-content:center}\n  .acells i{font-style:normal;font-size:11px;color:#888;letter-spacing:1px}\n  .acells b{font-size:15px;color:#eee;white-space:nowrap}\n  .arow{position:absolute;left:0;right:0;height:36px;display:flex;align-items:center;gap:6px}\n  .al{width:74px;font-size:13px;color:#999;letter-spacing:1px}\n  .av{flex:1;font-size:18px;font-weight:bold;color:#fff;white-space:nowrap}\n  .arow button{width:46px;height:34px;border-radius:8px;border:2px solid #555;background:#111;color:#eee;font:bold 22px \"DejaVu Sans\",sans-serif;cursor:pointer;padding:0}\n  .arow button:disabled{opacity:.3}\n  .abtns{position:absolute;left:0;right:0;top:252px;height:56px;display:flex;gap:8px}\n  .abtns button{flex:1;border-radius:10px;border:2px solid #777;background:#111;color:#fff;font:bold 15px \"DejaVu Sans\",sans-serif;letter-spacing:1px;cursor:pointer;padding:0}\n  .abtns button.pri{border-color:#00b050;color:#00e060}\n  .abtns button.dan{border-color:#ff3030;color:#ff5050}\n  .abtns button.confirm{background:#ffa000;border-color:#ffa000;color:#000}\n  .abtns button.busy{opacity:.5}\n  .amsg{position:absolute;right:0;top:-22px;font-size:13px;color:#ffa000}\n  .night .amap,.night .ahead{border-color:#400000} .night .ahead #a-st,.night .av,.night .acells b{color:#c00000}\n  .night .asub,.night .al,.night .acells i,.night .mnote{color:#800000} .night .acells div{border-color:#300000}\n  .night .mbtns button,.night .arow button,.night .abtns button{border-color:#600000;color:#c00000;background:#0a0000}\n  .night .abtns button.confirm{background:#a03000;color:#000}\n  .red .ahead,.red .amap{border-color:#fff} .red .ahead #a-st,.red .asub{color:#fff}\n  .dots{position:absolute;left:0;right:0;top:470px;display:flex;justify-content:center;gap:10px}\n  .dots i{width:7px;height:7px;border-radius:50%;background:#333}\n  .dots i.on{background:#999}\n  .night .eb{background:#1a0000;border-color:#400000}\n  .night .eb.on{background:#4a0000;border-color:#800000}\n  .night .eh,.night .es,.night .ev small{color:#900000}\n  .night .ev{color:#c00000}\n  .night .cn.on::before{background:#a00000}\n  .night .cn.on::after{border-left-color:transparent;border-right-color:transparent;border-top-color:transparent;border-bottom-color:transparent}\n  .night .cn.h.r.on::after{border-left-color:#d00000}.night .cn.h.l.on::after{border-right-color:#d00000}\n  .night .cn.v.u.on::after{border-bottom-color:#d00000}.night .cn.v.d.on::after{border-top-color:#d00000}\n  .night .dots i{background:#300000}.night .dots i.on{background:#900000}\n  .red .eb{background:transparent !important;border-color:#fff}\n  .red .eh,.red .ev,.red .es,.red .ev small{color:#fff}\n</style>\n</head>\n<body>\n<div id=\"wrap\"><div id=\"scr\">\n  <div class=\"hdr\">\n    <div></div>\n    <button id=\"nbtn\" aria-label=\"Night mode\"><svg viewBox=\"0 0 24 24\" width=\"26\" height=\"26\"><path d=\"M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z\" fill=\"currentColor\"/></svg></button>\n    <a id=\"gbtn\" href=\"/esp-dash/settings\" aria-label=\"Settings\"><svg viewBox=\"0 0 24 24\" width=\"24\" height=\"24\"><g fill=\"currentColor\"><rect x=\"10.5\" y=\"1.5\" width=\"3\" height=\"5\" rx=\"1\"/><rect x=\"10.5\" y=\"1.5\" width=\"3\" height=\"5\" rx=\"1\" transform=\"rotate(45 12 12)\"/><rect x=\"10.5\" y=\"1.5\" width=\"3\" height=\"5\" rx=\"1\" transform=\"rotate(90 12 12)\"/><rect x=\"10.5\" y=\"1.5\" width=\"3\" height=\"5\" rx=\"1\" transform=\"rotate(135 12 12)\"/><rect x=\"10.5\" y=\"1.5\" width=\"3\" height=\"5\" rx=\"1\" transform=\"rotate(180 12 12)\"/><rect x=\"10.5\" y=\"1.5\" width=\"3\" height=\"5\" rx=\"1\" transform=\"rotate(225 12 12)\"/><rect x=\"10.5\" y=\"1.5\" width=\"3\" height=\"5\" rx=\"1\" transform=\"rotate(270 12 12)\"/><rect x=\"10.5\" y=\"1.5\" width=\"3\" height=\"5\" rx=\"1\" transform=\"rotate(315 12 12)\"/></g><circle cx=\"12\" cy=\"12\" r=\"6.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"/></svg></a>\n    <div class=\"time\"><span id=\"time\">--:--</span><span class=\"utc\" id=\"utc\"></span></div>\n    <div class=\"stat\"><span id=\"stxt\">...</span><div class=\"dot\" id=\"dot\"></div></div>\n  </div>\n\n  <div class=\"page\" id=\"p1\">\n  <div class=\"tile t1 half\" id=\"tb\">\n    <div class=\"httl\">BATTERY</div><div class=\"hthr\" id=\"bthr\"></div>\n    <div class=\"hbig\" id=\"bsoc\">--<small>%</small></div>\n    <div class=\"hbar\"><i id=\"bfill\" style=\"width:0\"></i></div>\n    <div class=\"hsub\" id=\"bva\">-- V   -- A</div>\n  </div>\n  <div class=\"tile t1 half h2\" id=\"tf\">\n    <div class=\"httl\">WATER</div><div class=\"hthr\" id=\"fthr\"></div>\n    <div class=\"hbig\" id=\"fpct\">--<small>%</small></div>\n    <div class=\"hbar\"><i id=\"ffill\" style=\"width:0\"></i></div>\n    <div class=\"hsub\" id=\"fl\">-- l</div>\n  </div>\n\n  <div class=\"tile t2\" id=\"tw\">\n    <svg class=\"bchart\" viewBox=\"0 0 248 320\" preserveAspectRatio=\"none\"><path class=\"ca\" id=\"warea\"/><path class=\"cl\" id=\"wline\"/></svg>\n    <div class=\"ttl\">WIND</div>\n    <div class=\"big\" id=\"wkn\">--<small>kn</small></div>\n    <div class=\"sub s1\" id=\"wsrc\">--</div>\n    <div class=\"sub s2\" id=\"wmax\">Max 10' -- kn</div>\n    <div class=\"sub s3\" id=\"wthr\">Alarm at -- kn</div>\n  </div>\n\n  <div class=\"tile t3 half\" id=\"ta\">\n    <div class=\"httl\">ANCHOR</div><div class=\"hthr\" id=\"acloud\"></div>\n    <div class=\"hbig aw\" id=\"ast\">--</div>\n    <div class=\"hsub\" id=\"adist\"></div>\n    <button class=\"aup\" id=\"aup\" style=\"display:none\">ANCHOR UP</button>\n  </div>\n  <div class=\"tile t3 half h2\" id=\"tp\">\n    <svg class=\"bchart\" id=\"bchart\" viewBox=\"0 0 248 154\" preserveAspectRatio=\"none\"><path class=\"ca\" id=\"barea\"/><path class=\"cl\" id=\"bline\"/></svg>\n    <div class=\"httl\">BARO</div><div class=\"hthr\" id=\"pthr\"></div>\n    <div class=\"hbig aw\" id=\"phpa\">--<small>hPa</small></div>\n    <div class=\"hsub\" id=\"pdelta\"></div>\n  </div>\n\n  </div>\n\n  <div class=\"page\" id=\"p2\" style=\"display:none\">\n    <div class=\"eb\" id=\"eb-shore\" style=\"left:20px;top:78px\">\n      <div class=\"eh\"><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6\"/><line x1=\"8\" y1=\"4\" x2=\"8\" y2=\"12\"/><line x1=\"5\" y1=\"6.5\" x2=\"11\" y2=\"6.5\"/></svg>Shore</div>\n      <div class=\"ev\" id=\"ev-shore\">--</div><div class=\"es\" id=\"es-shore\"></div>\n    </div>\n    <div class=\"eb ec\" id=\"eb-inv\" style=\"left:290px;top:78px\">\n      <div class=\"eh\"><svg viewBox=\"0 0 16 16\"><rect x=\"2\" y=\"3\" width=\"12\" height=\"10\" rx=\"1.5\"/><path d=\"M8 6 L5.5 8 L8 10 M8 6 L10.5 8 L8 10\"/></svg>Inverter / Charger</div>\n      <div class=\"ev st\" id=\"ev-inv\">--</div><div class=\"es\" id=\"es-inv\"></div>\n    </div>\n    <div class=\"eb\" id=\"eb-ac\" style=\"left:560px;top:78px\">\n      <div class=\"eh\"><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6\"/><line x1=\"5\" y1=\"8\" x2=\"11\" y2=\"8\"/><line x1=\"5\" y1=\"5.5\" x2=\"5\" y2=\"10.5\"/><line x1=\"11\" y1=\"5.5\" x2=\"11\" y2=\"10.5\"/></svg>AC Loads</div>\n      <div class=\"ev\" id=\"ev-ac\">--</div><div class=\"es\"></div>\n    </div>\n    <div class=\"eb\" id=\"eb-pv\" style=\"left:20px;top:254px\">\n      <div class=\"eh\"><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"3\"/><line x1=\"8\" y1=\"1\" x2=\"8\" y2=\"3\"/><line x1=\"8\" y1=\"13\" x2=\"8\" y2=\"15\"/><line x1=\"1\" y1=\"8\" x2=\"3\" y2=\"8\"/><line x1=\"13\" y1=\"8\" x2=\"15\" y2=\"8\"/><line x1=\"3\" y1=\"3\" x2=\"4.5\" y2=\"4.5\"/><line x1=\"11.5\" y1=\"11.5\" x2=\"13\" y2=\"13\"/><line x1=\"13\" y1=\"3\" x2=\"11.5\" y2=\"4.5\"/><line x1=\"4.5\" y1=\"11.5\" x2=\"3\" y2=\"13\"/></svg>Solar yield</div>\n      <div class=\"ev\" id=\"ev-pv\">--</div><div class=\"es\" id=\"es-pv\"></div>\n    </div>\n    <div class=\"eb ec\" id=\"eb-bat\" style=\"left:290px;top:254px\">\n      <div class=\"eh\"><svg viewBox=\"0 0 16 16\"><rect x=\"1\" y=\"4\" width=\"12\" height=\"8\" rx=\"1.5\"/><line x1=\"13\" y1=\"7\" x2=\"15\" y2=\"7\"/><line x1=\"13\" y1=\"9\" x2=\"15\" y2=\"9\"/></svg>Battery</div>\n      <div class=\"ev\" id=\"ev-bat\">--</div><div class=\"es\" id=\"es-bat\"></div><div class=\"es\" id=\"es-bat2\"></div>\n    </div>\n    <div class=\"eb\" id=\"eb-dc\" style=\"left:560px;top:254px\">\n      <div class=\"eh\"><svg viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6\"/><line x1=\"5\" y1=\"8\" x2=\"11\" y2=\"8\"/><line x1=\"5\" y1=\"6\" x2=\"5\" y2=\"10\"/><line x1=\"8\" y1=\"6\" x2=\"8\" y2=\"10\"/></svg>DC Loads</div>\n      <div class=\"ev\" id=\"ev-dc\">--</div><div class=\"es\"></div>\n    </div>\n    <div class=\"cn h\" id=\"cn-shore\" style=\"left:240px;top:143px;width:50px\"></div>\n    <div class=\"cn h\" id=\"cn-ac\" style=\"left:510px;top:143px;width:50px\"></div>\n    <div class=\"cn h\" id=\"cn-pv\" style=\"left:240px;top:319px;width:50px\"></div>\n    <div class=\"cn h\" id=\"cn-dc\" style=\"left:510px;top:319px;width:50px\"></div>\n    <div class=\"cn v\" id=\"cn-bat\" style=\"left:399px;top:210px;height:44px\"></div>\n  </div>\n\n  <div class=\"page\" id=\"p3\" style=\"display:none\">\n    <div class=\"wb\" style=\"left:12px;top:72px;width:776px;height:190px\">\n      <div class=\"wicon\" id=\"w-icon\" style=\"left:22px;top:22px;width:132px;height:132px\"></div>\n      <div class=\"wttl\" style=\"left:180px;top:20px\" id=\"w-day\">TODAY</div>\n      <div class=\"wbig\" style=\"left:178px;top:48px\"><span id=\"w-temp\">--</span></div>\n      <div class=\"wmm\" style=\"left:180px;top:126px\" id=\"w-mm\"></div>\n      <div class=\"wl1\" style=\"left:180px;top:152px\" id=\"w-txt\"></div>\n      <div class=\"wsep\"></div>\n      <div class=\"wrow\" style=\"top:20px\"><span class=\"wsi\" id=\"wi-wind\"></span><span id=\"w-wind\"></span></div>\n      <div class=\"wrow\" style=\"top:58px\"><span class=\"wsi\" id=\"wi-rain\"></span><span id=\"w-rain\"></span></div>\n      <div class=\"wrow\" style=\"top:96px\"><span class=\"wsi\" id=\"wi-sun\"></span><span id=\"w-sun\"></span></div>\n      <div class=\"wrow\" style=\"top:134px\"><span class=\"wsi\" id=\"wi-moon\"></span><span id=\"w-moon\"></span></div>\n      <div class=\"wupd\" id=\"w-upd\"></div>\n    </div>\n    <div class=\"wb wd\" id=\"wd0\" style=\"left:12px;top:274px\"></div>\n    <div class=\"wb wd\" id=\"wd1\" style=\"left:276px;top:274px\"></div>\n    <div class=\"wb wd\" id=\"wd2\" style=\"left:540px;top:274px\"></div>\n  </div>\n\n  <div class=\"page\" id=\"p4\" style=\"display:none\">\n    <div class=\"tile\" style=\"left:12px;top:72px;width:376px;height:320px\">\n      <svg id=\"tacho\" viewBox=\"0 0 376 320\" style=\"position:absolute;inset:0;width:100%;height:100%\"></svg>\n    </div>\n    <div class=\"tile et\" style=\"left:400px;top:72px\"><div class=\"httl\">TEMP</div><div class=\"ev2\" id=\"e-temp\">--</div><div class=\"es2\" id=\"e-temp2\"></div></div>\n    <div class=\"tile et\" style=\"left:599px;top:72px\"><div class=\"httl\">HOURS</div><div class=\"ev2\" id=\"e-hrs\">--</div><div class=\"es2\">engine hours</div></div>\n    <div class=\"tile et\" style=\"left:400px;top:182px\"><div class=\"httl\">FUEL RATE</div><div class=\"ev2\" id=\"e-lph\">--</div><div class=\"es2\" id=\"e-lph2\"></div></div>\n    <div class=\"tile et\" style=\"left:599px;top:182px\"><div class=\"httl\">DIESEL</div><div class=\"ev2\" id=\"e-fuel\" style=\"top:30px\">--</div>\n      <div class=\"efl\" id=\"e-fuel2\"></div><div class=\"ebar\"><i id=\"e-fbar\"></i></div></div>\n    <div class=\"tile et\" style=\"left:400px;top:292px;width:388px\"><div class=\"httl\">RANGE AT CURRENT RPM</div>\n      <div class=\"ev2\" id=\"e-rh\" style=\"left:16px\">--</div><div class=\"ev2\" id=\"e-rnm\" style=\"left:200px\"></div><div class=\"es2\" id=\"e-r2\"></div></div>\n  </div>\n\n  <div class=\"page\" id=\"p5\" style=\"display:none\">\n    <div class=\"amap\"><svg id=\"amap\" viewBox=\"0 0 476 320\"></svg>\n      <div class=\"mbtns\"><button id=\"mz-in\">+</button><button id=\"mz-out\">−</button><button id=\"mz-fit\" title=\"Reset zoom\">\n        <svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\"><path d=\"M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\"/></svg></button></div>\n      <div class=\"mnote\" id=\"anote\"></div>\n    </div>\n    <div class=\"apanel\">\n      <div class=\"ahead\"><span id=\"a-st\">--</span><span class=\"asub\" id=\"a-sub\"></span></div>\n      <div class=\"acells\">\n        <div><i>DIST</i><b id=\"a-dist\">--</b></div><div><i>DEPTH</i><b id=\"a-depth\">--</b></div>\n        <div><i id=\"a-scl\">SCOPE</i><b id=\"a-scope\">--</b></div><div><i>BEARING</i><b id=\"a-brg\">--</b></div>\n      </div>\n      <div class=\"arow\" style=\"top:126px\"><span class=\"al\">RADIUS</span><span class=\"av\" id=\"v-rad\">--</span><button data-k=\"rad\" data-d=\"-5\">−</button><button data-k=\"rad\" data-d=\"5\">+</button></div>\n      <div class=\"arow\" style=\"top:166px\"><span class=\"al\">CHAIN</span><span class=\"av\" id=\"v-chain\">--</span><button data-k=\"chain\" data-d=\"-1\">−</button><button data-k=\"chain\" data-d=\"1\">+</button></div>\n      <div class=\"arow\" style=\"top:206px\"><span class=\"al\">BEARING</span><span class=\"av\" id=\"v-brg\">--</span><button data-k=\"brg\" data-d=\"-5\">−</button><button data-k=\"brg\" data-d=\"5\">+</button></div>\n      <div class=\"abtns\" id=\"abtns\"></div>\n      <div class=\"amsg\" id=\"amsg\"></div>\n    </div>\n  </div>\n\n  <div class=\"dots\"><i id=\"d1\" class=\"on\"></i><i id=\"d2\"></i><i id=\"d3\"></i><i id=\"d4\"></i><i id=\"d5\"></i></div>\n  <div class=\"ftr\"><div class=\"msg\" id=\"msg\"></div><div class=\"hint\" id=\"hint\"></div></div>\n</div></div>\n\n<script>\nvar S = null, lastOk = 0, phase = false;\nvar $ = function (id) { return document.getElementById(id); };\n\nfunction fit() {\n  var k = Math.min(window.innerWidth / 800, window.innerHeight / 480);\n  $('wrap').style.transform = 'translate(-50%,-50%) scale(' + k + ')';\n}\nwindow.addEventListener('resize', fit); fit();\n\nfunction poll() {\n  var x = new XMLHttpRequest();\n  x.open('GET', '/esp-dash/api/state?_=' + Date.now());\n  x.timeout = 2500;\n  x.onload = function () { try { S = JSON.parse(x.responseText); lastOk = Date.now(); } catch (e) {} render(); };\n  x.onerror = x.ontimeout = function () { render(); };\n  x.send();\n}\n\nfunction cls(st) { return st === 'alarm' ? 'alarm-c' : st === 'ok' ? 'ok-c' : st === 'off' ? '' : 'warn-c'; }\nfunction fmt(v, d) { return v == null ? '--' : (d ? v.toFixed(d) : String(v)); }\n\nfunction render() {\n  var offline = Date.now() - lastOk > 10000;\n  var s = offline ? null : S;\n  var status = s ? s.status : 'warn';\n  var blink = s && s.blink;\n  $('scr').className = (s && s.night ? 'night ' : '') + (blink && phase ? 'red' : '');\n  $('dot').className = 'dot ' + status;\n  $('stxt').textContent = !s ? 'OFFLINE' : status === 'ok' ? 'ALL OK' : status === 'alarm' ? 'ALARM' : 'WARNING';\n  $('time').textContent = s ? s.time : '--:--';\n  $('utc').textContent = s && s.utc ? 'UTC ' + s.utc : '';\n\n  var b = s ? s.batt : { st: 'na' };\n  $('tb').className = 'tile t1 half' + (b.st === 'alarm' ? ' alarm' : '');\n  $('bsoc').innerHTML = fmt(b.soc) + '<small>%</small>';\n  $('bsoc').className = 'hbig ' + cls(b.st);\n  $('bfill').style.width = (b.soc == null ? 0 : Math.max(0, Math.min(100, b.soc))) + '%';\n  $('bfill').style.background = b.st === 'alarm' ? '#ff3030' : '#00d000';\n  $('bva').textContent = fmt(b.v, 2) + ' V   ' + fmt(b.a, 1) + ' A';\n  $('bthr').textContent = b.thr != null ? '< ' + b.thr + ' %' : '';\n\n  var f = (s && s.water) || { st: 'na' };\n  $('tf').className = 'tile t1 half h2' + (f.st === 'alarm' ? ' alarm' : '');\n  $('fpct').innerHTML = fmt(f.pct) + '<small>%</small>';\n  $('fpct').className = 'hbig ' + (f.st === 'ok' ? 'water-c' : cls(f.st));\n  $('ffill').style.width = (f.pct == null ? 0 : Math.max(0, Math.min(100, f.pct))) + '%';\n  $('ffill').style.background = f.st === 'alarm' ? '#ff3030' : '#2a9df4';\n  $('fl').textContent = f.l != null ? f.l + ' l of ' + f.cap + ' l' : '-- l';\n  $('fthr').textContent = f.thr != null ? '< ' + f.thr + ' %' : '';\n\n  var w = s ? s.wind : { st: 'na' };\n  $('tw').className = 'tile t2' + (w.st === 'alarm' ? ' alarm' : '');\n  $('wkn').innerHTML = fmt(w.kn, 1) + '<small>kn</small>';\n  $('wkn').className = 'big ' + cls(w.st);\n  $('wsrc').textContent = w.src ? w.src + ' (avg)' : '--';\n  $('wmax').textContent = \"Max 10' \" + fmt(w.max, 1) + ' kn';\n  $('wthr').textContent = 'Alarm at ' + fmt(w.thr) + ' kn' + (w.win ? '  ·  ' + winLabel(w.win) : '');\n  drawChart('warea', 'wline', w.hist || [], 248, 320, 120, 312, true);\n\n  var a = s ? s.anchor : { st: 'na' };\n  $('ta').className = 'tile t3 half' + (a.st === 'alarm' ? ' alarm' : '') + (a.act ? ' act' : '');\n  renderAup(s && a.act);\n  $('ast').textContent = a.st === 'alarm' ? 'ALARM' : a.st === 'off' ? 'OFF' : a.st === 'ok' ? 'ACTIVE' : '--';\n  $('ast').className = 'hbig aw ' + cls(a.st);\n  $('adist').textContent = a.act && a.dist != null ? a.dist + ' m / radius ' + (a.rad != null ? a.rad : '--') + ' m' : '';\n  $('acloud').textContent = s ? (a.cloud ? 'cloud' : 'cloud offline') : '';\n  $('acloud').className = 'hthr' + (s && !a.cloud ? ' warn-c' : '');\n\n  var p = (s && s.baro) || { st: 'na', hist: [] };\n  $('tp').className = 'tile t3 half h2' + (p.st === 'alarm' ? ' alarm' : '');\n  $('phpa').innerHTML = fmt(p.hpa, 1) + '<small>hPa</small>';\n  $('phpa').className = 'hbig aw ' + cls(p.st);\n  $('pthr').textContent = p.thr != null ? '< ' + p.thr : '';\n  var win = winLabel(p.win);\n  $('pdelta').textContent = p.d != null ? (p.d > 0 ? '+' : '') + p.d.toFixed(1) + ' hPa / ' + win : '';\n  drawChart('barea', 'bline', p.hist || [], 248, 154, 40, 146, false);\n\n  renderEnergy(s ? s.energy : null);\n  renderWeather(s ? s.weather : null);\n  renderEngine(s ? s.engine : null);\n  renderAnchorPage(s);\n\n  $('msg').textContent = !s ? 'No connection to Node-RED' : s.msg;\n  $('msg').className = 'msg ' + (s ? cls(s.status === 'alarm' ? 'alarm' : 'warn') : 'warn-c');\n  $('hint').textContent = blink ? 'Tap to acknowledge' : (s && s.acked ? 'Acknowledged' : '');\n}\n\n// ── ANCHOR UP: 1. Tipp = bestätigen, 2. Tipp innerhalb 4 s = systemweit einholen (Supabase) ──\nvar aupState = 'idle', aupTimer = null;\nfunction renderAup(show) {\n  var b = $('aup');\n  if (!show && aupState !== 'busy') { aupState = 'idle'; }\n  b.style.display = show || aupState === 'busy' ? '' : 'none';\n  b.className = 'aup' + (aupState === 'confirm' ? ' confirm' : aupState === 'busy' ? ' busy' : aupState === 'err' ? ' err' : '');\n  b.textContent = aupState === 'confirm' ? 'TAP TO CONFIRM' : aupState === 'busy' ? 'SENDING ...' : aupState === 'err' ? 'FAILED - RETRY' : 'ANCHOR UP';\n}\nfunction aupSet(st, ms) {\n  aupState = st; clearTimeout(aupTimer);\n  if (ms) aupTimer = setTimeout(function () { aupState = 'idle'; render(); }, ms);\n  render();\n}\n$('aup').addEventListener('click', function (e) {\n  e.stopPropagation();\n  if (aupState === 'busy') return;\n  if (aupState !== 'confirm') { aupSet('confirm', 4000); return; }\n  aupSet('busy');\n  var x = new XMLHttpRequest();\n  x.open('POST', '/esp-dash/api/anchor-up');\n  x.setRequestHeader('Content-Type', 'application/json');\n  x.timeout = 12000;\n  x.onload = function () { if (x.status === 200) { aupSet('idle'); poll(); } else aupSet('err', 5000); };\n  x.onerror = x.ontimeout = function () { aupSet('err', 5000); };\n  x.send('{}');\n});\n\n// ── Wetter-Icons (inline SVG, 64×64) ──\nvar CLOUD = '<circle class=\"wx-cl\" cx=\"25\" cy=\"36\" r=\"11\"/><circle class=\"wx-cl\" cx=\"38\" cy=\"30\" r=\"14\"/><rect class=\"wx-cl\" x=\"14\" y=\"36\" width=\"40\" height=\"13\" rx=\"6.5\"/>';\nfunction sunSvg(cx, cy, r) {\n  var g = '<circle class=\"wx-sun\" cx=\"' + cx + '\" cy=\"' + cy + '\" r=\"' + r + '\"/>';\n  for (var i = 0; i < 8; i++) {\n    var a = i * Math.PI / 4, c = Math.cos(a), sn = Math.sin(a);\n    g += '<line class=\"wx-ray\" x1=\"' + (cx + c * r * 1.45).toFixed(1) + '\" y1=\"' + (cy + sn * r * 1.45).toFixed(1) +\n         '\" x2=\"' + (cx + c * r * 1.95).toFixed(1) + '\" y2=\"' + (cy + sn * r * 1.95).toFixed(1) + '\"/>';\n  }\n  return g;\n}\nvar CRESCENT = '<path class=\"wx-moon\" d=\"M36 12a20 20 0 1 0 18 28a16 16 0 1 1 -18 -28z\"/>';\nfunction wxIcon(ic, night) {\n  var g;\n  if (ic === 'sun') g = night ? CRESCENT : sunSvg(32, 32, 12);\n  else if (ic === 'partly') g = (night ? '<g transform=\"translate(-8 -10) scale(.8)\">' + CRESCENT + '</g>' : sunSvg(22, 22, 8)) + '<g transform=\"translate(6 6) scale(.9)\">' + CLOUD + '</g>';\n  else if (ic === 'cloud') g = '<g transform=\"translate(-6 -4) scale(.75)\"><circle class=\"wx-cl2\" cx=\"38\" cy=\"30\" r=\"14\"/><circle class=\"wx-cl2\" cx=\"25\" cy=\"36\" r=\"11\"/></g>' + '<g transform=\"translate(4 4)\">' + CLOUD + '</g>';\n  else if (ic === 'rain') g = '<g transform=\"translate(0 -8)\">' + CLOUD + '</g><line class=\"wx-rain\" x1=\"24\" y1=\"48\" x2=\"20\" y2=\"58\"/><line class=\"wx-rain\" x1=\"34\" y1=\"48\" x2=\"30\" y2=\"58\"/><line class=\"wx-rain\" x1=\"44\" y1=\"48\" x2=\"40\" y2=\"58\"/>';\n  else if (ic === 'storm') g = '<g transform=\"translate(0 -8)\">' + CLOUD + '</g><polygon class=\"wx-bolt\" points=\"34,42 24,54 32,54 28,63 42,49 34,49 38,42\"/>';\n  else if (ic === 'snow') g = '<g transform=\"translate(0 -8)\">' + CLOUD + '</g><circle class=\"wx-drop\" cx=\"22\" cy=\"52\" r=\"3\"/><circle class=\"wx-drop\" cx=\"33\" cy=\"57\" r=\"3\"/><circle class=\"wx-drop\" cx=\"44\" cy=\"52\" r=\"3\"/>';\n  else if (ic === 'fog') g = '<line class=\"wx-fog\" x1=\"12\" y1=\"24\" x2=\"52\" y2=\"24\"/><line class=\"wx-fog\" x1=\"8\" y1=\"34\" x2=\"48\" y2=\"34\"/><line class=\"wx-fog\" x1=\"16\" y1=\"44\" x2=\"56\" y2=\"44\"/>';\n  else g = CLOUD;\n  return '<svg viewBox=\"0 0 64 64\">' + g + '</svg>';\n}\n// Mondphase: 0 = Neumond, 90 = erstes Viertel, 180 = Vollmond, 270 = letztes Viertel (met.no)\nfunction moonPhaseSvg(p) {\n  if (p == null) return '';\n  var R = 14, c = Math.cos(p * Math.PI / 180), wax = p < 180, l = [], rgt = [];\n  for (var y = -R; y <= R; y += 1) {\n    var w = Math.sqrt(R * R - y * y), t = w * c;\n    if (wax) { l.push([16 + t, 16 + y]); rgt.push([16 + w, 16 + y]); }\n    else { l.push([16 - w, 16 + y]); rgt.push([16 - t, 16 + y]); }\n  }\n  var pts = l.concat(rgt.reverse()).map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ');\n  return '<svg viewBox=\"0 0 32 32\"><circle class=\"wx-mdark\" cx=\"16\" cy=\"16\" r=\"14\"/><polygon class=\"wx-moon\" points=\"' + pts + '\"/></svg>';\n}\nvar SUN_SM = '<svg viewBox=\"0 0 64 64\">' + sunSvg(32, 32, 11) + '</svg>';\nvar DROP = '<svg class=\"mi\" viewBox=\"0 0 16 16\"><path class=\"wx-drop\" d=\"M8 1 C8 1 3 7 3 10 a5 5 0 0 0 10 0 C13 7 8 1 8 1z\"/></svg>';\nfunction deg(v) { return v == null ? '--' : v + '°'; }\n\nvar WIND = '<svg viewBox=\"0 0 24 24\"><path class=\"wx-wind\" d=\"M3 8h11a3 3 0 1 0 -3 -3M3 12h16a3 3 0 1 1 -3 3M3 16h8\"/></svg>';\nvar RAIN = '<svg viewBox=\"0 0 16 16\"><path class=\"wx-drop\" d=\"M8 1 C8 1 3 7 3 10 a5 5 0 0 0 10 0 C13 7 8 1 8 1z\"/></svg>';\nfunction renderWeather(w) {\n  if (!w || !w.ok) { $('w-temp').textContent = '--'; $('w-txt').textContent = 'No weather data'; return; }\n  var t = w.today, c = w.cur;\n  $('w-icon').innerHTML = wxIcon(c.ic, c.night);\n  $('w-day').textContent = 'TODAY · ' + t.dow.toUpperCase() + ' ' + t.date;\n  $('w-temp').textContent = deg(c.t);\n  $('w-mm').textContent = '↑ ' + deg(t.max) + '   ↓ ' + deg(t.min);\n  $('w-txt').textContent = c.txt;\n  $('wi-wind').innerHTML = WIND; $('w-wind').innerHTML = c.ws + ' kn ' + c.wd + '<small>gust ' + c.wg + ' · max ' + t.ws + '</small>';\n  $('wi-rain').innerHTML = RAIN; $('w-rain').innerHTML = t.pp + ' %<small>' + t.ps + ' mm</small>';\n  $('wi-sun').innerHTML = SUN_SM; $('w-sun').textContent = '↑ ' + t.sr + '   ↓ ' + t.ss;\n  $('wi-moon').innerHTML = moonPhaseSvg(w.mp); $('w-moon').innerHTML = '↑ ' + t.mr + '   ↓ ' + t.ms;\n  $('w-upd').textContent = 'updated ' + w.upd; $('w-upd').className = 'wupd' + (w.old ? ' old' : '');\n  for (var i = 0; i < 3; i++) {\n    var d = w.days[i], el = $('wd' + i);\n    if (!d) { el.innerHTML = ''; continue; }\n    el.innerHTML = '<div class=\"dt\">' + d.dow.toUpperCase() + ' ' + d.date + '</div>' +\n      '<div class=\"di\">' + wxIcon(d.ic, false) + '</div>' +\n      '<div class=\"dl\" style=\"top:36px\"><b>' + deg(d.max) + '</b>' + deg(d.min) + '</div>' +\n      '<div class=\"dl\" style=\"top:66px\"><span class=\"wsi\">' + WIND + '</span>' + d.ws + ' kn ' + d.wd + ' <span class=\"dg\">G' + d.wg + '</span></div>' +\n      '<div class=\"dl\" style=\"top:90px\"><span class=\"wsi\">' + RAIN + '</span>' + d.pp + ' %</div>';\n  }\n}\n\n// ── Drehzahlmesser: 240°-Bogen, 0 … engMaxRpm, roter Bereich ab engRedRpm ──\n// Volvo Penta Schriftzug (Wikimedia Commons, gemeinfrei, Marke von AB Volvo Penta) — viewBox 850.39×177.29\nvar VP_LOGO = \"<path d=\\\"M76.08 11.04 L88.4 11.04 L67.81 49.14 L46.93 11.04 L61.91 11.04 L61.9 1.54 L0 1.54 L0 11.05 L14.16 11.05 L42.94 63.28 L76.34 63.28 L104.57 11.04 L118.74 11.04 L118.75 1.54 L76.08 1.54 Z\\\"/><path d=\\\"M625.13 11.04 L637.45 11.04 L616.85 49.14 L595.98 11.04 L610.95 11.04 L610.95 1.54 L549.05 1.54 L549.05 11.05 L563.21 11.05 L591.99 63.28 L625.39 63.28 L653.61 11.04 L667.79 11.04 L667.79 1.54 L625.13 1.54 Z\\\"/><path d=\\\"M411.11 177.29 L411.11 167.71 L397.17 167.71 L397.17 139.26 L440.12 177.29 L463.9 177.29 L463.9 125.02 L478.01 125.02 L478.01 115.55 L435.39 115.55 L435.39 125.02 L449.45 125.02 L449.45 146.23 L413.94 115.55 L368.67 115.55 L368.67 125.02 L382.71 125.02 L382.71 167.71 L368.67 167.71 L368.67 177.29 Z\\\"/><path d=\\\"m394.79 53.7h-14.4v9.59l85.67-0.01v-28.58h-9.41c0 4.61-1.95 10.04-6.01 13.9-1.4 1.3-2.95 2.5-4.71 3.36-2.28 1.14-4.43 1.73-9.51 1.73-3.42 0-10.72 0.01-13.16 0.01v-42.65h14.21v-9.51h-57.06v9.51h14.38v42.65z\\\"/><path d=\\\"m242.41 55.1c-10.5 0-15.29-11.48-15.3-22.97 0-11.9 5.51-22.39 15.32-22.39 9.8 0 15.15 10.49 15.15 22.39 0 11.23-4.43 22.97-15.23 22.97h0.06zm0.06 9.83c29.39 0 43.87-14.51 43.87-32.67-0.01-17.95-15.38-32.26-44.04-32.26-28.65 0-43.88 14.31-43.88 32.25 0 18.17 14.66 32.68 44.05 32.68z\\\"/><path d=\\\"m791.79 55.1c-10.52 0-15.3-11.48-15.3-22.97 0-11.9 5.51-22.39 15.32-22.39s15.16 10.49 15.16 22.39c0 11.23-4.42 22.97-15.25 22.97h0.07zm0.05 9.83c29.36 0 43.87-14.51 43.87-32.67 0-17.94-15.4-32.25-44.03-32.25-28.68-0.01-43.88 14.3-43.88 32.24 0 18.17 14.64 32.68 44.04 32.68z\\\"/><path d=\\\"m284.84 139.26v-23.71h-85.36v9.47h13.82v42.69h-13.82v9.57h85.36v-28.3h-9.44v2.27c0 9.15-6.23 16.41-14.27 16.41h-19.35v-18.69h19.35v-9.09h-19.35v-14.88h19.9c6.86 0 12.39 5.1 13.72 14.24h9.44z\\\"/><path d=\\\"m629.02 125.02c7.97 0 14.41 6.28 14.41 14.24h9.45v-23.71h-85.83v23.71h9.44c0-7.96 6.47-14.19 14.44-14.24h4.79v42.69h-13.88v9.58h56.26v-9.58h-13.9v-42.69h4.82z\\\"/><path d=\\\"m59.08 144.2v-19.18h8.43c3.89 0 7.38 1.39 9.55 3.64 1.51 1.51 2.45 3.69 2.45 6.08 0 2.55-1.08 4.81-2.73 6.36-2.17 2.01-5.53 3.1-9.27 3.1h-8.43zm49.08-9.36c0-4.74-1.89-9.03-4.9-12.07-4.31-4.44-11.2-7.23-18.94-7.23h-67.88v9.47h14.15v42.69h-14.15v9.58h57.08v-9.58h-14.44v-14.11h25.24c7.43 0 14.06-2.15 18.39-6.16 3.29-3.04 5.45-7.55 5.45-12.59z\\\"/><path d=\\\"m745.92 167.71h-14.18v9.58c1.69 0.01 40.29 0.01 42.65 0.01 0.01-2.19 0-9.58 0-9.58l-12.3 0.03c0.28-0.55 2.28-4.25 4.95-9.16h31.43l5.03 9.13h-14.9v9.58h61.79v-9.58h-14.11l-28.77-52.16h-33.33l-28.26 52.15zm36.75-37.98 10.46 19.06h-20.78l10.32-19.06z\\\"/>\";\nvar DEMO_RPM = (function () { var m = location.search.match(/demoRpm=(\\d+)/); return m ? +m[1] : null; })();\nfunction polar(cx, cy, r, a) { var t = a * Math.PI / 180; return [cx + r * Math.cos(t), cy + r * Math.sin(t)]; }\nfunction arcPath(cx, cy, r, a0, a1) {\n  var p0 = polar(cx, cy, r, a0), p1 = polar(cx, cy, r, a1);\n  return 'M' + p0[0].toFixed(1) + ' ' + p0[1].toFixed(1) + 'A' + r + ' ' + r + ' 0 ' + (a1 - a0 > 180 ? 1 : 0) + ' 1 ' + p1[0].toFixed(1) + ' ' + p1[1].toFixed(1);\n}\nfunction renderTacho(rpm, max, red, g0, g1) {\n  var cx = 188, cy = 160, R = 140, A0 = 150, SW = 240, ang = function (v) { return A0 + SW * Math.max(0, Math.min(1, v / max)); };\n  var g = '<defs><radialGradient id=\"tface\" cx=\"50%\" cy=\"45%\" r=\"60%\"><stop offset=\"0\" stop-color=\"#1b1b1b\"/><stop offset=\"1\" stop-color=\"#050505\"/></radialGradient></defs>';\n  g += '<circle class=\"t-face\" cx=\"' + cx + '\" cy=\"' + cy + '\" r=\"' + (R + 4) + '\"/><circle class=\"t-bezel\" cx=\"' + cx + '\" cy=\"' + cy + '\" r=\"' + (R + 4) + '\"/>';\n  // Außenband: grüner (Reise-) und roter Bereich\n  if (g1 > g0) g += '<path class=\"t-zg\" d=\"' + arcPath(cx, cy, R - 4, ang(g0), ang(g1)) + '\" fill=\"none\" stroke-width=\"8\"/>';\n  g += '<path class=\"t-zr\" d=\"' + arcPath(cx, cy, R - 4, ang(red), A0 + SW) + '\" fill=\"none\" stroke-width=\"8\"/>';\n  // Innen: Fortschrittsbogen (rot im roten Bereich)\n  g += '<path class=\"t-track\" d=\"' + arcPath(cx, cy, R - 20, A0, A0 + SW) + '\" fill=\"none\" stroke-width=\"14\"/>';\n  if (rpm != null && rpm > 0) g += '<path class=\"' + (rpm >= red ? 't-valr' : 't-val') + '\" d=\"' + arcPath(cx, cy, R - 20, A0, ang(rpm)) + '\" fill=\"none\" stroke-width=\"14\"/>';\n  for (var v = 0; v <= max; v += 100) {\n    var maj = v % 500 === 0, a = ang(v), p0 = polar(cx, cy, R - (maj ? 46 : 34), a), p1 = polar(cx, cy, R - 30, a);\n    g += '<line class=\"' + (maj ? 't-maj' : 't-tick') + '\" x1=\"' + p0[0].toFixed(1) + '\" y1=\"' + p0[1].toFixed(1) + '\" x2=\"' + p1[0].toFixed(1) + '\" y2=\"' + p1[1].toFixed(1) + '\"/>';\n    if (maj) { var pn = polar(cx, cy, R - 60, a); g += '<text class=\"t-num\" x=\"' + pn[0].toFixed(1) + '\" y=\"' + pn[1].toFixed(1) + '\">' + v / 100 + '</text>'; }\n  }\n  g += '<text class=\"t-unit\" x=\"' + cx + '\" y=\"' + (cy + 30) + '\">RPM × 100</text>';\n  var lk = 112 / 850.39;\n  g += '<g class=\"t-logo\" transform=\"translate(' + (cx - 56) + ' ' + (cy + 58) + ') scale(' + lk.toFixed(4) + ')\">' + VP_LOGO + '</g>';\n  // Zeiger: spitz zulaufend, rot\n  var na = ang(rpm || 0), tip = polar(cx, cy, R - 26, na), l = polar(cx, cy, 7, na - 90), rr = polar(cx, cy, 7, na + 90), tail = polar(cx, cy, 22, na + 180);\n  g += '<polygon class=\"t-ndl\" points=\"' + [tip, l, tail, rr].map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ') + '\"/>';\n  g += '<circle class=\"t-hub\" cx=\"' + cx + '\" cy=\"' + cy + '\" r=\"10\"/>';\n  // Digitalanzeige im Feld unten\n  g += '<rect class=\"t-pill\" x=\"' + (cx - 74) + '\" y=\"248\" width=\"148\" height=\"56\" rx=\"12\"/>';\n  g += '<text class=\"t-rpm\" x=\"' + cx + '\" y=\"286\">' + (rpm == null ? '--' : rpm) + '</text>';\n  g += '<text class=\"t-unit\" x=\"' + cx + '\" y=\"300\">' + (rpm == null ? 'ENGINE OFF' : 'RPM') + '</text>';\n  $('tacho').innerHTML = g;\n}\nfunction renderEngine(e) {\n  e = e || {};\n  if (DEMO_RPM != null) {   // nur Simulator-Vorschau, ändert nichts in Node-RED\n    e = Object.assign({}, e, { on: true, rpm: DEMO_RPM, lph: 4.6, est: true, tempLive: true, temp: 78, sog: 6.4 });\n    if (e.fuelL != null) { e.rangeH = Math.round(e.fuelL / e.lph * 10) / 10; e.rangeNm = Math.round(e.rangeH * e.sog); }\n  }\n  renderTacho(e.on ? e.rpm : (e.rpm === 0 ? 0 : null), e.max || 3000, e.red || 2700, e.g0 != null ? e.g0 : 1800, e.g1 != null ? e.g1 : 2200);\n  $('e-temp').innerHTML = e.temp != null ? e.temp + '<small>°C</small>' : '--';\n  $('e-temp2').textContent = e.tempLive ? 'coolant' : (e.temp != null ? 'last known' : '');\n  $('e-hrs').innerHTML = e.hrs != null ? e.hrs.toFixed(1) + '<small>h</small>' : '--';\n  $('e-lph').innerHTML = e.lph != null ? e.lph.toFixed(1) + '<small>l/h</small>' : '--';\n  $('e-lph2').textContent = e.lph != null ? (e.est ? 'estimated from rpm' : 'sensor') : (e.on ? '' : 'engine off');\n  $('e-fuel').innerHTML = e.fuelPct != null ? e.fuelPct + '<small>%</small>' : '--';\n  $('e-fbar').style.width = (e.fuelPct || 0) + '%';\n  $('e-fuel2').textContent = e.fuelL != null ? e.fuelL + ' l' : '';\n  $('e-rh').innerHTML = e.rangeH != null ? e.rangeH.toFixed(1) + '<small>h</small>' : '--';\n  $('e-rnm').innerHTML = e.rangeNm != null ? e.rangeNm + '<small>nm</small>' : '';\n  $('e-r2').textContent = e.rangeH == null ? 'engine off' : (e.rangeNm != null ? 'at ' + e.lph.toFixed(1) + ' l/h and ' + e.sog + ' kn SOG' : 'at ' + e.lph.toFixed(1) + ' l/h (no SOG)');\n}\n\n// ── Anker-Screen ──────────────────────────────────────────────────────────\nvar aZoom = 1, aLocal = null, aBusy = null, aConfirm = null, aTimer = null, aSave = null;\nfunction ancMapShow() {\n  $('mz-in').onclick = function (e) { e.stopPropagation(); aZoom = Math.min(8, aZoom * 1.5); renderAnchorPage(S); };\n  $('mz-out').onclick = function (e) { e.stopPropagation(); aZoom = Math.max(0.15, aZoom / 1.5); renderAnchorPage(S); };\n  $('mz-fit').onclick = function (e) { e.stopPropagation(); aZoom = 1; renderAnchorPage(S); };\n  renderAnchorPage(S);\n}\n// Radar-Ansicht (Nord oben): Mitte = Anker (bzw. Vorschau-Anker), Kreis = Alarmradius\nvar ANC_SVG = '<g fill=\"none\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"0\" cy=\"-6\" r=\"2.2\"/><line x1=\"0\" y1=\"-3.8\" x2=\"0\" y2=\"8\"/><line x1=\"-4.5\" y1=\"-1\" x2=\"4.5\" y2=\"-1\"/><path d=\"M-7 3.5a7 6 0 0 0 14 0\"/></g>';\nfunction drawRadar(cfg) {\n  var W = 476, H = 320, cx = W / 2, cy = H / 2 + 4;\n  var ppm = 118 / Math.max(10, cfg.rad) * aZoom;             // Pixel pro Meter: Radius ≈ 118 px bei Zoom 1\n  var g = '';\n  // Distanzringe (Abstand passend zum Maßstab)\n  var steps = [5, 10, 20, 25, 50, 100, 200, 500], ringM = steps.find(function (v) { return v * ppm >= 45; }) || 1000;\n  for (var k = 1; k * ringM * ppm < W; k++) {\n    var rr = k * ringM * ppm;\n    g += '<circle class=\"r-ring\" cx=\"' + cx + '\" cy=\"' + cy + '\" r=\"' + rr.toFixed(1) + '\"/>';\n    if (cy - rr > 12) g += '<text class=\"r-lbl\" x=\"' + (cx + 4) + '\" y=\"' + (cy - rr - 3).toFixed(1) + '\">' + k * ringM + ' m</text>';\n  }\n  g += '<circle class=\"r-rad\" cx=\"' + cx + '\" cy=\"' + cy + '\" r=\"' + (cfg.rad * ppm).toFixed(1) + '\" fill=\"' + cfg.col + '\" stroke=\"' + cfg.col + '\"' + (cfg.preview ? ' stroke-dasharray=\"8 6\"' : '') + '/>';\n  var P = function (e, n) { return [cx + e * ppm, cy - n * ppm]; };\n  if (cfg.track && cfg.track.length > 1)\n    g += '<polyline class=\"r-trk\" points=\"' + cfg.track.map(function (p) { var q = P(p[0], p[1]); return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ') + '\"/>';\n  if (cfg.boat) {\n    var b = P(cfg.boat[0], cfg.boat[1]);\n    g += '<line class=\"r-chain\" x1=\"' + cx + '\" y1=\"' + cy + '\" x2=\"' + b[0].toFixed(1) + '\" y2=\"' + b[1].toFixed(1) + '\"/>';\n    var bx = Math.max(10, Math.min(W - 10, b[0])), by = Math.max(10, Math.min(H - 10, b[1]));\n    g += '<g transform=\"translate(' + bx.toFixed(1) + ' ' + by.toFixed(1) + ') rotate(' + (cfg.hdg || 0) + ')\"><path class=\"r-boat\" d=\"M0 -14 L8 10 L0 5 L-8 10 Z\"/></g>';\n  }\n  g += '<g transform=\"translate(' + cx + ' ' + cy + ')\" stroke=\"' + cfg.col + '\">' + ANC_SVG + '</g>';\n  // Nordpfeil + Maßstab\n  g += '<g transform=\"translate(26 30)\"><path class=\"r-nar\" d=\"M0 -14 L6 4 L0 0 L-6 4 Z\"/><text class=\"r-n\" y=\"18\">N</text></g>';\n  $('amap').innerHTML = g;\n}\nfunction destPt(lat, lon, brg, d) {\n  var R = 6371000, a = brg * Math.PI / 180, dr = d / R, la1 = lat * Math.PI / 180, lo1 = lon * Math.PI / 180;\n  var la2 = Math.asin(Math.sin(la1) * Math.cos(dr) + Math.cos(la1) * Math.sin(dr) * Math.cos(a));\n  var lo2 = lo1 + Math.atan2(Math.sin(a) * Math.sin(dr) * Math.cos(la1), Math.cos(dr) - Math.sin(la1) * Math.sin(la2));\n  return [la2 * 180 / Math.PI, lo2 * 180 / Math.PI];\n}\nfunction card(d) { return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(((d % 360) + 360) % 360 / 45) % 8]; }\nfunction aPost(body, okMsg) {\n  aBusy = body.action; renderAnchorPage(S);\n  var x = new XMLHttpRequest();\n  x.open('POST', '/esp-dash/api/anchor'); x.setRequestHeader('Content-Type', 'application/json'); x.timeout = 12000;\n  x.onload = function () { aBusy = null; $('amsg').textContent = x.status === 200 ? (okMsg || 'Saved') : 'Failed: ' + (JSON.parse(x.responseText || '{}').error || x.status); aLocal = null; poll(); setTimeout(function () { $('amsg').textContent = ''; }, 4000); };\n  x.onerror = x.ontimeout = function () { aBusy = null; $('amsg').textContent = 'Failed (offline?)'; renderAnchorPage(S); };\n  x.send(JSON.stringify(body));\n}\nfunction renderAnchorPage(s) {\n  if (!s || !s.anchor || !s.anchor.map) return;\n  var a = s.anchor, m = a.map, act = a.act, al = m.alarming;\n  // lokale Einstellungen (Preview) — initial aus der DB, Peilung folgt dem Kurs bis manuell geändert\n  if (!aLocal) aLocal = { rad: a.rad || 50, chain: m.chain || 0, brg: act ? (m.brg || 0) : (m.hdg != null ? m.hdg : (m.brg || 0)), brgManual: false };\n  if (!act && !aLocal.brgManual && m.hdg != null) aLocal.brg = m.hdg;\n  var L_ = aLocal;\n  $('p5').querySelector('.apanel').className = 'apanel' + (al ? ' alarm' : '');\n  $('a-st').textContent = al ? 'ALARM' : act ? 'ACTIVE' : 'OFF';\n  $('a-st').className = al ? 'alarm-c' : act ? 'ok-c' : '';\n  $('a-sub').textContent = act ? (a.dist != null ? a.dist + ' / ' + a.rad + ' m' : '') : 'anchor up';\n  $('a-dist').textContent = act && a.dist != null ? a.dist + ' m' : '--';\n  $('a-depth').textContent = m.depth != null ? m.depth.toFixed(1) + ' m' : '--';\n  var sc = m.scope; $('a-scope').textContent = sc != null ? sc.toFixed(1) + ':1' : '--';\n  $('a-scl').textContent = sc == null ? 'SCOPE' : sc >= 5 ? 'SCOPE GOOD' : sc >= 3 ? 'SCOPE OK' : 'SCOPE LOW';\n  $('a-brg').textContent = act && m.btoa != null ? card(m.btoa) + ' ' + m.btoa + '°' : '--';\n  $('v-rad').textContent = L_.rad + ' m'; $('v-chain').textContent = L_.chain + ' m';\n  $('v-brg').textContent = Math.round(L_.brg) + '° ' + card(L_.brg);\n  [].forEach.call(document.querySelectorAll('.arow button'), function (b) { b.disabled = !!aBusy || (act && al && b.dataset.k !== 'rad'); });\n  // Aktionsknöpfe\n  var btns = [];\n  if (act) { btns.push(['up', 'ANCHOR UP', 'dan', true]); if (al) btns.push(['mute', m.muted ? 'MUTED' : 'MUTE', '', false]); }\n  else { btns.push(['drop_now', 'DROP NOW', 'pri', true]); btns.push(['set', 'SET', 'pri', true]); if (m.lat != null) btns.push(['restore', 'RESTORE', '', true]); }\n  var h = btns.map(function (b) {\n    var c = aConfirm === b[0], busy = aBusy === b[0];\n    return '<button data-a=\"' + b[0] + '\" data-c=\"' + (b[3] ? 1 : 0) + '\" class=\"' + b[2] + (c ? ' confirm' : '') + (busy ? ' busy' : '') + '\">' + (busy ? '...' : c ? 'CONFIRM?' : b[1]) + '</button>';\n  }).join('');\n  if ($('abtns').innerHTML !== h) $('abtns').innerHTML = h;\n  // Radar\n  if (page !== 5) return;\n  var col = al ? '#ff3030' : act ? '#00d000' : '#ffa000';\n  if (document.querySelector('.night')) col = al ? '#ff2020' : '#a00000';\n  var mLat = 111320, anc = null, boat = null;\n  if (act && m.lat != null) {\n    anc = [m.lat, m.lon];\n    if (m.blat != null) { var mLon = 111320 * Math.cos(m.lat * Math.PI / 180); boat = [(m.blon - m.lon) * mLon, (m.blat - m.lat) * mLat]; }\n  } else if (m.blat != null) {                      // Vorschau: Anker = Boot + Peilung × Kette\n    var br = L_.brg * Math.PI / 180;\n    boat = [-Math.sin(br) * L_.chain, -Math.cos(br) * L_.chain];\n  }\n  drawRadar({ rad: act ? a.rad : L_.rad, col: col, preview: !act, boat: boat, hdg: m.hdg, track: act ? m.track : null });\n  $('anote').textContent = act && anc ? 'Anchor ' + anc[0].toFixed(5) + ', ' + anc[1].toFixed(5) + ' · radius ' + a.rad + ' m' : (act ? '' : 'Preview · radius ' + L_.rad + ' m · chain ' + L_.chain + ' m');\n}\ndocument.addEventListener('click', function (e) {\n  var b = e.target.closest && e.target.closest('#p5 button');\n  if (!b || !S || !S.anchor) return;\n  e.stopPropagation();\n  var a = S.anchor, m = a.map, L_ = aLocal;\n  if (b.dataset.k) {               // −/+ Einstellungen\n    var d = +b.dataset.d;\n    if (b.dataset.k === 'rad') L_.rad = Math.max(10, Math.min(300, L_.rad + d));\n    if (b.dataset.k === 'chain') L_.chain = Math.max(0, Math.min(120, L_.chain + d));\n    if (b.dataset.k === 'brg') { L_.brg = ((Math.round(L_.brg) + d) % 360 + 360) % 360; L_.brgManual = true; }\n    if (a.act) {                   // aktiver Anker: nach kurzer Pause systemweit speichern (wie Pro App)\n      clearTimeout(aSave);\n      var k = b.dataset.k;\n      aSave = setTimeout(function () {\n        if (k === 'rad') aPost({ action: 'radius', radius_m: L_.rad }, 'Radius saved');\n        else aPost({ action: 'move', chain_length_m: L_.chain, bearing_deg: L_.brg }, 'Anchor moved');\n      }, 1200);\n    }\n    renderAnchorPage(S); return;\n  }\n  var act = b.dataset.a; if (!act || aBusy) return;\n  if (b.dataset.c === '1' && aConfirm !== act) {   // 1. Tipp = bestätigen\n    aConfirm = act; clearTimeout(aTimer); aTimer = setTimeout(function () { aConfirm = null; renderAnchorPage(S); }, 4000);\n    renderAnchorPage(S); return;\n  }\n  aConfirm = null; clearTimeout(aTimer);\n  if (act === 'set') aPost({ action: 'set', radius_m: L_.rad, chain_length_m: L_.chain, bearing_deg: L_.brg }, 'Anchor set');\n  else if (act === 'drop_now') aPost({ action: 'drop_now' }, 'Anchor dropped');\n  else if (act === 'restore') aPost({ action: 'restore' }, 'Anchor restored');\n  else if (act === 'up') aPost({ action: 'up' }, 'Anchor up');\n  else if (act === 'mute') aPost({ action: 'mute' }, 'Telegram muted');\n}, true);\n\nfunction winLabel(m) { return m >= 60 ? (m / 60) + ' h' : m + ' min'; }\n\n// Verlauf als Hintergrund-Fläche. Baro: Skala mind. 1 hPa um den Mittelwert (Rauschen nicht aufblähen).\n// Wind (zero): Skala ab 0 kn, mindestens bis 10 kn, damit Böen in echter Größe erscheinen.\nfunction drawChart(areaId, lineId, h, W, H, top, bot, zero) {\n  var v = h.filter(function (x) { return x != null; });\n  if (v.length < 2) { $(areaId).setAttribute('d', ''); $(lineId).setAttribute('d', ''); return; }\n  var mn = Math.min.apply(null, v), mx = Math.max.apply(null, v);\n  if (zero) { mn = 0; mx = Math.max(10, mx * 1.1); }\n  else if (mx - mn < 1) { var c = (mx + mn) / 2; mn = c - 0.5; mx = c + 0.5; }\n  var d = '', first = null, last = null;\n  h.forEach(function (x, i) {\n    if (x == null) return;\n    var px = (i / (h.length - 1)) * W, py = bot - (x - mn) / (mx - mn) * (bot - top);\n    d += (d ? 'L' : 'M') + px.toFixed(1) + ' ' + py.toFixed(1);\n    if (first == null) first = px; last = px;\n  });\n  $(lineId).setAttribute('d', d);\n  $(areaId).setAttribute('d', d + 'L' + last.toFixed(1) + ' ' + H + 'L' + first.toFixed(1) + ' ' + H + 'Z');\n}\n\nfunction setCls(id, base, on) { $(id).className = base + (on ? ' on' : ''); }\nfunction conn(id, dir, on) { $(id).className = 'cn ' + (dir === 'r' || dir === 'l' ? 'h ' : 'v ') + dir + (on ? ' on' : ''); }\nfunction w(v) { return v == null ? '--' : v + '<small> W</small>'; }\nfunction renderEnergy(e) {\n  if (!e || !e.ok) {\n    ['shore','inv','ac','pv','bat','dc'].forEach(function (k) { $('ev-' + k).textContent = '--'; });\n    return;\n  }\n  var shoreOn = e.shore.on, solarOn = (e.pv.w || 0) > 5, acOn = (e.ac.w || 0) > 5, dcOn = (e.dc.w || 0) > 5;\n  var invW = e.inv.w || 0, charging = invW > 5, inverting = invW < -5;\n  setCls('eb-shore', 'eb', shoreOn);\n  $('ev-shore').innerHTML = shoreOn ? w(e.shore.w) : '<span style=\"font-size:24px\">Disconnected</span>';\n  $('es-shore').textContent = shoreOn && e.shore.v ? e.shore.v + ' V' : '';\n  $('ev-inv').textContent = e.inv.st;\n  $('es-inv').textContent = e.inv.w != null && e.inv.w !== 0 ? Math.abs(e.inv.w) + ' W DC' : '';\n  setCls('eb-ac', 'eb', acOn); $('ev-ac').innerHTML = w(e.ac.w);\n  setCls('eb-pv', 'eb', solarOn); $('ev-pv').innerHTML = w(e.pv.w);\n  $('es-pv').textContent = e.pv.today != null ? 'Today ' + e.pv.today.toFixed(2) + ' kWh' : '';\n  setCls('eb-dc', 'eb', dcOn); $('ev-dc').innerHTML = w(e.dc.w);\n  $('ev-bat').innerHTML = (e.bat.soc == null ? '--' : e.bat.soc) + '<small> %</small>';\n  $('es-bat').textContent = fmt(e.bat.v, 2) + ' V  ' + fmt(e.bat.a, 1) + ' A  ' + fmt(e.bat.w) + ' W';\n  $('es-bat2').textContent = e.bat.st + (e.bat.ttg ? '  ' + e.bat.ttg : '');\n  conn('cn-shore', 'r', shoreOn); conn('cn-ac', 'r', acOn); conn('cn-pv', 'r', solarOn); conn('cn-dc', 'r', dcOn);\n  conn('cn-bat', inverting ? 'u' : 'd', charging || inverting);\n}\n\n// ── Screens: wischen, Pfeiltasten oder Punkte; neuer Alarm → zurück zu Screen 1 ──\nvar page = 1, wasBlink = false, swX = null, swiped = false;\nfunction showPage(n) {\n  page = n;\n  $('p1').style.display = n === 1 ? '' : 'none';\n  $('p2').style.display = n === 2 ? '' : 'none';\n  $('p3').style.display = n === 3 ? '' : 'none';\n  $('p4').style.display = n === 4 ? '' : 'none';\n  $('d4').className = n === 4 ? 'on' : '';\n  $('p5').style.display = n === 5 ? '' : 'none';\n  $('d5').className = n === 5 ? 'on' : '';\n  if (n === 5) ancMapShow();\n  $('d1').className = n === 1 ? 'on' : ''; $('d2').className = n === 2 ? 'on' : ''; $('d3').className = n === 3 ? 'on' : '';\n}\n$('scr').addEventListener('pointerdown', function (e) { swX = e.clientX; swiped = false; });\n$('scr').addEventListener('pointerup', function (e) {\n  if (swX == null) return;\n  var dx = e.clientX - swX; swX = null;\n  if (Math.abs(dx) > 60) { swiped = true; showPage(Math.max(1, Math.min(5, page + (dx < 0 ? 1 : -1)))); }\n});\ndocument.addEventListener('keydown', function (e) {\n  if (e.key === 'ArrowRight') showPage(Math.min(5, page + 1)); else if (e.key === 'ArrowLeft') showPage(Math.max(1, page - 1));\n});\n$('d1').parentNode.addEventListener('click', function (e) { e.stopPropagation(); showPage(page % 5 + 1); });\nsetInterval(function () {\n  var b = !!(S && S.blink);\n  if (b && !wasBlink) showPage(1);\n  wasBlink = b;\n}, 300);\n\n$('nbtn').addEventListener('click', function (e) {\n  e.stopPropagation();\n  if (!S) return;\n  var x = new XMLHttpRequest();\n  x.open('POST', '/esp-dash/api/config');\n  x.setRequestHeader('Content-Type', 'application/json');\n  x.onload = function () { setTimeout(poll, 1100); };\n  x.send(JSON.stringify({ night: !S.night }));\n});\n\n$('scr').addEventListener('click', function () {\n  if (swiped) { swiped = false; return; }\n  if (!S || !S.blink) return;\n  var x = new XMLHttpRequest();\n  x.open('POST', '/esp-dash/api/ack');\n  x.setRequestHeader('Content-Type', 'application/json');\n  x.onload = poll;\n  x.send('{}');\n});\n\nsetInterval(poll, 1000);\nsetInterval(function () { phase = !phase; render(); }, 500);\npoll();\n</script>\n</body>\n</html>\n",
+      "output": "str"
+    },
+    {
+      "id": "a4a0540a8d198084",
+      "type": "http response",
+      "z": "057ae48bc2fee831",
+      "name": "Simulator antwort",
+      "x": 560,
+      "y": 660,
+      "wires": [],
+      "statusCode": "",
+      "headers": {
+        "Content-Type": "text/html; charset=utf-8"
+      }
+    },
+    {
+      "id": "25d1897efbbb4544",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "GET Einstellungen",
+      "x": 150,
+      "y": 700,
+      "wires": [
+        [
+          "9bb1e1b119661dde"
+        ]
+      ],
+      "url": "/esp-dash/settings",
+      "method": "get",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "9bb1e1b119661dde",
+      "type": "template",
+      "z": "057ae48bc2fee831",
+      "name": "Einstellungen HTML",
+      "x": 360,
+      "y": 700,
+      "wires": [
+        [
+          "6802ea2e78aebd51"
+        ]
+      ],
+      "field": "payload",
+      "fieldType": "msg",
+      "format": "html",
+      "syntax": "plain",
+      "template": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>SUKI Mini Dash Settings</title>\n<style>\n  body{margin:0;background:#000;color:#eee;font-family:-apple-system,\"DejaVu Sans\",Arial,sans-serif;padding:16px}\n  main{max-width:560px;margin:0 auto}\n  h1{font-size:22px;margin:4px 0 16px} h2{font-size:15px;color:#00d000;letter-spacing:2px;margin:22px 0 8px;text-transform:uppercase}\n  .row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #222}\n  .row label{flex:1} .row small{display:block;color:#777;font-size:12px;margin-top:2px}\n  input[type=number],input[type=text],select{width:130px;background:#111;color:#fff;border:1px solid #333;border-radius:8px;padding:8px;font-size:16px}\n  input[type=checkbox]{width:22px;height:22px;accent-color:#00d000}\n  button{background:#00a000;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;font-weight:bold;cursor:pointer}\n  button.sec{background:#333} button.warn{background:#b00000}\n  .bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px} #out{margin-top:12px;color:#aaa;min-height:20px}\n  a{color:#888}\n</style>\n</head>\n<body><main>\n<h1>SUKI Mini Dashboard – Settings</h1>\n<p><a href=\"/esp-dash\">&larr; Back to dashboard</a></p>\n\n<h2>Display</h2>\n<div class=\"row\"><label>Night mode<small>Black/red palette to preserve night vision</small></label><input type=\"checkbox\" id=\"night\"></div>\n\n<div class=\"row\"><label>Alarm sound<small>Buzzer on the display, stops when acknowledged</small></label><input type=\"checkbox\" id=\"soundOn\"></div>\n<div class=\"row\"><label>Sound in night mode</label><select id=\"soundNight\"><option value=\"full\">Full (beeps with blinking)</option><option value=\"short\">Short beep every 2 s</option><option value=\"off\">Silent</option></select></div>\n\n<h2>Wind</h2>\n<div class=\"row\"><label>Wind alarm enabled</label><input type=\"checkbox\" id=\"windAlarmOn\"></div>\n<div class=\"row\"><label>Alarm at (kn)<small>Average over the window set below</small></label><input type=\"number\" id=\"windAlarmKn\" min=\"5\" max=\"80\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (kn)<small>Alarm clears only below threshold minus hysteresis</small></label><input type=\"number\" id=\"windHystKn\" min=\"0\" max=\"10\" step=\"0.5\"></div>\n<div class=\"row\"><label>Averaging window (s)</label><input type=\"number\" id=\"windAvgSec\" min=\"2\" max=\"120\" step=\"1\"></div>\n<div class=\"row\"><label>Chart window</label><select id=\"windWinMin\"><option value=\"2\">2 min</option><option value=\"10\">10 min</option><option value=\"20\">20 min</option><option value=\"30\">30 min</option><option value=\"60\">1 h</option><option value=\"180\">3 h</option><option value=\"360\">6 h</option></select></div>\n<div class=\"row\"><label>Wind source</label><select id=\"windSource\"><option value=\"auto\">Auto (TWS, else AWS)</option><option value=\"true\">True wind (TWS)</option><option value=\"apparent\">Apparent wind (AWS)</option></select></div>\n\n<h2>Battery</h2>\n<div class=\"row\"><label>Battery alarm enabled</label><input type=\"checkbox\" id=\"battAlarmOn\"></div>\n<div class=\"row\"><label>Alarm below SOC (%)</label><input type=\"number\" id=\"battLowSoc\" min=\"5\" max=\"95\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (%)</label><input type=\"number\" id=\"battHystSoc\" min=\"0\" max=\"20\" step=\"1\"></div>\n<div class=\"row\"><label>Voltage fallback (V)<small>only used when no SOC is available, 0 = off</small></label><input type=\"number\" id=\"battLowVolt\" min=\"0\" max=\"60\" step=\"0.1\"></div>\n<div class=\"row\"><label>Battery (SignalK instance)</label><select id=\"battInstance\"><option value=\"auto\">Auto (lowest instance with SOC)</option></select></div>\n\n<h2>Water</h2>\n<div class=\"row\"><label>Water alarm enabled</label><input type=\"checkbox\" id=\"waterAlarmOn\"></div>\n<div class=\"row\"><label>Alarm below (%)</label><input type=\"number\" id=\"waterLowPct\" min=\"0\" max=\"95\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (%)</label><input type=\"number\" id=\"waterHystPct\" min=\"0\" max=\"20\" step=\"1\"></div>\n<div class=\"row\"><label>Tank (SignalK instance)</label><select id=\"waterInstance\"><option value=\"auto\">Auto (lowest instance)</option></select></div>\n\n<h2>Barometer</h2>\n<div class=\"row\"><label>Pressure alarm enabled</label><input type=\"checkbox\" id=\"baroAlarmOn\"></div>\n<div class=\"row\"><label>Alarm below (hPa)</label><input type=\"number\" id=\"baroLowHpa\" min=\"900\" max=\"1050\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (hPa)</label><input type=\"number\" id=\"baroHystHpa\" min=\"0\" max=\"10\" step=\"0.5\"></div>\n<div class=\"row\"><label>Chart window<small>Weather trends show over 1–3 h; short windows mostly show sensor noise</small></label><select id=\"baroWinMin\"><option value=\"2\">2 min</option><option value=\"10\">10 min</option><option value=\"20\">20 min</option><option value=\"30\">30 min</option><option value=\"60\">1 h</option><option value=\"180\">3 h</option><option value=\"360\">6 h</option></select></div>\n\n<h2>Engine</h2>\n<div class=\"row\"><label>Tachometer max (rpm)</label><input type=\"number\" id=\"engMaxRpm\" min=\"1000\" max=\"6000\" step=\"100\"></div>\n<div class=\"row\"><label>Red zone from (rpm)</label><input type=\"number\" id=\"engRedRpm\" min=\"500\" max=\"6000\" step=\"100\"></div>\n<div class=\"row\"><label>Green zone (rpm)<small>Economical cruising range</small></label><span><input type=\"number\" id=\"engGreenFrom\" min=\"0\" max=\"6000\" step=\"100\" style=\"width:80px\"> – <input type=\"number\" id=\"engGreenTo\" min=\"0\" max=\"6000\" step=\"100\" style=\"width:80px\"></span></div>\n<div class=\"row\"><label>Diesel tank (SignalK)</label><select id=\"fuelInstance\"><option value=\"auto\">Auto (first fuel/diesel tank)</option></select></div>\n<div class=\"row\"><label>Use fuel-rate sensor<small>If the engine sends fuel.rate via NMEA 2000; otherwise the curve below is used</small></label><input type=\"checkbox\" id=\"fuelUseSensor\"></div>\n<div class=\"row\" style=\"flex-wrap:wrap\"><label style=\"flex-basis:100%\">Fuel curve (rpm:l/h)<small>Comma-separated points, linear in between — take the values from your engine manual</small></label><input type=\"text\" id=\"fuelCurve\" style=\"width:100%;margin-top:8px\"></div>\n\n<h2>Anchor</h2>\n<div class=\"row\"><label>Show anchor alarm<small>Status comes from Supabase (anchor-check)</small></label><input type=\"checkbox\" id=\"anchorAlarmOn\"></div>\n<div class=\"row\"><label>Local fallback<small>Drag check against the last known anchor position while the cloud is unreachable</small></label><input type=\"checkbox\" id=\"anchorLocalFallback\"></div>\n\n<h2>General</h2>\n<div class=\"row\"><label>Acknowledge stops blinking for (min)</label><input type=\"number\" id=\"ackMinutes\" min=\"1\" max=\"120\" step=\"1\"></div>\n<div class=\"row\"><label>Data stale after (s)</label><input type=\"number\" id=\"staleSec\" min=\"5\" max=\"300\" step=\"1\"></div>\n<div class=\"row\"><label>Time zone</label><input type=\"text\" id=\"tz\"></div>\n\n<div class=\"bar\">\n  <button id=\"save\">Save</button>\n  <button class=\"warn\" id=\"test\">Test alarm 30 s</button>\n  <button class=\"sec\" id=\"reload\">Reload</button>\n</div>\n<div id=\"out\"></div>\n</main>\n<script>\nvar NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec'];\nvar BOOL = ['night','soundOn','baroAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback'];\nvar STR = ['soundNight','fuelInstance','fuelCurve','windSource','battInstance','waterInstance','tz'];\nfunction $(id){return document.getElementById(id);}\nfunction req(method, url, body, cb){\n  var x = new XMLHttpRequest(); x.open(method, url); x.setRequestHeader('Content-Type','application/json');\n  x.onload = function(){ var d=null; try{d=JSON.parse(x.responseText);}catch(e){} cb(x.status, d); };\n  x.onerror = function(){ cb(0, null); }; x.send(body ? JSON.stringify(body) : null);\n}\nfunction load(){\n  req('GET','/esp-dash/api/config',null,function(st,d){\n    if(st!==200||!d){ $('out').textContent='Failed to load'; return; }\n    var sel=$('battInstance'); sel.length=1;\n    (d.batteries||[]).forEach(function(b){\n      var o=document.createElement('option'); o.value=b.id;\n      o.textContent='Instance '+b.id+' – '+(b.soc!=null?b.soc+' %':'no SOC')+', '+(b.v!=null?b.v+' V':'-')+', '+(b.a!=null?b.a+' A':'-');\n      sel.appendChild(o);\n    });\n    var ts=$('waterInstance'); ts.length=1;\n    (d.tanks||[]).forEach(function(t){\n      var o=document.createElement('option'); o.value=t.id;\n      o.textContent='Tank '+t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');\n      ts.appendChild(o);\n    });\n    var fs=$('fuelInstance'); fs.length=1;\n    (d.fuelTanks||[]).forEach(function(t){\n      var o=document.createElement('option'); o.value=t.id;\n      o.textContent=t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');\n      fs.appendChild(o);\n    });\n    var c=d.config;\n    NUM.concat(STR).forEach(function(k){ $(k).value=c[k]; });\n    BOOL.forEach(function(k){ $(k).checked=!!c[k]; });\n    $('out').textContent='';\n  });\n}\n$('save').onclick=function(){\n  var c={}; NUM.forEach(function(k){c[k]=parseFloat($(k).value);}); STR.forEach(function(k){c[k]=$(k).value;}); BOOL.forEach(function(k){c[k]=$(k).checked;});\n  req('POST','/esp-dash/api/config',c,function(st,d){ $('out').textContent = st===200 ? 'Saved ✓' : ('Error: '+(d&&d.error||st)); if(st===200) load(); });\n};\n$('test').onclick=function(){ req('POST','/esp-dash/api/config',{testSeconds:30},function(st){ $('out').textContent = st===200?'Test alarm running for 30 s':'Error'; }); };\n$('reload').onclick=load;\nload();\n</script>\n</body>\n</html>\n",
+      "output": "str"
+    },
+    {
+      "id": "6802ea2e78aebd51",
+      "type": "http response",
+      "z": "057ae48bc2fee831",
+      "name": "Einstellungen antwort",
+      "x": 560,
+      "y": 700,
+      "wires": [],
+      "statusCode": "",
+      "headers": {
+        "Content-Type": "text/html; charset=utf-8"
+      }
+    }
+  ],
+  "configs": [
+    {
+      "id": "480c43bd8072dfc0",
+      "type": "mqtt-broker",
+      "name": "Cerbo GX (ESP-Dash)",
+      "broker": "192.168.0.116",
+      "port": "1883",
+      "clientid": "",
+      "autoConnect": true,
+      "usetls": false,
+      "protocolVersion": "4",
+      "keepalive": "60",
+      "cleansession": true,
+      "autoUnsubscribe": true,
+      "birthTopic": "",
+      "birthQos": "0",
+      "birthPayload": "",
+      "birthMsg": {},
+      "closeTopic": "",
+      "closeQos": "0",
+      "closePayload": "",
+      "closeMsg": {},
+      "willTopic": "",
+      "willQos": "0",
+      "willPayload": "",
+      "willMsg": {},
+      "userProps": "",
+      "sessionExpiry": ""
+    }
+  ]
+}

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SUKI Mini Dash Settings</title>
+<style>
+  body{margin:0;background:#000;color:#eee;font-family:-apple-system,"DejaVu Sans",Arial,sans-serif;padding:16px}
+  main{max-width:560px;margin:0 auto}
+  h1{font-size:22px;margin:4px 0 16px} h2{font-size:15px;color:#00d000;letter-spacing:2px;margin:22px 0 8px;text-transform:uppercase}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #222}
+  .row label{flex:1} .row small{display:block;color:#777;font-size:12px;margin-top:2px}
+  input[type=number],input[type=text],select{width:130px;background:#111;color:#fff;border:1px solid #333;border-radius:8px;padding:8px;font-size:16px}
+  input[type=checkbox]{width:22px;height:22px;accent-color:#00d000}
+  button{background:#00a000;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;font-weight:bold;cursor:pointer}
+  button.sec{background:#333} button.warn{background:#b00000}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px} #out{margin-top:12px;color:#aaa;min-height:20px}
+  a{color:#888}
+</style>
+</head>
+<body><main>
+<h1>SUKI Mini Dashboard – Settings</h1>
+<p><a href="/esp-dash">&larr; Back to dashboard</a></p>
+
+<h2>Display</h2>
+<div class="row"><label>Night mode<small>Black/red palette to preserve night vision</small></label><input type="checkbox" id="night"></div>
+
+<div class="row"><label>Alarm sound<small>Buzzer on the display, stops when acknowledged</small></label><input type="checkbox" id="soundOn"></div>
+<div class="row"><label>Sound in night mode</label><select id="soundNight"><option value="full">Full (beeps with blinking)</option><option value="short">Short beep every 2 s</option><option value="off">Silent</option></select></div>
+
+<h2>Wind</h2>
+<div class="row"><label>Wind alarm enabled</label><input type="checkbox" id="windAlarmOn"></div>
+<div class="row"><label>Alarm at (kn)<small>Average over the window set below</small></label><input type="number" id="windAlarmKn" min="5" max="80" step="1"></div>
+<div class="row"><label>Hysteresis (kn)<small>Alarm clears only below threshold minus hysteresis</small></label><input type="number" id="windHystKn" min="0" max="10" step="0.5"></div>
+<div class="row"><label>Averaging window (s)</label><input type="number" id="windAvgSec" min="2" max="120" step="1"></div>
+<div class="row"><label>Chart window</label><select id="windWinMin"><option value="2">2 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option><option value="180">3 h</option><option value="360">6 h</option></select></div>
+<div class="row"><label>Wind source</label><select id="windSource"><option value="auto">Auto (TWS, else AWS)</option><option value="true">True wind (TWS)</option><option value="apparent">Apparent wind (AWS)</option></select></div>
+
+<h2>Battery</h2>
+<div class="row"><label>Battery alarm enabled</label><input type="checkbox" id="battAlarmOn"></div>
+<div class="row"><label>Alarm below SOC (%)</label><input type="number" id="battLowSoc" min="5" max="95" step="1"></div>
+<div class="row"><label>Hysteresis (%)</label><input type="number" id="battHystSoc" min="0" max="20" step="1"></div>
+<div class="row"><label>Voltage fallback (V)<small>only used when no SOC is available, 0 = off</small></label><input type="number" id="battLowVolt" min="0" max="60" step="0.1"></div>
+<div class="row"><label>Battery (SignalK instance)</label><select id="battInstance"><option value="auto">Auto (lowest instance with SOC)</option></select></div>
+
+<h2>Water</h2>
+<div class="row"><label>Water alarm enabled</label><input type="checkbox" id="waterAlarmOn"></div>
+<div class="row"><label>Alarm below (%)</label><input type="number" id="waterLowPct" min="0" max="95" step="1"></div>
+<div class="row"><label>Hysteresis (%)</label><input type="number" id="waterHystPct" min="0" max="20" step="1"></div>
+<div class="row"><label>Tank (SignalK instance)</label><select id="waterInstance"><option value="auto">Auto (lowest instance)</option></select></div>
+
+<h2>Barometer</h2>
+<div class="row"><label>Pressure alarm enabled</label><input type="checkbox" id="baroAlarmOn"></div>
+<div class="row"><label>Alarm below (hPa)</label><input type="number" id="baroLowHpa" min="900" max="1050" step="1"></div>
+<div class="row"><label>Hysteresis (hPa)</label><input type="number" id="baroHystHpa" min="0" max="10" step="0.5"></div>
+<div class="row"><label>Chart window<small>Weather trends show over 1–3 h; short windows mostly show sensor noise</small></label><select id="baroWinMin"><option value="2">2 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option><option value="180">3 h</option><option value="360">6 h</option></select></div>
+
+<h2>Engine</h2>
+<div class="row"><label>Tachometer max (rpm)</label><input type="number" id="engMaxRpm" min="1000" max="6000" step="100"></div>
+<div class="row"><label>Red zone from (rpm)</label><input type="number" id="engRedRpm" min="500" max="6000" step="100"></div>
+<div class="row"><label>Green zone (rpm)<small>Economical cruising range</small></label><span><input type="number" id="engGreenFrom" min="0" max="6000" step="100" style="width:80px"> – <input type="number" id="engGreenTo" min="0" max="6000" step="100" style="width:80px"></span></div>
+<div class="row"><label>Diesel tank (SignalK)</label><select id="fuelInstance"><option value="auto">Auto (first fuel/diesel tank)</option></select></div>
+<div class="row"><label>Use fuel-rate sensor<small>If the engine sends fuel.rate via NMEA 2000; otherwise the curve below is used</small></label><input type="checkbox" id="fuelUseSensor"></div>
+<div class="row" style="flex-wrap:wrap"><label style="flex-basis:100%">Fuel curve (rpm:l/h)<small>Comma-separated points, linear in between — take the values from your engine manual</small></label><input type="text" id="fuelCurve" style="width:100%;margin-top:8px"></div>
+
+<h2>Anchor</h2>
+<div class="row"><label>Show anchor alarm<small>Status comes from Supabase (anchor-check)</small></label><input type="checkbox" id="anchorAlarmOn"></div>
+<div class="row"><label>Local fallback<small>Drag check against the last known anchor position while the cloud is unreachable</small></label><input type="checkbox" id="anchorLocalFallback"></div>
+
+<h2>General</h2>
+<div class="row"><label>Acknowledge stops blinking for (min)</label><input type="number" id="ackMinutes" min="1" max="120" step="1"></div>
+<div class="row"><label>Data stale after (s)</label><input type="number" id="staleSec" min="5" max="300" step="1"></div>
+<div class="row"><label>Time zone</label><input type="text" id="tz"></div>
+
+<div class="bar">
+  <button id="save">Save</button>
+  <button class="warn" id="test">Test alarm 30 s</button>
+  <button class="sec" id="reload">Reload</button>
+</div>
+<div id="out"></div>
+</main>
+<script>
+var NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec'];
+var BOOL = ['night','soundOn','baroAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback'];
+var STR = ['soundNight','fuelInstance','fuelCurve','windSource','battInstance','waterInstance','tz'];
+function $(id){return document.getElementById(id);}
+function req(method, url, body, cb){
+  var x = new XMLHttpRequest(); x.open(method, url); x.setRequestHeader('Content-Type','application/json');
+  x.onload = function(){ var d=null; try{d=JSON.parse(x.responseText);}catch(e){} cb(x.status, d); };
+  x.onerror = function(){ cb(0, null); }; x.send(body ? JSON.stringify(body) : null);
+}
+function load(){
+  req('GET','/esp-dash/api/config',null,function(st,d){
+    if(st!==200||!d){ $('out').textContent='Failed to load'; return; }
+    var sel=$('battInstance'); sel.length=1;
+    (d.batteries||[]).forEach(function(b){
+      var o=document.createElement('option'); o.value=b.id;
+      o.textContent='Instance '+b.id+' – '+(b.soc!=null?b.soc+' %':'no SOC')+', '+(b.v!=null?b.v+' V':'-')+', '+(b.a!=null?b.a+' A':'-');
+      sel.appendChild(o);
+    });
+    var ts=$('waterInstance'); ts.length=1;
+    (d.tanks||[]).forEach(function(t){
+      var o=document.createElement('option'); o.value=t.id;
+      o.textContent='Tank '+t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');
+      ts.appendChild(o);
+    });
+    var fs=$('fuelInstance'); fs.length=1;
+    (d.fuelTanks||[]).forEach(function(t){
+      var o=document.createElement('option'); o.value=t.id;
+      o.textContent=t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');
+      fs.appendChild(o);
+    });
+    var c=d.config;
+    NUM.concat(STR).forEach(function(k){ $(k).value=c[k]; });
+    BOOL.forEach(function(k){ $(k).checked=!!c[k]; });
+    $('out').textContent='';
+  });
+}
+$('save').onclick=function(){
+  var c={}; NUM.forEach(function(k){c[k]=parseFloat($(k).value);}); STR.forEach(function(k){c[k]=$(k).value;}); BOOL.forEach(function(k){c[k]=$(k).checked;});
+  req('POST','/esp-dash/api/config',c,function(st,d){ $('out').textContent = st===200 ? 'Saved ✓' : ('Error: '+(d&&d.error||st)); if(st===200) load(); });
+};
+$('test').onclick=function(){ req('POST','/esp-dash/api/config',{testSeconds:30},function(st){ $('out').textContent = st===200?'Test alarm running for 30 s':'Error'; }); };
+$('reload').onclick=load;
+load();
+</script>
+</body>
+</html>

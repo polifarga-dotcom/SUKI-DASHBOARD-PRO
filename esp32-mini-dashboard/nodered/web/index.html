@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SUKI Mini Dash</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:"DejaVu Sans",Verdana,Arial,sans-serif;overflow:hidden}
+  #wrap{position:absolute;left:50%;top:50%;width:800px;height:480px;transform-origin:center;}
+  #scr{position:absolute;inset:0;background:#000;outline:1px solid #222;cursor:pointer;user-select:none}
+  #scr.red{background:#d00000}
+  .hdr{position:absolute;left:16px;right:16px;top:10px;height:50px;display:flex;align-items:center;justify-content:space-between}
+  .boat{font-size:30px;font-weight:bold;letter-spacing:2px}
+  .time{font-size:30px;color:#bbb}
+  .red .time{color:#fff}
+  .utc{font-size:18px;color:#777;margin-left:12px}
+  .red .utc{color:#fff}
+  .stat{display:flex;align-items:center;gap:12px;font-size:22px;font-weight:bold}
+  .dot{width:30px;height:30px;border-radius:50%;background:#555}
+  .dot.ok{background:#00d000;box-shadow:0 0 14px #00d000}
+  .dot.warn{background:#ffa000}
+  .dot.alarm{background:#ff2020}
+  .red .dot.alarm{background:#fff}
+  .tile{position:absolute;top:72px;width:248px;height:320px;border:2px solid #333;border-radius:14px;box-sizing:border-box}
+  .tile.alarm{border:5px solid #ff2020}
+  .red .tile{border-color:#fff}
+  .tile.half{height:154px}
+  .tile.h2{top:238px}
+  .httl{position:absolute;top:11px;left:16px;font-size:17px;color:#999;letter-spacing:1px}
+  .hthr{position:absolute;top:12px;right:16px;font-size:15px;color:#777}
+  .hbig{position:absolute;top:40px;left:0;right:0;text-align:center;font-size:56px;font-weight:bold;line-height:1}
+  .hbig small{font-size:24px;font-weight:normal;margin-left:4px}
+  .hbar{position:absolute;left:24px;right:24px;top:104px;height:8px;border-radius:4px;background:#222}
+  .hbar i{display:block;height:100%;border-radius:4px;background:#00d000}
+  .hsub{position:absolute;top:120px;left:0;right:0;text-align:center;font-size:18px;color:#bbb}
+  .red .httl,.red .hthr,.red .hsub{color:#fff}
+  .hbig.aw{font-size:44px;top:46px}
+  .hbig.aw small{font-size:18px}
+  /* Anker aktiv: Wort höher, Distanz darunter, Button unten */
+  #ta.act .hbig.aw{top:36px;font-size:38px} #ta.act .hsub{top:80px}
+  .aup{position:absolute;left:16px;right:16px;top:108px;height:34px;border-radius:8px;border:2px solid #888;background:#111;color:#ddd;font:bold 16px "DejaVu Sans",Verdana,sans-serif;letter-spacing:2px;cursor:pointer;z-index:2}
+  .aup.confirm{background:#ffa000;border-color:#ffa000;color:#000}
+  .aup.busy{opacity:.6}
+  .aup.err{border-color:#ff3030;color:#ff3030}
+  .night .aup{background:#100000;border-color:#700000;color:#a00000}
+  .night .aup.confirm{background:#a03000;border-color:#a03000;color:#000}
+  .red .aup{background:transparent;border-color:#fff;color:#fff}
+  .bchart{position:absolute;inset:0;width:100%;height:100%;border-radius:12px}
+  .ca{fill:rgba(42,157,244,.12)} .cl{fill:none;stroke:rgba(42,157,244,.45);stroke-width:2}
+  .alarm .ca{fill:rgba(255,48,48,.15)} .alarm .cl{stroke:rgba(255,48,48,.6)}
+  .night .ca{fill:rgba(160,0,0,.15)} .night .cl{stroke:rgba(160,0,0,.5)}
+  .red .ca{fill:rgba(255,255,255,.12)} .red .cl{stroke:rgba(255,255,255,.6)}
+  .httl,.hthr,.hbig,.hsub,.ttl,.big,.sub{z-index:1}
+  .t1{left:12px}.t2{left:276px}.t3{left:540px}
+  .ttl{position:absolute;top:14px;left:0;right:0;text-align:center;font-size:22px;color:#999;letter-spacing:3px}
+  .red .ttl,.red .sub{color:#fff}
+  .big{position:absolute;top:70px;left:0;right:0;text-align:center;font-size:92px;font-weight:bold;line-height:1}
+  .big small{font-size:34px;font-weight:normal;margin-left:4px}
+  .big.word{font-size:52px;top:92px}
+  .sub{position:absolute;left:0;right:0;text-align:center;font-size:22px;color:#bbb}
+  .s1{top:196px}.s2{top:232px}.s3{top:268px;font-size:18px;color:#777}
+  .bar{position:absolute;left:24px;right:24px;top:180px;height:10px;border-radius:5px;background:#222;display:none}
+  .bar i{display:block;height:100%;border-radius:5px;background:#00d000}
+  .water-c{color:#2a9df4}
+  .red .water-c{color:#fff}
+  .ok-c{color:#00d000}.warn-c{color:#ffa000}.alarm-c{color:#ff3030}
+  .red .ok-c,.red .warn-c,.red .alarm-c{color:#fff}
+  .ftr{position:absolute;left:16px;right:16px;top:398px;height:64px;display:flex;flex-direction:column;justify-content:center;text-align:center}
+  .msg{font-size:24px;font-weight:bold}
+  .hint{font-size:18px;color:#aaa;margin-top:4px}
+  .red .hint{color:#fff}
+  #gbtn{position:absolute;left:72px;top:2px;width:46px;height:46px;border-radius:50%;border:2px solid #444;color:#888;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
+  .night #gbtn{border-color:#600000;color:#900000}
+  .red #gbtn{border-color:#fff;color:#fff}
+  #nbtn{position:absolute;left:16px;top:2px;width:46px;height:46px;box-sizing:border-box;border-radius:50%;border:2px solid #444;background:transparent;color:#888;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+  /* ── Nachtmodus: schwarz/rot ── */
+  #scr.night{color:#c00000}
+  .night .time{color:#a00000}
+  .night .ttl,.night .httl{color:#900000}
+  .night .sub,.night .hsub{color:#a00000}
+  .night .s3,.night .hthr,.night .utc{color:#700000}
+  .night .tile{border-color:#400000}
+  .night .tile.alarm{border-color:#ff2020}
+  .night .ok-c,.night .water-c{color:#d00000}
+  .night .warn-c{color:#d04000}
+  .night .dot.ok{background:#900000;box-shadow:none}
+  .night .dot.warn{background:#d04000}
+  .night .hbar{background:#200000}
+  .night .hbar i{background:#b00000 !important}
+  .night .hint{color:#900000}
+  .night #nbtn{border-color:#c00000;color:#c00000}
+  #scr.night.red{background:#900000}
+  #scr.night.red,#scr.night.red *{color:#000 !important;border-color:#000 !important}
+  .night.red .dot{background:#000 !important}
+  .night.red .hbar{background:#000}
+  /* ── Screen 2: Victron Energy Flow (Stil wie VictronCard der Pro App) ── */
+  .eb{position:absolute;width:220px;height:132px;box-sizing:border-box;background:#0d2d4a;border:1px solid #1e4466;border-radius:8px;padding:12px 14px}
+  .eb.ec{border-color:#3d6f9e}
+  .eb.on{background:#1565c0;border-color:#5f93d6}
+  .eh{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:600;color:rgba(255,255,255,.65)}
+  .eh svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
+  .ev{font-size:38px;font-weight:300;color:#fff;margin-top:8px;font-variant-numeric:tabular-nums}
+  .ev.st{font-size:28px;margin-top:14px}
+  .ev small{font-size:20px;color:rgba(255,255,255,.55)}
+  .es{font-size:15px;color:rgba(255,255,255,.6);margin-top:2px;font-variant-numeric:tabular-nums}
+  .cn{position:absolute}
+  .cn.h::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:rgba(255,255,255,.08)}
+  .cn.v::before{content:'';position:absolute;top:0;bottom:0;left:0;width:3px;background:rgba(255,255,255,.08)}
+  .cn.on::before{background:rgba(100,170,255,.8)}
+  .cn.on::after{content:'';position:absolute;border:6px solid transparent}
+  .cn.h.r.on::after{top:-5px;border-left:10px solid #8cc8ff;animation:ar 1.1s linear infinite,af 1.1s ease-in-out infinite}
+  .cn.h.l.on::after{top:-5px;border-right:10px solid #8cc8ff;animation:al 1.1s linear infinite,af 1.1s ease-in-out infinite}
+  .cn.v.u.on::after{left:-5px;border-bottom:10px solid #8cc8ff;animation:au 1.1s linear infinite,af 1.1s ease-in-out infinite}
+  .cn.v.d.on::after{left:-5px;border-top:10px solid #8cc8ff;animation:ad 1.1s linear infinite,af 1.1s ease-in-out infinite}
+  @keyframes ar{from{left:-10px}to{left:calc(100% + 2px)}}
+  @keyframes al{from{right:-10px}to{right:calc(100% + 2px)}}
+  @keyframes au{from{bottom:-10px}to{bottom:calc(100% + 2px)}}
+  @keyframes ad{from{top:-10px}to{top:calc(100% + 2px)}}
+  @keyframes af{0%{opacity:0}15%{opacity:1}85%{opacity:1}100%{opacity:0}}
+  /* ── Screen 3: Wetter ── */
+  .wb{position:absolute;box-sizing:border-box;border:2px solid #333;border-radius:14px}
+  .wd{width:248px;height:118px}
+  .wb > div{position:absolute;white-space:nowrap}
+  .wicon svg{width:100%;height:100%}
+  .wttl{font-size:16px;color:#999;letter-spacing:2px}
+  .wbig{font-size:72px;font-weight:bold;line-height:1}
+  .wmm{font-size:20px;color:#bbb}
+  .wl1{font-size:20px;color:#ddd}
+  .wsep{left:470px;top:20px;bottom:20px;width:1px;background:#2a2a2a}
+  .wrow{left:494px;height:34px;display:flex;align-items:center;gap:14px;font-size:22px;color:#eee}
+  .wrow small{font-size:16px;color:#999;margin-left:8px}
+  .wsi{width:28px;height:28px;display:inline-flex}
+  .wsi svg{width:28px;height:28px}
+  .wupd{left:22px;top:166px;width:132px;text-align:center;font-size:12px;color:#555}
+  .wupd.old{color:#ffa000}
+  .wd .dt{left:18px;top:14px;font-size:15px;color:#999;letter-spacing:2px}
+  .wd .di{left:12px;top:42px;width:56px;height:56px}
+  .wd .dl{left:80px;display:flex;align-items:center;gap:7px;font-size:16px;color:#bbb}
+  .wd .dl b{font-size:24px;color:#fff;font-weight:bold}
+  .wd .dg{color:#777} .night .wd .dg{color:#700000} .red .wd .dg{color:#fff}
+  .wd .dl .wsi,.wd .dl .wsi svg{width:18px;height:18px}
+  .wx-wind{fill:none;stroke:#9fb4c8;stroke-width:2.2;stroke-linecap:round}
+  .wx-sun{fill:#ffc400} .wx-ray{stroke:#ffc400;stroke-width:3.5;stroke-linecap:round}
+  .wx-cl{fill:#c8cdd2} .wx-cl2{fill:#8a9096}
+  .wx-rain{stroke:#2a9df4;stroke-width:3.5;stroke-linecap:round} .wx-drop{fill:#2a9df4}
+  .wx-bolt{fill:#ffc400} .wx-fog{stroke:#c8cdd2;stroke-width:4;stroke-linecap:round}
+  .wx-moon{fill:#e8e4c8} .wx-mdark{fill:#2a2a2a}
+  .night .wb{border-color:#400000} .night .wsep{background:#300000}
+  .night .wmm,.night .wrow small,.night .wd .dl{color:#900000} .night .wrow,.night .wd .dl b{color:#c00000} .night .wx-wind{stroke:#a00000}
+  .red .wsep{background:#fff} .red .wx-wind{stroke:#fff}
+  .night .wttl,.night .wupd,.night .wl2,.night .wd .dt,.night .wd .dl{color:#900000}
+  .night .wbig,.night .wl1,.night .wsm,.night .wd .dl b{color:#c00000}
+  .night .wbig small{color:#900000}
+  .night .wx-sun,.night .wx-bolt,.night .wx-moon,.night .wx-drop{fill:#c00000} .night .wx-ray,.night .wx-rain{stroke:#c00000}
+  .night .wx-cl{fill:#700000} .night .wx-cl2{fill:#500000} .night .wx-fog{stroke:#700000} .night .wx-mdark{fill:#200000}
+  .red .wb{border-color:#fff} .red .wb div,.red .wb small,.red .wb b{color:#fff !important}
+  /* ── Screen 4: Motor ── */
+  .et{width:189px;height:100px}
+  .ev2{position:absolute;left:16px;top:34px;font-size:34px;font-weight:bold;white-space:nowrap}
+  .ev2 small{font-size:17px;font-weight:normal;color:#999;margin-left:5px}
+  .es2{position:absolute;left:16px;top:74px;font-size:14px;color:#777;white-space:nowrap}
+  .ebar{position:absolute;left:16px;right:16px;bottom:16px;height:8px;border-radius:4px;background:#222}
+  .ebar i{display:block;height:100%;border-radius:4px;background:#ffc400}
+  .efl{position:absolute;right:16px;top:46px;font-size:18px;color:#bbb;white-space:nowrap}
+  .night .efl{color:#800000} .red .efl{color:#fff} .red .ebar i{background:#fff}
+  .t-face{fill:url(#tface)} .t-bezel{fill:none;stroke:#3a3a3a;stroke-width:2}
+  .t-tick{stroke:#666;stroke-width:1.5} .t-maj{stroke:#eee;stroke-width:4} .t-num{fill:#ddd;font-size:20px;font-weight:bold;font-style:italic;font-family:inherit;text-anchor:middle;dominant-baseline:middle}
+  .t-track{stroke:#1c1c1c} .t-val{stroke:#4fc3f7} .t-valr{stroke:#ff3b30} .t-zg{stroke:#00c853} .t-zr{stroke:#e00000}
+  .t-ndl{fill:#ff3b30} .t-hub{fill:#222;stroke:#ff3b30;stroke-width:3}
+  .t-pill{fill:#111;stroke:#333;stroke-width:1.5} .t-rpm{fill:#fff;font-size:40px;font-weight:bold;font-style:italic;text-anchor:middle}
+  .t-unit{fill:#888;font-size:13px;text-anchor:middle;letter-spacing:3px} .t-logo{fill:#bbb}
+  .night .ev2{color:#c00000} .night .ev2 small,.night .es2{color:#800000} .night .ebar{background:#200000} .night .ebar i{background:#a00000}
+  .night .t-tick{stroke:#500000} .night .t-maj{stroke:#a00000} .night .t-num{fill:#900000} .night .t-track{stroke:#1a0000}
+  .night .t-val{stroke:#900000} .night .t-valr,.night .t-zr{stroke:#ff2020} .night .t-zg{stroke:#600000} .night .t-ndl{fill:#e00000}
+  .night .t-hub{fill:#100000;stroke:#e00000} .night .t-pill{fill:#0a0000;stroke:#300000} .night .t-rpm{fill:#c00000}
+  .night .t-unit,.night .t-logo{fill:#800000} .night .t-bezel{stroke:#300000} .night #tface stop{stop-color:#000 !important}
+  .night .ebar i{background:#a00000 !important}
+  .red .ev2,.red .es2,.red .ev2 small{color:#fff} .red .t-tick,.red .t-maj,.red .t-val,.red .t-valr,.red .t-zg,.red .t-zr,.red .t-bezel{stroke:#fff} .red .t-track{stroke:none} .red .t-ndl{fill:#fff} .red .t-hub{stroke:#fff;fill:none} .red .t-pill{fill:none;stroke:#fff} .red .t-logo{fill:#fff} .red #tface stop{stop-color:transparent !important}
+  .red .t-num,.red .t-rpm,.red .t-unit{fill:#fff}
+  /* ── Screen 5: Anker (wie Anchor-Seite der Pro App) ── */
+  .amap{position:absolute;left:12px;top:72px;width:476px;height:320px;border:2px solid #333;border-radius:14px;overflow:hidden;box-sizing:border-box}
+  #amap{position:absolute;inset:0;width:100%;height:100%;background:#050b12}
+  .r-ring{fill:none;stroke:#1d2b38;stroke-width:1;stroke-dasharray:3 5} .r-lbl{fill:#4a6070;font-size:11px}
+  .r-rad{fill-opacity:.08;stroke-width:2.5} .r-trk{fill:none;stroke:#00c8ff;stroke-width:1.6;opacity:.65}
+  .r-chain{stroke:#fff;stroke-width:1.5;stroke-dasharray:4 4;opacity:.6} .r-boat{fill:#00c8ff;stroke:#000;stroke-width:1}
+  .r-n{fill:#ddd;font-size:13px;font-weight:bold;text-anchor:middle} .r-nar{fill:#ddd} .r-scale{fill:#9ab;font-size:12px}
+  .night #amap{background:#000} .night .r-ring{stroke:#260000} .night .r-lbl,.night .r-scale{fill:#600000}
+  .night .r-trk{stroke:#900000} .night .r-chain{stroke:#900000} .night .r-boat{fill:#d00000} .night .r-n,.night .r-nar{fill:#900000}
+  .red #amap{background:transparent} .red .r-ring,.red .r-trk,.red .r-chain{stroke:#fff} .red .r-boat,.red .r-n,.red .r-nar,.red .r-lbl,.red .r-scale{fill:#fff}
+  .mbtns{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:8px;z-index:500}
+  .mbtns button{width:40px;height:40px;border-radius:50%;border:2px solid #555;background:rgba(0,0,0,.65);color:#ddd;font:bold 22px "DejaVu Sans",sans-serif;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+  .mnote{position:absolute;left:12px;bottom:8px;z-index:500;font-size:12px;color:#9ab}
+  .apanel{position:absolute;left:500px;top:72px;width:288px;height:320px}
+  .ahead{position:absolute;left:0;right:0;top:0;height:46px;border:2px solid #333;border-radius:12px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;box-sizing:border-box}
+  .ahead #a-st{font-size:24px;font-weight:bold;letter-spacing:1px}
+  .asub{font-size:15px;color:#aaa}
+  .apanel.alarm .ahead{border:4px solid #ff2020}
+  .acells{position:absolute;left:0;right:0;top:52px;display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .acells div{border:1px solid #2a2a2a;border-radius:8px;padding:2px 10px;height:30px;display:flex;flex-direction:column;justify-content:center}
+  .acells i{font-style:normal;font-size:11px;color:#888;letter-spacing:1px}
+  .acells b{font-size:15px;color:#eee;white-space:nowrap}
+  .arow{position:absolute;left:0;right:0;height:36px;display:flex;align-items:center;gap:6px}
+  .al{width:74px;font-size:13px;color:#999;letter-spacing:1px}
+  .av{flex:1;font-size:18px;font-weight:bold;color:#fff;white-space:nowrap}
+  .arow button{width:46px;height:34px;border-radius:8px;border:2px solid #555;background:#111;color:#eee;font:bold 22px "DejaVu Sans",sans-serif;cursor:pointer;padding:0}
+  .arow button:disabled{opacity:.3}
+  .abtns{position:absolute;left:0;right:0;top:252px;height:56px;display:flex;gap:8px}
+  .abtns button{flex:1;border-radius:10px;border:2px solid #777;background:#111;color:#fff;font:bold 15px "DejaVu Sans",sans-serif;letter-spacing:1px;cursor:pointer;padding:0}
+  .abtns button.pri{border-color:#00b050;color:#00e060}
+  .abtns button.dan{border-color:#ff3030;color:#ff5050}
+  .abtns button.confirm{background:#ffa000;border-color:#ffa000;color:#000}
+  .abtns button.busy{opacity:.5}
+  .amsg{position:absolute;right:0;top:-22px;font-size:13px;color:#ffa000}
+  .night .amap,.night .ahead{border-color:#400000} .night .ahead #a-st,.night .av,.night .acells b{color:#c00000}
+  .night .asub,.night .al,.night .acells i,.night .mnote{color:#800000} .night .acells div{border-color:#300000}
+  .night .mbtns button,.night .arow button,.night .abtns button{border-color:#600000;color:#c00000;background:#0a0000}
+  .night .abtns button.confirm{background:#a03000;color:#000}
+  .red .ahead,.red .amap{border-color:#fff} .red .ahead #a-st,.red .asub{color:#fff}
+  .dots{position:absolute;left:0;right:0;top:470px;display:flex;justify-content:center;gap:10px}
+  .dots i{width:7px;height:7px;border-radius:50%;background:#333}
+  .dots i.on{background:#999}
+  .night .eb{background:#1a0000;border-color:#400000}
+  .night .eb.on{background:#4a0000;border-color:#800000}
+  .night .eh,.night .es,.night .ev small{color:#900000}
+  .night .ev{color:#c00000}
+  .night .cn.on::before{background:#a00000}
+  .night .cn.on::after{border-left-color:transparent;border-right-color:transparent;border-top-color:transparent;border-bottom-color:transparent}
+  .night .cn.h.r.on::after{border-left-color:#d00000}.night .cn.h.l.on::after{border-right-color:#d00000}
+  .night .cn.v.u.on::after{border-bottom-color:#d00000}.night .cn.v.d.on::after{border-top-color:#d00000}
+  .night .dots i{background:#300000}.night .dots i.on{background:#900000}
+  .red .eb{background:transparent !important;border-color:#fff}
+  .red .eh,.red .ev,.red .es,.red .ev small{color:#fff}
+</style>
+</head>
+<body>
+<div id="wrap"><div id="scr">
+  <div class="hdr">
+    <div></div>
+    <button id="nbtn" aria-label="Night mode"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="currentColor"/></svg></button>
+    <a id="gbtn" href="/esp-dash/settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="24" height="24"><g fill="currentColor"><rect x="10.5" y="1.5" width="3" height="5" rx="1"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(45 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(90 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(135 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(180 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(225 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(270 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(315 12 12)"/></g><circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="3"/></svg></a>
+    <div class="time"><span id="time">--:--</span><span class="utc" id="utc"></span></div>
+    <div class="stat"><span id="stxt">...</span><div class="dot" id="dot"></div></div>
+  </div>
+
+  <div class="page" id="p1">
+  <div class="tile t1 half" id="tb">
+    <div class="httl">BATTERY</div><div class="hthr" id="bthr"></div>
+    <div class="hbig" id="bsoc">--<small>%</small></div>
+    <div class="hbar"><i id="bfill" style="width:0"></i></div>
+    <div class="hsub" id="bva">-- V   -- A</div>
+  </div>
+  <div class="tile t1 half h2" id="tf">
+    <div class="httl">WATER</div><div class="hthr" id="fthr"></div>
+    <div class="hbig" id="fpct">--<small>%</small></div>
+    <div class="hbar"><i id="ffill" style="width:0"></i></div>
+    <div class="hsub" id="fl">-- l</div>
+  </div>
+
+  <div class="tile t2" id="tw">
+    <svg class="bchart" viewBox="0 0 248 320" preserveAspectRatio="none"><path class="ca" id="warea"/><path class="cl" id="wline"/></svg>
+    <div class="ttl">WIND</div>
+    <div class="big" id="wkn">--<small>kn</small></div>
+    <div class="sub s1" id="wsrc">--</div>
+    <div class="sub s2" id="wmax">Max 10' -- kn</div>
+    <div class="sub s3" id="wthr">Alarm at -- kn</div>
+  </div>
+
+  <div class="tile t3 half" id="ta">
+    <div class="httl">ANCHOR</div><div class="hthr" id="acloud"></div>
+    <div class="hbig aw" id="ast">--</div>
+    <div class="hsub" id="adist"></div>
+    <button class="aup" id="aup" style="display:none">ANCHOR UP</button>
+  </div>
+  <div class="tile t3 half h2" id="tp">
+    <svg class="bchart" id="bchart" viewBox="0 0 248 154" preserveAspectRatio="none"><path class="ca" id="barea"/><path class="cl" id="bline"/></svg>
+    <div class="httl">BARO</div><div class="hthr" id="pthr"></div>
+    <div class="hbig aw" id="phpa">--<small>hPa</small></div>
+    <div class="hsub" id="pdelta"></div>
+  </div>
+
+  </div>
+
+  <div class="page" id="p2" style="display:none">
+    <div class="eb" id="eb-shore" style="left:20px;top:78px">
+      <div class="eh"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><line x1="8" y1="4" x2="8" y2="12"/><line x1="5" y1="6.5" x2="11" y2="6.5"/></svg>Shore</div>
+      <div class="ev" id="ev-shore">--</div><div class="es" id="es-shore"></div>
+    </div>
+    <div class="eb ec" id="eb-inv" style="left:290px;top:78px">
+      <div class="eh"><svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M8 6 L5.5 8 L8 10 M8 6 L10.5 8 L8 10"/></svg>Inverter / Charger</div>
+      <div class="ev st" id="ev-inv">--</div><div class="es" id="es-inv"></div>
+    </div>
+    <div class="eb" id="eb-ac" style="left:560px;top:78px">
+      <div class="eh"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="5.5" x2="5" y2="10.5"/><line x1="11" y1="5.5" x2="11" y2="10.5"/></svg>AC Loads</div>
+      <div class="ev" id="ev-ac">--</div><div class="es"></div>
+    </div>
+    <div class="eb" id="eb-pv" style="left:20px;top:254px">
+      <div class="eh"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="15"/><line x1="1" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="15" y2="8"/><line x1="3" y1="3" x2="4.5" y2="4.5"/><line x1="11.5" y1="11.5" x2="13" y2="13"/><line x1="13" y1="3" x2="11.5" y2="4.5"/><line x1="4.5" y1="11.5" x2="3" y2="13"/></svg>Solar yield</div>
+      <div class="ev" id="ev-pv">--</div><div class="es" id="es-pv"></div>
+    </div>
+    <div class="eb ec" id="eb-bat" style="left:290px;top:254px">
+      <div class="eh"><svg viewBox="0 0 16 16"><rect x="1" y="4" width="12" height="8" rx="1.5"/><line x1="13" y1="7" x2="15" y2="7"/><line x1="13" y1="9" x2="15" y2="9"/></svg>Battery</div>
+      <div class="ev" id="ev-bat">--</div><div class="es" id="es-bat"></div><div class="es" id="es-bat2"></div>
+    </div>
+    <div class="eb" id="eb-dc" style="left:560px;top:254px">
+      <div class="eh"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="6" x2="5" y2="10"/><line x1="8" y1="6" x2="8" y2="10"/></svg>DC Loads</div>
+      <div class="ev" id="ev-dc">--</div><div class="es"></div>
+    </div>
+    <div class="cn h" id="cn-shore" style="left:240px;top:143px;width:50px"></div>
+    <div class="cn h" id="cn-ac" style="left:510px;top:143px;width:50px"></div>
+    <div class="cn h" id="cn-pv" style="left:240px;top:319px;width:50px"></div>
+    <div class="cn h" id="cn-dc" style="left:510px;top:319px;width:50px"></div>
+    <div class="cn v" id="cn-bat" style="left:399px;top:210px;height:44px"></div>
+  </div>
+
+  <div class="page" id="p3" style="display:none">
+    <div class="wb" style="left:12px;top:72px;width:776px;height:190px">
+      <div class="wicon" id="w-icon" style="left:22px;top:22px;width:132px;height:132px"></div>
+      <div class="wttl" style="left:180px;top:20px" id="w-day">TODAY</div>
+      <div class="wbig" style="left:178px;top:48px"><span id="w-temp">--</span></div>
+      <div class="wmm" style="left:180px;top:126px" id="w-mm"></div>
+      <div class="wl1" style="left:180px;top:152px" id="w-txt"></div>
+      <div class="wsep"></div>
+      <div class="wrow" style="top:20px"><span class="wsi" id="wi-wind"></span><span id="w-wind"></span></div>
+      <div class="wrow" style="top:58px"><span class="wsi" id="wi-rain"></span><span id="w-rain"></span></div>
+      <div class="wrow" style="top:96px"><span class="wsi" id="wi-sun"></span><span id="w-sun"></span></div>
+      <div class="wrow" style="top:134px"><span class="wsi" id="wi-moon"></span><span id="w-moon"></span></div>
+      <div class="wupd" id="w-upd"></div>
+    </div>
+    <div class="wb wd" id="wd0" style="left:12px;top:274px"></div>
+    <div class="wb wd" id="wd1" style="left:276px;top:274px"></div>
+    <div class="wb wd" id="wd2" style="left:540px;top:274px"></div>
+  </div>
+
+  <div class="page" id="p4" style="display:none">
+    <div class="tile" style="left:12px;top:72px;width:376px;height:320px">
+      <svg id="tacho" viewBox="0 0 376 320" style="position:absolute;inset:0;width:100%;height:100%"></svg>
+    </div>
+    <div class="tile et" style="left:400px;top:72px"><div class="httl">TEMP</div><div class="ev2" id="e-temp">--</div><div class="es2" id="e-temp2"></div></div>
+    <div class="tile et" style="left:599px;top:72px"><div class="httl">HOURS</div><div class="ev2" id="e-hrs">--</div><div class="es2">engine hours</div></div>
+    <div class="tile et" style="left:400px;top:182px"><div class="httl">FUEL RATE</div><div class="ev2" id="e-lph">--</div><div class="es2" id="e-lph2"></div></div>
+    <div class="tile et" style="left:599px;top:182px"><div class="httl">DIESEL</div><div class="ev2" id="e-fuel" style="top:30px">--</div>
+      <div class="efl" id="e-fuel2"></div><div class="ebar"><i id="e-fbar"></i></div></div>
+    <div class="tile et" style="left:400px;top:292px;width:388px"><div class="httl">RANGE AT CURRENT RPM</div>
+      <div class="ev2" id="e-rh" style="left:16px">--</div><div class="ev2" id="e-rnm" style="left:200px"></div><div class="es2" id="e-r2"></div></div>
+  </div>
+
+  <div class="page" id="p5" style="display:none">
+    <div class="amap"><svg id="amap" viewBox="0 0 476 320"></svg>
+      <div class="mbtns"><button id="mz-in">+</button><button id="mz-out">−</button><button id="mz-fit" title="Reset zoom">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
+      <div class="mnote" id="anote"></div>
+    </div>
+    <div class="apanel">
+      <div class="ahead"><span id="a-st">--</span><span class="asub" id="a-sub"></span></div>
+      <div class="acells">
+        <div><i>DIST</i><b id="a-dist">--</b></div><div><i>DEPTH</i><b id="a-depth">--</b></div>
+        <div><i id="a-scl">SCOPE</i><b id="a-scope">--</b></div><div><i>BEARING</i><b id="a-brg">--</b></div>
+      </div>
+      <div class="arow" style="top:126px"><span class="al">RADIUS</span><span class="av" id="v-rad">--</span><button data-k="rad" data-d="-5">−</button><button data-k="rad" data-d="5">+</button></div>
+      <div class="arow" style="top:166px"><span class="al">CHAIN</span><span class="av" id="v-chain">--</span><button data-k="chain" data-d="-1">−</button><button data-k="chain" data-d="1">+</button></div>
+      <div class="arow" style="top:206px"><span class="al">BEARING</span><span class="av" id="v-brg">--</span><button data-k="brg" data-d="-5">−</button><button data-k="brg" data-d="5">+</button></div>
+      <div class="abtns" id="abtns"></div>
+      <div class="amsg" id="amsg"></div>
+    </div>
+  </div>
+
+  <div class="dots"><i id="d1" class="on"></i><i id="d2"></i><i id="d3"></i><i id="d4"></i><i id="d5"></i></div>
+  <div class="ftr"><div class="msg" id="msg"></div><div class="hint" id="hint"></div></div>
+</div></div>
+
+<script>
+var S = null, lastOk = 0, phase = false;
+var $ = function (id) { return document.getElementById(id); };
+
+function fit() {
+  var k = Math.min(window.innerWidth / 800, window.innerHeight / 480);
+  $('wrap').style.transform = 'translate(-50%,-50%) scale(' + k + ')';
+}
+window.addEventListener('resize', fit); fit();
+
+function poll() {
+  var x = new XMLHttpRequest();
+  x.open('GET', '/esp-dash/api/state?_=' + Date.now());
+  x.timeout = 2500;
+  x.onload = function () { try { S = JSON.parse(x.responseText); lastOk = Date.now(); } catch (e) {} render(); };
+  x.onerror = x.ontimeout = function () { render(); };
+  x.send();
+}
+
+function cls(st) { return st === 'alarm' ? 'alarm-c' : st === 'ok' ? 'ok-c' : st === 'off' ? '' : 'warn-c'; }
+function fmt(v, d) { return v == null ? '--' : (d ? v.toFixed(d) : String(v)); }
+
+function render() {
+  var offline = Date.now() - lastOk > 10000;
+  var s = offline ? null : S;
+  var status = s ? s.status : 'warn';
+  var blink = s && s.blink;
+  $('scr').className = (s && s.night ? 'night ' : '') + (blink && phase ? 'red' : '');
+  $('dot').className = 'dot ' + status;
+  $('stxt').textContent = !s ? 'OFFLINE' : status === 'ok' ? 'ALL OK' : status === 'alarm' ? 'ALARM' : 'WARNING';
+  $('time').textContent = s ? s.time : '--:--';
+  $('utc').textContent = s && s.utc ? 'UTC ' + s.utc : '';
+
+  var b = s ? s.batt : { st: 'na' };
+  $('tb').className = 'tile t1 half' + (b.st === 'alarm' ? ' alarm' : '');
+  $('bsoc').innerHTML = fmt(b.soc) + '<small>%</small>';
+  $('bsoc').className = 'hbig ' + cls(b.st);
+  $('bfill').style.width = (b.soc == null ? 0 : Math.max(0, Math.min(100, b.soc))) + '%';
+  $('bfill').style.background = b.st === 'alarm' ? '#ff3030' : '#00d000';
+  $('bva').textContent = fmt(b.v, 2) + ' V   ' + fmt(b.a, 1) + ' A';
+  $('bthr').textContent = b.thr != null ? '< ' + b.thr + ' %' : '';
+
+  var f = (s && s.water) || { st: 'na' };
+  $('tf').className = 'tile t1 half h2' + (f.st === 'alarm' ? ' alarm' : '');
+  $('fpct').innerHTML = fmt(f.pct) + '<small>%</small>';
+  $('fpct').className = 'hbig ' + (f.st === 'ok' ? 'water-c' : cls(f.st));
+  $('ffill').style.width = (f.pct == null ? 0 : Math.max(0, Math.min(100, f.pct))) + '%';
+  $('ffill').style.background = f.st === 'alarm' ? '#ff3030' : '#2a9df4';
+  $('fl').textContent = f.l != null ? f.l + ' l of ' + f.cap + ' l' : '-- l';
+  $('fthr').textContent = f.thr != null ? '< ' + f.thr + ' %' : '';
+
+  var w = s ? s.wind : { st: 'na' };
+  $('tw').className = 'tile t2' + (w.st === 'alarm' ? ' alarm' : '');
+  $('wkn').innerHTML = fmt(w.kn, 1) + '<small>kn</small>';
+  $('wkn').className = 'big ' + cls(w.st);
+  $('wsrc').textContent = w.src ? w.src + ' (avg)' : '--';
+  $('wmax').textContent = "Max 10' " + fmt(w.max, 1) + ' kn';
+  $('wthr').textContent = 'Alarm at ' + fmt(w.thr) + ' kn' + (w.win ? '  ·  ' + winLabel(w.win) : '');
+  drawChart('warea', 'wline', w.hist || [], 248, 320, 120, 312, true);
+
+  var a = s ? s.anchor : { st: 'na' };
+  $('ta').className = 'tile t3 half' + (a.st === 'alarm' ? ' alarm' : '') + (a.act ? ' act' : '');
+  renderAup(s && a.act);
+  $('ast').textContent = a.st === 'alarm' ? 'ALARM' : a.st === 'off' ? 'OFF' : a.st === 'ok' ? 'ACTIVE' : '--';
+  $('ast').className = 'hbig aw ' + cls(a.st);
+  $('adist').textContent = a.act && a.dist != null ? a.dist + ' m / radius ' + (a.rad != null ? a.rad : '--') + ' m' : '';
+  $('acloud').textContent = s ? (a.cloud ? 'cloud' : 'cloud offline') : '';
+  $('acloud').className = 'hthr' + (s && !a.cloud ? ' warn-c' : '');
+
+  var p = (s && s.baro) || { st: 'na', hist: [] };
+  $('tp').className = 'tile t3 half h2' + (p.st === 'alarm' ? ' alarm' : '');
+  $('phpa').innerHTML = fmt(p.hpa, 1) + '<small>hPa</small>';
+  $('phpa').className = 'hbig aw ' + cls(p.st);
+  $('pthr').textContent = p.thr != null ? '< ' + p.thr : '';
+  var win = winLabel(p.win);
+  $('pdelta').textContent = p.d != null ? (p.d > 0 ? '+' : '') + p.d.toFixed(1) + ' hPa / ' + win : '';
+  drawChart('barea', 'bline', p.hist || [], 248, 154, 40, 146, false);
+
+  renderEnergy(s ? s.energy : null);
+  renderWeather(s ? s.weather : null);
+  renderEngine(s ? s.engine : null);
+  renderAnchorPage(s);
+
+  $('msg').textContent = !s ? 'No connection to Node-RED' : s.msg;
+  $('msg').className = 'msg ' + (s ? cls(s.status === 'alarm' ? 'alarm' : 'warn') : 'warn-c');
+  $('hint').textContent = blink ? 'Tap to acknowledge' : (s && s.acked ? 'Acknowledged' : '');
+}
+
+// ── ANCHOR UP: 1. Tipp = bestätigen, 2. Tipp innerhalb 4 s = systemweit einholen (Supabase) ──
+var aupState = 'idle', aupTimer = null;
+function renderAup(show) {
+  var b = $('aup');
+  if (!show && aupState !== 'busy') { aupState = 'idle'; }
+  b.style.display = show || aupState === 'busy' ? '' : 'none';
+  b.className = 'aup' + (aupState === 'confirm' ? ' confirm' : aupState === 'busy' ? ' busy' : aupState === 'err' ? ' err' : '');
+  b.textContent = aupState === 'confirm' ? 'TAP TO CONFIRM' : aupState === 'busy' ? 'SENDING ...' : aupState === 'err' ? 'FAILED - RETRY' : 'ANCHOR UP';
+}
+function aupSet(st, ms) {
+  aupState = st; clearTimeout(aupTimer);
+  if (ms) aupTimer = setTimeout(function () { aupState = 'idle'; render(); }, ms);
+  render();
+}
+$('aup').addEventListener('click', function (e) {
+  e.stopPropagation();
+  if (aupState === 'busy') return;
+  if (aupState !== 'confirm') { aupSet('confirm', 4000); return; }
+  aupSet('busy');
+  var x = new XMLHttpRequest();
+  x.open('POST', '/esp-dash/api/anchor-up');
+  x.setRequestHeader('Content-Type', 'application/json');
+  x.timeout = 12000;
+  x.onload = function () { if (x.status === 200) { aupSet('idle'); poll(); } else aupSet('err', 5000); };
+  x.onerror = x.ontimeout = function () { aupSet('err', 5000); };
+  x.send('{}');
+});
+
+// ── Wetter-Icons (inline SVG, 64×64) ──
+var CLOUD = '<circle class="wx-cl" cx="25" cy="36" r="11"/><circle class="wx-cl" cx="38" cy="30" r="14"/><rect class="wx-cl" x="14" y="36" width="40" height="13" rx="6.5"/>';
+function sunSvg(cx, cy, r) {
+  var g = '<circle class="wx-sun" cx="' + cx + '" cy="' + cy + '" r="' + r + '"/>';
+  for (var i = 0; i < 8; i++) {
+    var a = i * Math.PI / 4, c = Math.cos(a), sn = Math.sin(a);
+    g += '<line class="wx-ray" x1="' + (cx + c * r * 1.45).toFixed(1) + '" y1="' + (cy + sn * r * 1.45).toFixed(1) +
+         '" x2="' + (cx + c * r * 1.95).toFixed(1) + '" y2="' + (cy + sn * r * 1.95).toFixed(1) + '"/>';
+  }
+  return g;
+}
+var CRESCENT = '<path class="wx-moon" d="M36 12a20 20 0 1 0 18 28a16 16 0 1 1 -18 -28z"/>';
+function wxIcon(ic, night) {
+  var g;
+  if (ic === 'sun') g = night ? CRESCENT : sunSvg(32, 32, 12);
+  else if (ic === 'partly') g = (night ? '<g transform="translate(-8 -10) scale(.8)">' + CRESCENT + '</g>' : sunSvg(22, 22, 8)) + '<g transform="translate(6 6) scale(.9)">' + CLOUD + '</g>';
+  else if (ic === 'cloud') g = '<g transform="translate(-6 -4) scale(.75)"><circle class="wx-cl2" cx="38" cy="30" r="14"/><circle class="wx-cl2" cx="25" cy="36" r="11"/></g>' + '<g transform="translate(4 4)">' + CLOUD + '</g>';
+  else if (ic === 'rain') g = '<g transform="translate(0 -8)">' + CLOUD + '</g><line class="wx-rain" x1="24" y1="48" x2="20" y2="58"/><line class="wx-rain" x1="34" y1="48" x2="30" y2="58"/><line class="wx-rain" x1="44" y1="48" x2="40" y2="58"/>';
+  else if (ic === 'storm') g = '<g transform="translate(0 -8)">' + CLOUD + '</g><polygon class="wx-bolt" points="34,42 24,54 32,54 28,63 42,49 34,49 38,42"/>';
+  else if (ic === 'snow') g = '<g transform="translate(0 -8)">' + CLOUD + '</g><circle class="wx-drop" cx="22" cy="52" r="3"/><circle class="wx-drop" cx="33" cy="57" r="3"/><circle class="wx-drop" cx="44" cy="52" r="3"/>';
+  else if (ic === 'fog') g = '<line class="wx-fog" x1="12" y1="24" x2="52" y2="24"/><line class="wx-fog" x1="8" y1="34" x2="48" y2="34"/><line class="wx-fog" x1="16" y1="44" x2="56" y2="44"/>';
+  else g = CLOUD;
+  return '<svg viewBox="0 0 64 64">' + g + '</svg>';
+}
+// Mondphase: 0 = Neumond, 90 = erstes Viertel, 180 = Vollmond, 270 = letztes Viertel (met.no)
+function moonPhaseSvg(p) {
+  if (p == null) return '';
+  var R = 14, c = Math.cos(p * Math.PI / 180), wax = p < 180, l = [], rgt = [];
+  for (var y = -R; y <= R; y += 1) {
+    var w = Math.sqrt(R * R - y * y), t = w * c;
+    if (wax) { l.push([16 + t, 16 + y]); rgt.push([16 + w, 16 + y]); }
+    else { l.push([16 - w, 16 + y]); rgt.push([16 - t, 16 + y]); }
+  }
+  var pts = l.concat(rgt.reverse()).map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ');
+  return '<svg viewBox="0 0 32 32"><circle class="wx-mdark" cx="16" cy="16" r="14"/><polygon class="wx-moon" points="' + pts + '"/></svg>';
+}
+var SUN_SM = '<svg viewBox="0 0 64 64">' + sunSvg(32, 32, 11) + '</svg>';
+var DROP = '<svg class="mi" viewBox="0 0 16 16"><path class="wx-drop" d="M8 1 C8 1 3 7 3 10 a5 5 0 0 0 10 0 C13 7 8 1 8 1z"/></svg>';
+function deg(v) { return v == null ? '--' : v + '°'; }
+
+var WIND = '<svg viewBox="0 0 24 24"><path class="wx-wind" d="M3 8h11a3 3 0 1 0 -3 -3M3 12h16a3 3 0 1 1 -3 3M3 16h8"/></svg>';
+var RAIN = '<svg viewBox="0 0 16 16"><path class="wx-drop" d="M8 1 C8 1 3 7 3 10 a5 5 0 0 0 10 0 C13 7 8 1 8 1z"/></svg>';
+function renderWeather(w) {
+  if (!w || !w.ok) { $('w-temp').textContent = '--'; $('w-txt').textContent = 'No weather data'; return; }
+  var t = w.today, c = w.cur;
+  $('w-icon').innerHTML = wxIcon(c.ic, c.night);
+  $('w-day').textContent = 'TODAY · ' + t.dow.toUpperCase() + ' ' + t.date;
+  $('w-temp').textContent = deg(c.t);
+  $('w-mm').textContent = '↑ ' + deg(t.max) + '   ↓ ' + deg(t.min);
+  $('w-txt').textContent = c.txt;
+  $('wi-wind').innerHTML = WIND; $('w-wind').innerHTML = c.ws + ' kn ' + c.wd + '<small>gust ' + c.wg + ' · max ' + t.ws + '</small>';
+  $('wi-rain').innerHTML = RAIN; $('w-rain').innerHTML = t.pp + ' %<small>' + t.ps + ' mm</small>';
+  $('wi-sun').innerHTML = SUN_SM; $('w-sun').textContent = '↑ ' + t.sr + '   ↓ ' + t.ss;
+  $('wi-moon').innerHTML = moonPhaseSvg(w.mp); $('w-moon').innerHTML = '↑ ' + t.mr + '   ↓ ' + t.ms;
+  $('w-upd').textContent = 'updated ' + w.upd; $('w-upd').className = 'wupd' + (w.old ? ' old' : '');
+  for (var i = 0; i < 3; i++) {
+    var d = w.days[i], el = $('wd' + i);
+    if (!d) { el.innerHTML = ''; continue; }
+    el.innerHTML = '<div class="dt">' + d.dow.toUpperCase() + ' ' + d.date + '</div>' +
+      '<div class="di">' + wxIcon(d.ic, false) + '</div>' +
+      '<div class="dl" style="top:36px"><b>' + deg(d.max) + '</b>' + deg(d.min) + '</div>' +
+      '<div class="dl" style="top:66px"><span class="wsi">' + WIND + '</span>' + d.ws + ' kn ' + d.wd + ' <span class="dg">G' + d.wg + '</span></div>' +
+      '<div class="dl" style="top:90px"><span class="wsi">' + RAIN + '</span>' + d.pp + ' %</div>';
+  }
+}
+
+// ── Drehzahlmesser: 240°-Bogen, 0 … engMaxRpm, roter Bereich ab engRedRpm ──
+// Volvo Penta Schriftzug (Wikimedia Commons, gemeinfrei, Marke von AB Volvo Penta) — viewBox 850.39×177.29
+var VP_LOGO = "<path d=\"M76.08 11.04 L88.4 11.04 L67.81 49.14 L46.93 11.04 L61.91 11.04 L61.9 1.54 L0 1.54 L0 11.05 L14.16 11.05 L42.94 63.28 L76.34 63.28 L104.57 11.04 L118.74 11.04 L118.75 1.54 L76.08 1.54 Z\"/><path d=\"M625.13 11.04 L637.45 11.04 L616.85 49.14 L595.98 11.04 L610.95 11.04 L610.95 1.54 L549.05 1.54 L549.05 11.05 L563.21 11.05 L591.99 63.28 L625.39 63.28 L653.61 11.04 L667.79 11.04 L667.79 1.54 L625.13 1.54 Z\"/><path d=\"M411.11 177.29 L411.11 167.71 L397.17 167.71 L397.17 139.26 L440.12 177.29 L463.9 177.29 L463.9 125.02 L478.01 125.02 L478.01 115.55 L435.39 115.55 L435.39 125.02 L449.45 125.02 L449.45 146.23 L413.94 115.55 L368.67 115.55 L368.67 125.02 L382.71 125.02 L382.71 167.71 L368.67 167.71 L368.67 177.29 Z\"/><path d=\"m394.79 53.7h-14.4v9.59l85.67-0.01v-28.58h-9.41c0 4.61-1.95 10.04-6.01 13.9-1.4 1.3-2.95 2.5-4.71 3.36-2.28 1.14-4.43 1.73-9.51 1.73-3.42 0-10.72 0.01-13.16 0.01v-42.65h14.21v-9.51h-57.06v9.51h14.38v42.65z\"/><path d=\"m242.41 55.1c-10.5 0-15.29-11.48-15.3-22.97 0-11.9 5.51-22.39 15.32-22.39 9.8 0 15.15 10.49 15.15 22.39 0 11.23-4.43 22.97-15.23 22.97h0.06zm0.06 9.83c29.39 0 43.87-14.51 43.87-32.67-0.01-17.95-15.38-32.26-44.04-32.26-28.65 0-43.88 14.31-43.88 32.25 0 18.17 14.66 32.68 44.05 32.68z\"/><path d=\"m791.79 55.1c-10.52 0-15.3-11.48-15.3-22.97 0-11.9 5.51-22.39 15.32-22.39s15.16 10.49 15.16 22.39c0 11.23-4.42 22.97-15.25 22.97h0.07zm0.05 9.83c29.36 0 43.87-14.51 43.87-32.67 0-17.94-15.4-32.25-44.03-32.25-28.68-0.01-43.88 14.3-43.88 32.24 0 18.17 14.64 32.68 44.04 32.68z\"/><path d=\"m284.84 139.26v-23.71h-85.36v9.47h13.82v42.69h-13.82v9.57h85.36v-28.3h-9.44v2.27c0 9.15-6.23 16.41-14.27 16.41h-19.35v-18.69h19.35v-9.09h-19.35v-14.88h19.9c6.86 0 12.39 5.1 13.72 14.24h9.44z\"/><path d=\"m629.02 125.02c7.97 0 14.41 6.28 14.41 14.24h9.45v-23.71h-85.83v23.71h9.44c0-7.96 6.47-14.19 14.44-14.24h4.79v42.69h-13.88v9.58h56.26v-9.58h-13.9v-42.69h4.82z\"/><path d=\"m59.08 144.2v-19.18h8.43c3.89 0 7.38 1.39 9.55 3.64 1.51 1.51 2.45 3.69 2.45 6.08 0 2.55-1.08 4.81-2.73 6.36-2.17 2.01-5.53 3.1-9.27 3.1h-8.43zm49.08-9.36c0-4.74-1.89-9.03-4.9-12.07-4.31-4.44-11.2-7.23-18.94-7.23h-67.88v9.47h14.15v42.69h-14.15v9.58h57.08v-9.58h-14.44v-14.11h25.24c7.43 0 14.06-2.15 18.39-6.16 3.29-3.04 5.45-7.55 5.45-12.59z\"/><path d=\"m745.92 167.71h-14.18v9.58c1.69 0.01 40.29 0.01 42.65 0.01 0.01-2.19 0-9.58 0-9.58l-12.3 0.03c0.28-0.55 2.28-4.25 4.95-9.16h31.43l5.03 9.13h-14.9v9.58h61.79v-9.58h-14.11l-28.77-52.16h-33.33l-28.26 52.15zm36.75-37.98 10.46 19.06h-20.78l10.32-19.06z\"/>";
+var DEMO_RPM = (function () { var m = location.search.match(/demoRpm=(\d+)/); return m ? +m[1] : null; })();
+function polar(cx, cy, r, a) { var t = a * Math.PI / 180; return [cx + r * Math.cos(t), cy + r * Math.sin(t)]; }
+function arcPath(cx, cy, r, a0, a1) {
+  var p0 = polar(cx, cy, r, a0), p1 = polar(cx, cy, r, a1);
+  return 'M' + p0[0].toFixed(1) + ' ' + p0[1].toFixed(1) + 'A' + r + ' ' + r + ' 0 ' + (a1 - a0 > 180 ? 1 : 0) + ' 1 ' + p1[0].toFixed(1) + ' ' + p1[1].toFixed(1);
+}
+function renderTacho(rpm, max, red, g0, g1) {
+  var cx = 188, cy = 160, R = 140, A0 = 150, SW = 240, ang = function (v) { return A0 + SW * Math.max(0, Math.min(1, v / max)); };
+  var g = '<defs><radialGradient id="tface" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="#1b1b1b"/><stop offset="1" stop-color="#050505"/></radialGradient></defs>';
+  g += '<circle class="t-face" cx="' + cx + '" cy="' + cy + '" r="' + (R + 4) + '"/><circle class="t-bezel" cx="' + cx + '" cy="' + cy + '" r="' + (R + 4) + '"/>';
+  // Außenband: grüner (Reise-) und roter Bereich
+  if (g1 > g0) g += '<path class="t-zg" d="' + arcPath(cx, cy, R - 4, ang(g0), ang(g1)) + '" fill="none" stroke-width="8"/>';
+  g += '<path class="t-zr" d="' + arcPath(cx, cy, R - 4, ang(red), A0 + SW) + '" fill="none" stroke-width="8"/>';
+  // Innen: Fortschrittsbogen (rot im roten Bereich)
+  g += '<path class="t-track" d="' + arcPath(cx, cy, R - 20, A0, A0 + SW) + '" fill="none" stroke-width="14"/>';
+  if (rpm != null && rpm > 0) g += '<path class="' + (rpm >= red ? 't-valr' : 't-val') + '" d="' + arcPath(cx, cy, R - 20, A0, ang(rpm)) + '" fill="none" stroke-width="14"/>';
+  for (var v = 0; v <= max; v += 100) {
+    var maj = v % 500 === 0, a = ang(v), p0 = polar(cx, cy, R - (maj ? 46 : 34), a), p1 = polar(cx, cy, R - 30, a);
+    g += '<line class="' + (maj ? 't-maj' : 't-tick') + '" x1="' + p0[0].toFixed(1) + '" y1="' + p0[1].toFixed(1) + '" x2="' + p1[0].toFixed(1) + '" y2="' + p1[1].toFixed(1) + '"/>';
+    if (maj) { var pn = polar(cx, cy, R - 60, a); g += '<text class="t-num" x="' + pn[0].toFixed(1) + '" y="' + pn[1].toFixed(1) + '">' + v / 100 + '</text>'; }
+  }
+  g += '<text class="t-unit" x="' + cx + '" y="' + (cy + 30) + '">RPM × 100</text>';
+  var lk = 112 / 850.39;
+  g += '<g class="t-logo" transform="translate(' + (cx - 56) + ' ' + (cy + 58) + ') scale(' + lk.toFixed(4) + ')">' + VP_LOGO + '</g>';
+  // Zeiger: spitz zulaufend, rot
+  var na = ang(rpm || 0), tip = polar(cx, cy, R - 26, na), l = polar(cx, cy, 7, na - 90), rr = polar(cx, cy, 7, na + 90), tail = polar(cx, cy, 22, na + 180);
+  g += '<polygon class="t-ndl" points="' + [tip, l, tail, rr].map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ') + '"/>';
+  g += '<circle class="t-hub" cx="' + cx + '" cy="' + cy + '" r="10"/>';
+  // Digitalanzeige im Feld unten
+  g += '<rect class="t-pill" x="' + (cx - 74) + '" y="248" width="148" height="56" rx="12"/>';
+  g += '<text class="t-rpm" x="' + cx + '" y="286">' + (rpm == null ? '--' : rpm) + '</text>';
+  g += '<text class="t-unit" x="' + cx + '" y="300">' + (rpm == null ? 'ENGINE OFF' : 'RPM') + '</text>';
+  $('tacho').innerHTML = g;
+}
+function renderEngine(e) {
+  e = e || {};
+  if (DEMO_RPM != null) {   // nur Simulator-Vorschau, ändert nichts in Node-RED
+    e = Object.assign({}, e, { on: true, rpm: DEMO_RPM, lph: 4.6, est: true, tempLive: true, temp: 78, sog: 6.4 });
+    if (e.fuelL != null) { e.rangeH = Math.round(e.fuelL / e.lph * 10) / 10; e.rangeNm = Math.round(e.rangeH * e.sog); }
+  }
+  renderTacho(e.on ? e.rpm : (e.rpm === 0 ? 0 : null), e.max || 3000, e.red || 2700, e.g0 != null ? e.g0 : 1800, e.g1 != null ? e.g1 : 2200);
+  $('e-temp').innerHTML = e.temp != null ? e.temp + '<small>°C</small>' : '--';
+  $('e-temp2').textContent = e.tempLive ? 'coolant' : (e.temp != null ? 'last known' : '');
+  $('e-hrs').innerHTML = e.hrs != null ? e.hrs.toFixed(1) + '<small>h</small>' : '--';
+  $('e-lph').innerHTML = e.lph != null ? e.lph.toFixed(1) + '<small>l/h</small>' : '--';
+  $('e-lph2').textContent = e.lph != null ? (e.est ? 'estimated from rpm' : 'sensor') : (e.on ? '' : 'engine off');
+  $('e-fuel').innerHTML = e.fuelPct != null ? e.fuelPct + '<small>%</small>' : '--';
+  $('e-fbar').style.width = (e.fuelPct || 0) + '%';
+  $('e-fuel2').textContent = e.fuelL != null ? e.fuelL + ' l' : '';
+  $('e-rh').innerHTML = e.rangeH != null ? e.rangeH.toFixed(1) + '<small>h</small>' : '--';
+  $('e-rnm').innerHTML = e.rangeNm != null ? e.rangeNm + '<small>nm</small>' : '';
+  $('e-r2').textContent = e.rangeH == null ? 'engine off' : (e.rangeNm != null ? 'at ' + e.lph.toFixed(1) + ' l/h and ' + e.sog + ' kn SOG' : 'at ' + e.lph.toFixed(1) + ' l/h (no SOG)');
+}
+
+// ── Anker-Screen ──────────────────────────────────────────────────────────
+var aZoom = 1, aLocal = null, aBusy = null, aConfirm = null, aTimer = null, aSave = null;
+function ancMapShow() {
+  $('mz-in').onclick = function (e) { e.stopPropagation(); aZoom = Math.min(8, aZoom * 1.5); renderAnchorPage(S); };
+  $('mz-out').onclick = function (e) { e.stopPropagation(); aZoom = Math.max(0.15, aZoom / 1.5); renderAnchorPage(S); };
+  $('mz-fit').onclick = function (e) { e.stopPropagation(); aZoom = 1; renderAnchorPage(S); };
+  renderAnchorPage(S);
+}
+// Radar-Ansicht (Nord oben): Mitte = Anker (bzw. Vorschau-Anker), Kreis = Alarmradius
+var ANC_SVG = '<g fill="none" stroke-width="2" stroke-linecap="round"><circle cx="0" cy="-6" r="2.2"/><line x1="0" y1="-3.8" x2="0" y2="8"/><line x1="-4.5" y1="-1" x2="4.5" y2="-1"/><path d="M-7 3.5a7 6 0 0 0 14 0"/></g>';
+function drawRadar(cfg) {
+  var W = 476, H = 320, cx = W / 2, cy = H / 2 + 4;
+  var ppm = 118 / Math.max(10, cfg.rad) * aZoom;             // Pixel pro Meter: Radius ≈ 118 px bei Zoom 1
+  var g = '';
+  // Distanzringe (Abstand passend zum Maßstab)
+  var steps = [5, 10, 20, 25, 50, 100, 200, 500], ringM = steps.find(function (v) { return v * ppm >= 45; }) || 1000;
+  for (var k = 1; k * ringM * ppm < W; k++) {
+    var rr = k * ringM * ppm;
+    g += '<circle class="r-ring" cx="' + cx + '" cy="' + cy + '" r="' + rr.toFixed(1) + '"/>';
+    if (cy - rr > 12) g += '<text class="r-lbl" x="' + (cx + 4) + '" y="' + (cy - rr - 3).toFixed(1) + '">' + k * ringM + ' m</text>';
+  }
+  g += '<circle class="r-rad" cx="' + cx + '" cy="' + cy + '" r="' + (cfg.rad * ppm).toFixed(1) + '" fill="' + cfg.col + '" stroke="' + cfg.col + '"' + (cfg.preview ? ' stroke-dasharray="8 6"' : '') + '/>';
+  var P = function (e, n) { return [cx + e * ppm, cy - n * ppm]; };
+  if (cfg.track && cfg.track.length > 1)
+    g += '<polyline class="r-trk" points="' + cfg.track.map(function (p) { var q = P(p[0], p[1]); return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ') + '"/>';
+  if (cfg.boat) {
+    var b = P(cfg.boat[0], cfg.boat[1]);
+    g += '<line class="r-chain" x1="' + cx + '" y1="' + cy + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '"/>';
+    var bx = Math.max(10, Math.min(W - 10, b[0])), by = Math.max(10, Math.min(H - 10, b[1]));
+    g += '<g transform="translate(' + bx.toFixed(1) + ' ' + by.toFixed(1) + ') rotate(' + (cfg.hdg || 0) + ')"><path class="r-boat" d="M0 -14 L8 10 L0 5 L-8 10 Z"/></g>';
+  }
+  g += '<g transform="translate(' + cx + ' ' + cy + ')" stroke="' + cfg.col + '">' + ANC_SVG + '</g>';
+  // Nordpfeil + Maßstab
+  g += '<g transform="translate(26 30)"><path class="r-nar" d="M0 -14 L6 4 L0 0 L-6 4 Z"/><text class="r-n" y="18">N</text></g>';
+  $('amap').innerHTML = g;
+}
+function destPt(lat, lon, brg, d) {
+  var R = 6371000, a = brg * Math.PI / 180, dr = d / R, la1 = lat * Math.PI / 180, lo1 = lon * Math.PI / 180;
+  var la2 = Math.asin(Math.sin(la1) * Math.cos(dr) + Math.cos(la1) * Math.sin(dr) * Math.cos(a));
+  var lo2 = lo1 + Math.atan2(Math.sin(a) * Math.sin(dr) * Math.cos(la1), Math.cos(dr) - Math.sin(la1) * Math.sin(la2));
+  return [la2 * 180 / Math.PI, lo2 * 180 / Math.PI];
+}
+function card(d) { return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(((d % 360) + 360) % 360 / 45) % 8]; }
+function aPost(body, okMsg) {
+  aBusy = body.action; renderAnchorPage(S);
+  var x = new XMLHttpRequest();
+  x.open('POST', '/esp-dash/api/anchor'); x.setRequestHeader('Content-Type', 'application/json'); x.timeout = 12000;
+  x.onload = function () { aBusy = null; $('amsg').textContent = x.status === 200 ? (okMsg || 'Saved') : 'Failed: ' + (JSON.parse(x.responseText || '{}').error || x.status); aLocal = null; poll(); setTimeout(function () { $('amsg').textContent = ''; }, 4000); };
+  x.onerror = x.ontimeout = function () { aBusy = null; $('amsg').textContent = 'Failed (offline?)'; renderAnchorPage(S); };
+  x.send(JSON.stringify(body));
+}
+function renderAnchorPage(s) {
+  if (!s || !s.anchor || !s.anchor.map) return;
+  var a = s.anchor, m = a.map, act = a.act, al = m.alarming;
+  // lokale Einstellungen (Preview) — initial aus der DB, Peilung folgt dem Kurs bis manuell geändert
+  if (!aLocal) aLocal = { rad: a.rad || 50, chain: m.chain || 0, brg: act ? (m.brg || 0) : (m.hdg != null ? m.hdg : (m.brg || 0)), brgManual: false };
+  if (!act && !aLocal.brgManual && m.hdg != null) aLocal.brg = m.hdg;
+  var L_ = aLocal;
+  $('p5').querySelector('.apanel').className = 'apanel' + (al ? ' alarm' : '');
+  $('a-st').textContent = al ? 'ALARM' : act ? 'ACTIVE' : 'OFF';
+  $('a-st').className = al ? 'alarm-c' : act ? 'ok-c' : '';
+  $('a-sub').textContent = act ? (a.dist != null ? a.dist + ' / ' + a.rad + ' m' : '') : 'anchor up';
+  $('a-dist').textContent = act && a.dist != null ? a.dist + ' m' : '--';
+  $('a-depth').textContent = m.depth != null ? m.depth.toFixed(1) + ' m' : '--';
+  var sc = m.scope; $('a-scope').textContent = sc != null ? sc.toFixed(1) + ':1' : '--';
+  $('a-scl').textContent = sc == null ? 'SCOPE' : sc >= 5 ? 'SCOPE GOOD' : sc >= 3 ? 'SCOPE OK' : 'SCOPE LOW';
+  $('a-brg').textContent = act && m.btoa != null ? card(m.btoa) + ' ' + m.btoa + '°' : '--';
+  $('v-rad').textContent = L_.rad + ' m'; $('v-chain').textContent = L_.chain + ' m';
+  $('v-brg').textContent = Math.round(L_.brg) + '° ' + card(L_.brg);
+  [].forEach.call(document.querySelectorAll('.arow button'), function (b) { b.disabled = !!aBusy || (act && al && b.dataset.k !== 'rad'); });
+  // Aktionsknöpfe
+  var btns = [];
+  if (act) { btns.push(['up', 'ANCHOR UP', 'dan', true]); if (al) btns.push(['mute', m.muted ? 'MUTED' : 'MUTE', '', false]); }
+  else { btns.push(['drop_now', 'DROP NOW', 'pri', true]); btns.push(['set', 'SET', 'pri', true]); if (m.lat != null) btns.push(['restore', 'RESTORE', '', true]); }
+  var h = btns.map(function (b) {
+    var c = aConfirm === b[0], busy = aBusy === b[0];
+    return '<button data-a="' + b[0] + '" data-c="' + (b[3] ? 1 : 0) + '" class="' + b[2] + (c ? ' confirm' : '') + (busy ? ' busy' : '') + '">' + (busy ? '...' : c ? 'CONFIRM?' : b[1]) + '</button>';
+  }).join('');
+  if ($('abtns').innerHTML !== h) $('abtns').innerHTML = h;
+  // Radar
+  if (page !== 5) return;
+  var col = al ? '#ff3030' : act ? '#00d000' : '#ffa000';
+  if (document.querySelector('.night')) col = al ? '#ff2020' : '#a00000';
+  var mLat = 111320, anc = null, boat = null;
+  if (act && m.lat != null) {
+    anc = [m.lat, m.lon];
+    if (m.blat != null) { var mLon = 111320 * Math.cos(m.lat * Math.PI / 180); boat = [(m.blon - m.lon) * mLon, (m.blat - m.lat) * mLat]; }
+  } else if (m.blat != null) {                      // Vorschau: Anker = Boot + Peilung × Kette
+    var br = L_.brg * Math.PI / 180;
+    boat = [-Math.sin(br) * L_.chain, -Math.cos(br) * L_.chain];
+  }
+  drawRadar({ rad: act ? a.rad : L_.rad, col: col, preview: !act, boat: boat, hdg: m.hdg, track: act ? m.track : null });
+  $('anote').textContent = act && anc ? 'Anchor ' + anc[0].toFixed(5) + ', ' + anc[1].toFixed(5) + ' · radius ' + a.rad + ' m' : (act ? '' : 'Preview · radius ' + L_.rad + ' m · chain ' + L_.chain + ' m');
+}
+document.addEventListener('click', function (e) {
+  var b = e.target.closest && e.target.closest('#p5 button');
+  if (!b || !S || !S.anchor) return;
+  e.stopPropagation();
+  var a = S.anchor, m = a.map, L_ = aLocal;
+  if (b.dataset.k) {               // −/+ Einstellungen
+    var d = +b.dataset.d;
+    if (b.dataset.k === 'rad') L_.rad = Math.max(10, Math.min(300, L_.rad + d));
+    if (b.dataset.k === 'chain') L_.chain = Math.max(0, Math.min(120, L_.chain + d));
+    if (b.dataset.k === 'brg') { L_.brg = ((Math.round(L_.brg) + d) % 360 + 360) % 360; L_.brgManual = true; }
+    if (a.act) {                   // aktiver Anker: nach kurzer Pause systemweit speichern (wie Pro App)
+      clearTimeout(aSave);
+      var k = b.dataset.k;
+      aSave = setTimeout(function () {
+        if (k === 'rad') aPost({ action: 'radius', radius_m: L_.rad }, 'Radius saved');
+        else aPost({ action: 'move', chain_length_m: L_.chain, bearing_deg: L_.brg }, 'Anchor moved');
+      }, 1200);
+    }
+    renderAnchorPage(S); return;
+  }
+  var act = b.dataset.a; if (!act || aBusy) return;
+  if (b.dataset.c === '1' && aConfirm !== act) {   // 1. Tipp = bestätigen
+    aConfirm = act; clearTimeout(aTimer); aTimer = setTimeout(function () { aConfirm = null; renderAnchorPage(S); }, 4000);
+    renderAnchorPage(S); return;
+  }
+  aConfirm = null; clearTimeout(aTimer);
+  if (act === 'set') aPost({ action: 'set', radius_m: L_.rad, chain_length_m: L_.chain, bearing_deg: L_.brg }, 'Anchor set');
+  else if (act === 'drop_now') aPost({ action: 'drop_now' }, 'Anchor dropped');
+  else if (act === 'restore') aPost({ action: 'restore' }, 'Anchor restored');
+  else if (act === 'up') aPost({ action: 'up' }, 'Anchor up');
+  else if (act === 'mute') aPost({ action: 'mute' }, 'Telegram muted');
+}, true);
+
+function winLabel(m) { return m >= 60 ? (m / 60) + ' h' : m + ' min'; }
+
+// Verlauf als Hintergrund-Fläche. Baro: Skala mind. 1 hPa um den Mittelwert (Rauschen nicht aufblähen).
+// Wind (zero): Skala ab 0 kn, mindestens bis 10 kn, damit Böen in echter Größe erscheinen.
+function drawChart(areaId, lineId, h, W, H, top, bot, zero) {
+  var v = h.filter(function (x) { return x != null; });
+  if (v.length < 2) { $(areaId).setAttribute('d', ''); $(lineId).setAttribute('d', ''); return; }
+  var mn = Math.min.apply(null, v), mx = Math.max.apply(null, v);
+  if (zero) { mn = 0; mx = Math.max(10, mx * 1.1); }
+  else if (mx - mn < 1) { var c = (mx + mn) / 2; mn = c - 0.5; mx = c + 0.5; }
+  var d = '', first = null, last = null;
+  h.forEach(function (x, i) {
+    if (x == null) return;
+    var px = (i / (h.length - 1)) * W, py = bot - (x - mn) / (mx - mn) * (bot - top);
+    d += (d ? 'L' : 'M') + px.toFixed(1) + ' ' + py.toFixed(1);
+    if (first == null) first = px; last = px;
+  });
+  $(lineId).setAttribute('d', d);
+  $(areaId).setAttribute('d', d + 'L' + last.toFixed(1) + ' ' + H + 'L' + first.toFixed(1) + ' ' + H + 'Z');
+}
+
+function setCls(id, base, on) { $(id).className = base + (on ? ' on' : ''); }
+function conn(id, dir, on) { $(id).className = 'cn ' + (dir === 'r' || dir === 'l' ? 'h ' : 'v ') + dir + (on ? ' on' : ''); }
+function w(v) { return v == null ? '--' : v + '<small> W</small>'; }
+function renderEnergy(e) {
+  if (!e || !e.ok) {
+    ['shore','inv','ac','pv','bat','dc'].forEach(function (k) { $('ev-' + k).textContent = '--'; });
+    return;
+  }
+  var shoreOn = e.shore.on, solarOn = (e.pv.w || 0) > 5, acOn = (e.ac.w || 0) > 5, dcOn = (e.dc.w || 0) > 5;
+  var invW = e.inv.w || 0, charging = invW > 5, inverting = invW < -5;
+  setCls('eb-shore', 'eb', shoreOn);
+  $('ev-shore').innerHTML = shoreOn ? w(e.shore.w) : '<span style="font-size:24px">Disconnected</span>';
+  $('es-shore').textContent = shoreOn && e.shore.v ? e.shore.v + ' V' : '';
+  $('ev-inv').textContent = e.inv.st;
+  $('es-inv').textContent = e.inv.w != null && e.inv.w !== 0 ? Math.abs(e.inv.w) + ' W DC' : '';
+  setCls('eb-ac', 'eb', acOn); $('ev-ac').innerHTML = w(e.ac.w);
+  setCls('eb-pv', 'eb', solarOn); $('ev-pv').innerHTML = w(e.pv.w);
+  $('es-pv').textContent = e.pv.today != null ? 'Today ' + e.pv.today.toFixed(2) + ' kWh' : '';
+  setCls('eb-dc', 'eb', dcOn); $('ev-dc').innerHTML = w(e.dc.w);
+  $('ev-bat').innerHTML = (e.bat.soc == null ? '--' : e.bat.soc) + '<small> %</small>';
+  $('es-bat').textContent = fmt(e.bat.v, 2) + ' V  ' + fmt(e.bat.a, 1) + ' A  ' + fmt(e.bat.w) + ' W';
+  $('es-bat2').textContent = e.bat.st + (e.bat.ttg ? '  ' + e.bat.ttg : '');
+  conn('cn-shore', 'r', shoreOn); conn('cn-ac', 'r', acOn); conn('cn-pv', 'r', solarOn); conn('cn-dc', 'r', dcOn);
+  conn('cn-bat', inverting ? 'u' : 'd', charging || inverting);
+}
+
+// ── Screens: wischen, Pfeiltasten oder Punkte; neuer Alarm → zurück zu Screen 1 ──
+var page = 1, wasBlink = false, swX = null, swiped = false;
+function showPage(n) {
+  page = n;
+  $('p1').style.display = n === 1 ? '' : 'none';
+  $('p2').style.display = n === 2 ? '' : 'none';
+  $('p3').style.display = n === 3 ? '' : 'none';
+  $('p4').style.display = n === 4 ? '' : 'none';
+  $('d4').className = n === 4 ? 'on' : '';
+  $('p5').style.display = n === 5 ? '' : 'none';
+  $('d5').className = n === 5 ? 'on' : '';
+  if (n === 5) ancMapShow();
+  $('d1').className = n === 1 ? 'on' : ''; $('d2').className = n === 2 ? 'on' : ''; $('d3').className = n === 3 ? 'on' : '';
+}
+$('scr').addEventListener('pointerdown', function (e) { swX = e.clientX; swiped = false; });
+$('scr').addEventListener('pointerup', function (e) {
+  if (swX == null) return;
+  var dx = e.clientX - swX; swX = null;
+  if (Math.abs(dx) > 60) { swiped = true; showPage(Math.max(1, Math.min(5, page + (dx < 0 ? 1 : -1)))); }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'ArrowRight') showPage(Math.min(5, page + 1)); else if (e.key === 'ArrowLeft') showPage(Math.max(1, page - 1));
+});
+$('d1').parentNode.addEventListener('click', function (e) { e.stopPropagation(); showPage(page % 5 + 1); });
+setInterval(function () {
+  var b = !!(S && S.blink);
+  if (b && !wasBlink) showPage(1);
+  wasBlink = b;
+}, 300);
+
+$('nbtn').addEventListener('click', function (e) {
+  e.stopPropagation();
+  if (!S) return;
+  var x = new XMLHttpRequest();
+  x.open('POST', '/esp-dash/api/config');
+  x.setRequestHeader('Content-Type', 'application/json');
+  x.onload = function () { setTimeout(poll, 1100); };
+  x.send(JSON.stringify({ night: !S.night }));
+});
+
+$('scr').addEventListener('click', function () {
+  if (swiped) { swiped = false; return; }
+  if (!S || !S.blink) return;
+  var x = new XMLHttpRequest();
+  x.open('POST', '/esp-dash/api/ack');
+  x.setRequestHeader('Content-Type', 'application/json');
+  x.onload = poll;
+  x.send('{}');
+});
+
+setInterval(poll, 1000);
+setInterval(function () { phase = !phase; render(); }, 500);
+poll();
+</script>
+</body>
+</html>
