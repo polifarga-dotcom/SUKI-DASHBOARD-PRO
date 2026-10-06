@@ -9,6 +9,7 @@
 // Libs:  LovyanGFX 1.2.x, ArduinoJson 7.x
 
 #include <WiFi.h>
+#include <WiFiMulti.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
@@ -377,13 +378,21 @@ static void parseState(const String& body) {
 }
 
 static void netTask(void*) {
+  // Mehrere WLANs: WiFiMulti verbindet mit dem stärksten verfügbaren und wechselt bei Ausfall
+  static WiFiMulti multi;
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
-  WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  multi.addAP(WIFI_SSID, WIFI_PASS);
+#ifdef WIFI_SSID2
+  if (strlen(WIFI_SSID2)) multi.addAP(WIFI_SSID2, WIFI_PASS2);
+#endif
   uint32_t lastPoll = 0;
   for (;;) {
-    if (WiFi.status() != WL_CONNECTED) { vTaskDelay(pdMS_TO_TICKS(500)); continue; }
+    if (WiFi.status() != WL_CONNECTED) {
+      if (multi.run(5000) == WL_CONNECTED) Serial.printf("WLAN: %s (%d dBm)\n", WiFi.SSID().c_str(), WiFi.RSSI());
+      vTaskDelay(pdMS_TO_TICKS(500));
+      continue;
+    }
 
     if (ackRequested) {
       HTTPClient http;
