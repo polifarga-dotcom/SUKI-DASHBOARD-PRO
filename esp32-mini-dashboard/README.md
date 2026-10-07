@@ -23,11 +23,13 @@ ohne neues Flashen.
 | `POST /esp-dash/api/anchor` | Anker-Aktionen `drop_now`, `set`, `restore`, `move`, `radius`, `up`, `mute`, `dry` |
 | `POST /esp-dash/api/anchor-up` | Anker systemweit einholen (Supabase `silence_alarm`); `{"dryRun":true}` prüft nur die Verbindung |
 
+Screens (wischen): 1 Übersicht · 2 Energy Flow · 3 Wetter · 4 Motor · 5 Segeln · 6 AIS · 7 Anker · 8 SOS.
+Einen eigenen Tank-Screen gibt es seit 2026-10-07 nicht mehr — alle Tanks stehen in der linken Box von Screen 1.
+
 ## Screen 1: linke Spalte
 
-Settings → Screen 1 → *Left column* (`homeLeft`): **Battery + all tanks** (Standard seit 2026-10-07, eine Box:
-Batterie-SOC groß mit V/A und Balken, darunter Water / Diesel / Black Main / Black Guest als Balken mit Liter und %)
-oder **Battery + Water** (die früheren zwei getrennten Boxen).
+Eine Box mit Batterie (SOC groß, V/A, Balken) und allen Tanks darunter (Water / Diesel / Black Main / Black Guest
+mit Liter, % und Balken). Die frühere Variante mit getrennten Battery- und Water-Boxen gibt es nicht mehr.
 
 ## Screen 2: Victron Energy Flow
 
@@ -35,7 +37,10 @@ Nach links wischen (Simulator: Maus ziehen, Pfeiltasten oder die Punkte unten) z
 VRM-Stil der Pro App: Shore → Inverter/Charger → AC Loads, Solar → Battery → DC Loads, Inverter ↕ Battery.
 Daten kommen live vom lokalen MQTT-Broker des Cerbo GX (`192.168.0.116:1883`, `N/<portal>/system/0/#`,
 Solar-Tagesertrag aus `solarcharger/+/History/Daily/0/Yield`). Node-RED erkennt die Portal-ID selbst und
-schickt alle 30 s das Venus-Keepalive. Bei einem neuen Alarm springt das Display automatisch auf Screen 1.
+schickt alle 30 s das Venus-Keepalive. Wie in der Victron-Box der Pro App: Solar mit Strom, Ertrag heute/gestern und
+jedem MPPT (Name, W, kWh heute), Batterie mit Name, Status, Restlaufzeit und weiteren Batterien (z. B. Starterbatterie,
+alle `battery/*` außer dem aktiven Batteriemonitor). Solar, AC Loads und DC Loads haben einen 10-Minuten-Verlauf als
+Hintergrund-Diagramm. Bei einem neuen Alarm springt das Display automatisch auf Screen 1.
 
 ## Screen 3: Wetter
 
@@ -55,7 +60,7 @@ SignalK liefert `propulsion.*` nur bei laufendem Motor; Motorstunden/Temperatur 
 Schätzung aus der Verbrauchskurve (Settings → Engine, Format `rpm:l/h,...`).
 Vorschau mit laufendem Motor im Simulator: `/esp-dash?demoRpm=2150` (nur lokal im Browser).
 
-## Screen 8: Anker
+## Screen 7: Anker
 
 Wie die Anchor-Seite der Pro App, als Radar-Ansicht (Nord oben, Mitte = Anker, Kreis = Alarmradius,
 Track der letzten 2 h, Boot als Pfeil in Kursrichtung). Werte: Distanz, Tiefe, Scope, Peilung zum Anker.
@@ -63,7 +68,7 @@ Einstellungen Radius/Kette/Peilung mit −/+; Aktionen DROP NOW, SET, RESTORE, A
 Alles geht über `POST /esp-dash/api/anchor` → Supabase `mfd-anchor` und ist damit sofort systemweit
 (Pro App, Zeus, anchor-check-Alarm).
 
-## Screen 7: AIS (vor dem Anker-Screen)
+## Screen 6: AIS (vor dem Anker-Screen)
 
 Radar-Ansicht **Heading oben** (eigenes Heading aus SignalK, sonst COG ab 1 kn Fahrt, sonst Nord oben; Anzeige „HDG UP 123°“ unten rechts, N-Markierung am Außenring), eigenes Boot in der Mitte (Reichweite 0.25–24 NM mit +/−). AIS-Ziele kommen per
 SignalK-WebSocket (`vessels.*`, alle 5 s), die eigene MMSI wird ignoriert. Jedes Ziel und das eigene Boot
@@ -73,7 +78,7 @@ Modi (Settings → AIS): ANCHOR = kein Alarm, CRUISE = CPA < `aisCruiseNm` (0.5 
 rot + Summer, Knopf ACKNOWLEDGE ALARM quittiert. Ziel antippen zeigt MMSI, Rufzeichen, Typ, Länge, Status, Ziel,
 SOG/COG, Distanz/Peilung, CPA und Alter der Meldung. Ziele ohne Meldung > 10 min werden grau, nach 20 min entfernt.
 
-Screen 9 ist der SOS-Screen (Rettungsring-Knopf oben links).
+Screen 8 ist der SOS-Screen (Rettungsring-Knopf oben links).
 
 ## Alarmlogik
 

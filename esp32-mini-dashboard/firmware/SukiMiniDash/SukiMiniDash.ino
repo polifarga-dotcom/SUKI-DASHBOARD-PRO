@@ -56,11 +56,13 @@ struct WxPart {   // Tagesverlauf: MORNING / MIDDAY / EVENING / NIGHT
   int max = NA_I, min = NA_I, ws = NA_I, wg = NA_I, pp = NA_I;
   float ps = NAN;
 };
+struct EMppt { char n[15] = ""; int w = NA_I; float kwh = NAN; };          // einzelner Solarregler
+struct EBat { char n[17] = ""; int soc = NA_I; float v = NAN; };            // weitere Batterie (z. B. Starter)
 struct TankV {
   char name[12] = "", kind[6] = "", st[6] = "na";
   int pct = NA_I, l = NA_I, cap = NA_I;
 };
-// AIS (Screen 7): eigener globaler Block, damit DashState-Kopien auf dem Stack klein bleiben
+// AIS (Screen 6): eigener globaler Block, damit DashState-Kopien auf dem Stack klein bleiben
 struct AisT {
   char m[10] = "", nm[18] = "", cs[9] = "", ty[16] = "", dest[16] = "", nav[16] = "";
   float e = 0, n = 0, sog = NAN, d = NAN, cpa = NAN, tcpa = NAN;
@@ -108,12 +110,12 @@ struct DashState {
   WxDay today, days[3];
   WxPart parts[4];
   int nParts = 0;
-  // SOS / VHF-Notruf (Screen 9)
+  // SOS / VHF-Notruf (Screen 8)
   char sosName[12] = "SUKI", sosCs[10] = "", sosMmsi[14] = "", sosPhon[64] = "", sosLat[48] = "", sosLon[48] = "", sosUtc[16] = "", sosDesc[44] = "";
   int sosPob = 2;
-  // Tanks (Screen 3)
+  // Tanks (Screen 1, Box links)
   TankV tanks[4];
-  // Segeln (Screen 6)
+  // Segeln (Screen 5)
   float sAws = NAN, sTws = NAN, sStw = NAN, sSog = NAN, rigP = NAN, rigS = NAN, rigWarn = 3.2f, rigAlarm = 4.2f, rigScale = 5;
   int sAwa = NA_I, sTwa = NA_I, sTwd = NA_I, sHdg = NA_I, sWin = 0, sAwsN = 0;
   bool sTwCalc = false;
@@ -121,9 +123,8 @@ struct DashState {
   char rigPst[8] = "na", rigSst[8] = "na";
   bool rigOnlyAlarm = false, engOnlyAlarm = false;
   bool classicDial = false;
-  bool homeSupply = true;   // Screen 1 links: true = Batterie + alle Tanks in einer Box, false = Battery + Water   // sailStyle: 'tacho' (Standard) | 'classic'
   int closeFrom = 30, closeTo = 50;  // Am-Wind-Sektoren (° AWA)   // alle aktiven Alarme sind Rigg-Alarme → Segel-Screen zeigen
-  // Anker-Screen (Screen 6)
+  // Anker-Screen (Screen 7)
   int aChainDb = NA_I, aBrgDb = NA_I, aHdg = NA_I, aBtoa = NA_I, aTrackN = 0;
   float aDepth = NAN, aScope = NAN, aLat = NAN, aLon = NAN, aBlat = NAN;
   bool aAlarming = false, aMuted = false, aHasLast = false, aHasBoff = false;
@@ -138,7 +139,11 @@ struct DashState {
   // Victron Energy Flow (NA_I = kein Wert)
   bool eOk = false, shoreOn = false;
   int shoreW, shoreV, invW, acW, pvW, batSoc, batW, dcW;
-  float pvToday = NAN, batV = NAN, batA = NAN;
+  float pvToday = NAN, batV = NAN, batA = NAN, pvA = NAN, pvYest = NAN;
+  char batName[17] = "";
+  EMppt mppt[6]; int nMppt = 0;
+  EBat ebat[3]; int nEbat = 0;
+  int16_t pvHist[60], acHist[60], dcHist[60]; int pvHn = 0, acHn = 0, dcHn = 0;   // 10-min-Verlauf (W), INT16_MIN = Lücke
   char invSt[16] = "--", batSt[14] = "--", batTtg[12] = "";
 };
 static DashState S;
@@ -175,7 +180,7 @@ static uint32_t aMsgUntil = 0;
 static volatile bool aReqPending = false, aReqBusy = false;
 static char aReqBody[160] = "";
 static uint32_t settingsOpenedMs = 0;  // QR-Code-Seite mit Link zu den Node-RED-Settings
-static uint8_t page = 1;         // 1 = Übersicht, 2 = Victron Energy Flow, 3 = Tanks, 4 = Wetter, 5 = Motor, 6 = Segeln, 7 = AIS, 8 = Anker, 9 = SOS (per Wischen oder Rettungsring-Knopf)
+static uint8_t page = 1;         // 1 = Übersicht, 2 = Victron Energy Flow, 3 = Wetter, 4 = Motor, 5 = Segeln, 6 = AIS, 7 = Anker, 8 = SOS (per Wischen oder Rettungsring-Knopf)
 static uint32_t localAckMs = 0;
 static const float aisRanges[] = {0.25f, 0.5f, 1, 2, 4, 8, 12, 24};
 static int8_t aisRangeIdx = 3;           // 2 NM
@@ -396,7 +401,6 @@ static void parseState(const String& body) {
   n.sAwsMax = sl["awsMax"] | NAN; n.sWin = sl["win"] | 0;
   n.sTwd = sl["twd"] | NA_I; n.sTwCalc = sl["twCalc"] | false;
   n.classicDial = !strcmp(sl["style"] | "tacho", "classic");
-  n.homeSupply = strcmp(doc["home"] | "supply", "split") != 0;
   n.closeFrom = sl["cf"] | 30; n.closeTo = sl["ct"] | 50;
   n.sAwsN = 0;
   for (JsonVariant v : sl["awsHist"].as<JsonArray>()) {
@@ -521,6 +525,27 @@ static void parseState(const String& body) {
   n.acW = e["ac"]["w"] | NA_I;
   n.pvW = e["pv"]["w"] | NA_I;
   n.pvToday = e["pv"]["today"] | NAN;
+  n.pvA = e["pv"]["a"] | NAN; n.pvYest = e["pv"]["yest"] | NAN;
+  strlcpy(n.batName, e["bat"]["n"] | "", sizeof(n.batName));
+  n.nMppt = 0;
+  for (JsonObject m : e["pv"]["mppts"].as<JsonArray>()) {
+    if (n.nMppt >= 6) break;
+    EMppt& q = n.mppt[n.nMppt++];
+    strlcpy(q.n, m["n"] | "", sizeof(q.n)); q.w = m["w"] | NA_I; q.kwh = m["kwh"] | NAN;
+  }
+  auto rh = [](JsonArray a, int16_t* h, int& hn) {
+    hn = 0;
+    for (JsonVariant v : a) { if (hn >= 60) break; h[hn++] = v.isNull() ? INT16_MIN : (int16_t)constrain(v.as<int>(), -32000, 32000); }
+  };
+  rh(e["pv"]["hist"].as<JsonArray>(), n.pvHist, n.pvHn);
+  rh(e["ac"]["hist"].as<JsonArray>(), n.acHist, n.acHn);
+  rh(e["dc"]["hist"].as<JsonArray>(), n.dcHist, n.dcHn);
+  n.nEbat = 0;
+  for (JsonObject b : e["bats"].as<JsonArray>()) {
+    if (n.nEbat >= 3) break;
+    EBat& q = n.ebat[n.nEbat++];
+    strlcpy(q.n, b["n"] | "", sizeof(q.n)); q.soc = b["soc"] | NA_I; q.v = b["v"] | NAN;
+  }
   n.batSoc = e["bat"]["soc"] | NA_I;
   n.batV = e["bat"]["v"] | NAN;
   n.batA = e["bat"]["a"] | NAN;
@@ -695,46 +720,7 @@ static void tileFrame(int x, const char* title, bool alarm, bool red, uint16_t b
   centerText(title, x + w / 2, y + 26, &fonts::DejaVu18, red ? C_ONRED : C_GREY, bg);
 }
 
-// Halbe Kachel (linke Spalte): Titel links, Schwelle rechts, Wert, Balken, Zusatzzeile
-static void halfTile(int y, const char* title, const char* st, bool online, int pct, int thr,
-                     const char* subLine, uint16_t barCol, bool red, uint16_t bg) {
-  const int x = 12, w = 248, h = 154, cx = x + w / 2;
-  bool al = online && !strcmp(st, "alarm");
-  uint16_t border = red ? C_ONRED : (al ? C_RED : C_BORDER);
-  int thick = al ? 5 : 2;
-  for (int i = 0; i < thick; i++) fb.drawRoundRect(x + i, y + i, w - 2 * i, h - 2 * i, 14 - i, border);
-  char buf[24];
-  fb.setFont(&fonts::DejaVu18);
-  fb.setTextColor(red ? C_ONRED : C_GREY, bg);
-  fb.setTextDatum(textdatum_t::middle_left);
-  fb.drawString(title, x + 16, y + 20);
-  if (thr >= 0) {
-    snprintf(buf, sizeof(buf), "< %d %%", thr);
-    fb.setTextColor(red ? C_ONRED : C_DIM, bg);
-    fb.setTextDatum(textdatum_t::middle_right);
-    fb.drawString(buf, x + w - 16, y + 20);
-  }
-  if (online && pct >= 0) snprintf(buf, sizeof(buf), "%d", pct); else strcpy(buf, "--");
-  fb.setFont(&fonts::DejaVu56);
-  int wv = fb.textWidth(buf);
-  fb.setFont(&fonts::DejaVu24);
-  int wu = fb.textWidth("%") + 6;
-  int bx = cx - (wv + wu) / 2;
-  // Im Normalzustand Wert in der Balkenfarbe (Batterie grün, Water blau)
-  uint16_t col = !online ? C_AMBER : (!red && !strcmp(st, "ok")) ? barCol : stColor(st, red);
-  fb.setTextDatum(textdatum_t::baseline_left);
-  fb.setTextColor(col, bg);
-  fb.setFont(&fonts::DejaVu56);
-  fb.drawString(buf, bx, y + 92);
-  fb.setFont(&fonts::DejaVu24);
-  fb.drawString("%", bx + wv + 6, y + 92);
-  int p = online && pct >= 0 ? constrain(pct, 0, 100) : 0;
-  fb.fillRoundRect(x + 24, y + 104, 200, 8, 4, red ? C_ONRED : C_BORDER);
-  if (p) fb.fillRoundRect(x + 24, y + 104, 2 * p, 8, 4, red ? C_RED_BG : (al ? C_RED : barCol));
-  centerText(subLine, cx, y + 132, &fonts::DejaVu18, red ? C_ONRED : C_GREY, bg);
-}
-
-// Screen 1 links, Variante „supply“: Batterie groß + alle Tanks als Balken in einer Box
+// Screen 1 links: Batterie groß + alle Tanks als Balken in einer Box
 static void supplyTile(const DashState& s, bool online, bool red, uint16_t bg) {
   const int x = 12, y = 72, w = 248, h = 320;
   bool hiTank = false;
@@ -795,8 +781,8 @@ static void supplyTile(const DashState& s, bool online, bool red, uint16_t bg) {
 //   Shore ──► Inverter ──► AC Loads
 //                 ↕
 //   Solar ──► Battery  ──► DC Loads
-static void eBox(int x, int y, const char* label, bool on, bool center, bool red, uint16_t bg) {
-  const int w = 220, h = 132;
+static void eBox(int x, int y, const char* label, bool on, bool center, bool red, uint16_t bg, int h = 132) {
+  const int w = 220;
   if (!red) fb.fillRoundRect(x, y, w, h, 8, on ? C_BOXON : C_BOX);
   fb.drawRoundRect(x, y, w, h, 8, red ? C_ONRED : (center ? C_BOXBRDC : C_BOXBRD));
   fb.setFont(&fonts::DejaVu18);
@@ -809,12 +795,12 @@ static void eText(int x, int y, const char* val, const char* unit, const lgfx::I
   uint16_t b = red ? bg : (on ? C_BOXON : C_BOX);
   fb.setTextDatum(textdatum_t::baseline_left);
   fb.setFont(font);
-  fb.setTextColor(red ? C_ONRED : C_ETXT, b);
+  (void)b; fb.setTextColor(red ? C_ONRED : C_ETXT);   // transparent: Diagramm darunter bleibt sichtbar
   fb.drawString(val, x, y);
   if (unit && *unit) {
     int wv = fb.textWidth(val);
     fb.setFont(&fonts::DejaVu18);
-    fb.setTextColor(red ? C_ONRED : C_ESUB, b);
+    fb.setTextColor(red ? C_ONRED : C_ESUB);
     fb.drawString(unit, x + wv + 6, y);
   }
 }
@@ -822,7 +808,7 @@ static void eText(int x, int y, const char* val, const char* unit, const lgfx::I
 static void eSub(int x, int y, const char* txt, bool on, bool red, uint16_t bg) {
   fb.setTextDatum(textdatum_t::baseline_left);
   fb.setFont(&fonts::DejaVu18);
-  fb.setTextColor(red ? C_ONRED : C_ESUB, red ? bg : (on ? C_BOXON : C_BOX));
+  (void)bg; (void)on; fb.setTextColor(red ? C_ONRED : C_ESUB);
   fb.drawString(txt, x, y);
 }
 
@@ -840,6 +826,27 @@ static void eConn(int x0, int y0, int len, bool vertical, bool on, int dir, bool
   else { int q = len - p; fb.fillTriangle(x0 - 6, y0 + q, x0 + 6, y0 + q, x0, y0 + q - 10, ac); }
 }
 
+// 10-min-Verlauf als Hintergrund einer Energy-Box (Skala ab 0 W, mind. 10 W), Farben passend zur Boxfarbe
+static void eChart(const int16_t* h, int n, int x, int y, int w, int top, int bot, bool on, bool night, bool red, bool soft = false) {
+  if (n < 2) return;
+  int mx = 10;
+  for (int i = 0; i < n; i++) if (h[i] != INT16_MIN) mx = max(mx, (int)h[i]);
+  float sc = (bot - top) / (mx * 1.1f);
+  uint16_t fillC = night ? (on ? lgfx::color565(96, 0, 0) : lgfx::color565(40, 0, 0)) : (on ? lgfx::color565(40, 120, 210) : lgfx::color565(22, 62, 98));
+  uint16_t lineC = red ? C_ONRED : night ? lgfx::color565(150, 0, 0) : (on ? lgfx::color565(150, 195, 240) : lgfx::color565(70, 130, 190));
+  if (soft && !red) { fillC = night ? lgfx::color565(60, 0, 0) : (on ? lgfx::color565(32, 112, 202) : lgfx::color565(18, 54, 88)); lineC = night ? lgfx::color565(100, 0, 0) : (on ? lgfx::color565(70, 145, 220) : lgfx::color565(40, 90, 140)); }
+  int px = -1, py = -1;
+  for (int i = 0; i < n; i++) {
+    if (h[i] == INT16_MIN) continue;
+    int qx = x + 2 + i * (w - 5) / (n - 1), qy = bot - (int)(max(0, (int)h[i]) * sc);
+    if (px >= 0) {
+      if (!red) for (int xx = px; xx <= qx; xx++) { int yy = py + (qy - py) * (xx - px) / max(1, qx - px); fb.drawFastVLine(xx, yy, bot - yy, fillC); }
+      fb.drawWideLine(px, py, qx, qy, 1, lineC);
+    }
+    px = qx; py = qy;
+  }
+}
+
 static void energyPage(const DashState& s, bool online, bool red, uint16_t bg, uint32_t now) {
   char v[24], u[24];
   const bool ok = online && s.eOk;
@@ -851,50 +858,93 @@ static void energyPage(const DashState& s, bool online, bool red, uint16_t bg, u
   bool charging = ok && s.invW != NA_I && s.invW > 5;
   bool inverting = ok && s.invW != NA_I && s.invW < -5;
 
-  const int X1 = 20, X2 = 290, X3 = 560, Y1 = 78, Y2 = 254;
+  // obere Reihe flach (wenig Inhalt), untere Reihe hoch: Platz für MPPT-Liste und weitere Batterien (wie Pro App)
+  const int X1 = 20, X2 = 290, X3 = 560, Y1 = 74, Y2 = 220, H1 = 110, H2 = 172;
+  auto small = [&](const char* t, int x, int y, textdatum_t d, bool on, bool bright) {   // DejaVu12, Grundlinie y
+    fb.setFont(&fonts::DejaVu12); fb.setTextDatum(d);
+    (void)on; fb.setTextColor(red ? C_ONRED : (bright ? C_ETXT : C_ESUB)); fb.drawString(t, x, y);
+  };
 
-  eBox(X1, Y1, "Shore", shoreOn, false, red, bg);
+  eBox(X1, Y1, "Shore", shoreOn, false, red, bg, H1);
   if (shoreOn) {
-    W(s.shoreW); eText(X1 + 14, Y1 + 88, v, "W", &fonts::DejaVu40, true, red, bg);
-    if (s.shoreV != NA_I) { snprintf(u, sizeof(u), "%d V", s.shoreV); eSub(X1 + 14, Y1 + 116, u, true, red, bg); }
+    W(s.shoreW); eText(X1 + 14, Y1 + 74, v, "W", &fonts::DejaVu40, true, red, bg);
+    if (s.shoreV != NA_I) { snprintf(u, sizeof(u), "%d V", s.shoreV); eSub(X1 + 14, Y1 + 98, u, true, red, bg); }
   } else {
-    eText(X1 + 14, Y1 + 84, ok ? "Disconnected" : "--", nullptr, &fonts::DejaVu24, false, red, bg);
+    eText(X1 + 14, Y1 + 72, ok ? "Disconnected" : "--", nullptr, &fonts::DejaVu24, false, red, bg);
   }
 
-  eBox(X2, Y1, "Inverter / Charger", false, true, red, bg);
+  eBox(X2, Y1, "Inverter / Charger", false, true, red, bg, H1);
   fb.setFont(&fonts::DejaVu40);
   const char* st = ok ? s.invSt : "--";
-  eText(X2 + 14, Y1 + 88, st, nullptr, fb.textWidth(st) > 192 ? (const lgfx::IFont*)&fonts::DejaVu24 : &fonts::DejaVu40, false, red, bg);
-  if (ok && s.invW != NA_I && s.invW != 0) { snprintf(u, sizeof(u), "%d W DC", abs(s.invW)); eSub(X2 + 14, Y1 + 116, u, false, red, bg); }
+  eText(X2 + 14, Y1 + 74, st, nullptr, fb.textWidth(st) > 192 ? (const lgfx::IFont*)&fonts::DejaVu24 : &fonts::DejaVu40, false, red, bg);
+  if (ok && s.invW != NA_I && s.invW != 0) { snprintf(u, sizeof(u), "%d W DC", abs(s.invW)); eSub(X2 + 14, Y1 + 98, u, false, red, bg); }
 
-  eBox(X3, Y1, "AC Loads", acOn, false, red, bg);
-  W(s.acW); eText(X3 + 14, Y1 + 88, v, "W", &fonts::DejaVu40, acOn, red, bg);
+  eBox(X3, Y1, "AC Loads", acOn, false, red, bg, H1);
+  if (ok) eChart(s.acHist, s.acHn, X3, Y1, 220, Y1 + 44, Y1 + H1 - 3, acOn, s.night, red);
+  W(s.acW); eText(X3 + 14, Y1 + 74, v, "W", &fonts::DejaVu40, acOn, red, bg);
 
-  eBox(X1, Y2, "Solar yield", solarOn, false, red, bg);
-  W(s.pvW); eText(X1 + 14, Y2 + 88, v, "W", &fonts::DejaVu40, solarOn, red, bg);
-  if (ok && !isnan(s.pvToday)) { snprintf(u, sizeof(u), "Today %.2f kWh", s.pvToday); eSub(X1 + 14, Y2 + 116, u, solarOn, red, bg); }
+  // Solar: Leistung + Strom, Ertrag heute/gestern, darunter jeder MPPT mit Name, W, kWh heute
+  eBox(X1, Y2, "Solar yield", solarOn, false, red, bg, H2);
+  if (ok) eChart(s.pvHist, s.pvHn, X1, Y2, 220, Y2 + 104, Y2 + H2 - 3, solarOn, s.night, red, true);   // unter Tagesertrag, hinter der MPPT-Liste, gedämpft
+  W(s.pvW); eText(X1 + 14, Y2 + 70, v, "W", &fonts::DejaVu40, solarOn, red, bg);
+  if (ok && !isnan(s.pvA) && s.pvA > 0.05f) {
+    snprintf(u, sizeof(u), "%.1f A", s.pvA);
+    fb.setFont(&fonts::DejaVu18); fb.setTextDatum(textdatum_t::baseline_right);
+    fb.setTextColor(red ? C_ONRED : C_ETXT); fb.drawString(u, X1 + 206, Y2 + 66);
+  }
+  if (ok && !isnan(s.pvToday)) {
+    if (!isnan(s.pvYest)) snprintf(u, sizeof(u), "Today %.2f - Yest. %.2f kWh", s.pvToday, s.pvYest);
+    else snprintf(u, sizeof(u), "Today %.2f kWh", s.pvToday);
+    small(u, X1 + 14, Y2 + 90, textdatum_t::baseline_left, solarOn, false);
+  }
+  if (ok && s.nMppt) {
+    fb.drawFastHLine(X1 + 14, Y2 + 97, 192, red ? C_ONRED : C_BOXBRD);
+    for (int i = 0; i < s.nMppt && i < 5; i++) {
+      const EMppt& m = s.mppt[i];
+      int y = Y2 + 111 + i * 13;
+      small(m.n, X1 + 14, y, textdatum_t::baseline_left, solarOn, false);
+      if (m.w != NA_I) snprintf(u, sizeof(u), "%d W", m.w); else strcpy(u, "--");
+      small(u, X1 + 150, y, textdatum_t::baseline_right, solarOn, true);
+      if (!isnan(m.kwh)) snprintf(u, sizeof(u), "%.2f kWh", m.kwh); else strcpy(u, "--");
+      small(u, X1 + 206, y, textdatum_t::baseline_right, solarOn, false);
+    }
+  }
 
-  eBox(X2, Y2, "Battery", false, true, red, bg);
+  // Batterie: SOC, Status + Restlaufzeit rechts, V/A/W, darunter weitere Batterien
+  eBox(X2, Y2, "Battery", false, true, red, bg, H2);
+  if (ok && s.batName[0]) small(s.batName, X2 + 206, Y2 + 26, textdatum_t::baseline_right, false, false);
   if (ok && s.batSoc != NA_I) snprintf(v, sizeof(v), "%d", s.batSoc); else strcpy(v, "--");
-  eText(X2 + 14, Y2 + 80, v, "%", &fonts::DejaVu40, false, red, bg);
+  eText(X2 + 14, Y2 + 70, v, "%", &fonts::DejaVu40, false, red, bg);
   if (ok) {
+    fb.setFont(&fonts::DejaVu18); fb.setTextDatum(textdatum_t::baseline_right);
+    fb.setTextColor(red ? C_ONRED : C_ETXT); fb.drawString(s.batSt, X2 + 206, Y2 + 58);
+    if (s.batTtg[0]) small(s.batTtg, X2 + 206, Y2 + 74, textdatum_t::baseline_right, false, false);
     char a[10], w[10];
     if (!isnan(s.batA)) snprintf(a, sizeof(a), "%.1f", s.batA); else strcpy(a, "--");
     if (s.batW != NA_I) snprintf(w, sizeof(w), "%d", s.batW); else strcpy(w, "--");
     snprintf(u, sizeof(u), "%.2fV %sA %sW", isnan(s.batV) ? 0.0f : s.batV, a, w);
-    eSub(X2 + 14, Y2 + 102, u, false, red, bg);
-    snprintf(u, sizeof(u), "%s  %s", s.batSt, s.batTtg);
-    eSub(X2 + 14, Y2 + 124, u, false, red, bg);
+    eSub(X2 + 14, Y2 + 96, u, false, red, bg);
+    if (s.nEbat) fb.drawFastHLine(X2 + 14, Y2 + 106, 192, red ? C_ONRED : C_BOXBRD);
+    for (int i = 0; i < s.nEbat; i++) {
+      const EBat& q = s.ebat[i];
+      int y = Y2 + 124 + i * 17;
+      small(q.n, X2 + 14, y, textdatum_t::baseline_left, false, false);
+      char sv[24] = "";
+      if (q.soc != NA_I && !isnan(q.v)) snprintf(sv, sizeof(sv), "%d %% - %.2f V", q.soc, q.v);
+      else if (!isnan(q.v)) snprintf(sv, sizeof(sv), "%.2f V", q.v);
+      small(sv, X2 + 206, y, textdatum_t::baseline_right, false, true);
+    }
   }
 
-  eBox(X3, Y2, "DC Loads", dcOn, false, red, bg);
-  W(s.dcW); eText(X3 + 14, Y2 + 88, v, "W", &fonts::DejaVu40, dcOn, red, bg);
+  eBox(X3, Y2, "DC Loads", dcOn, false, red, bg, H2);
+  if (ok) eChart(s.dcHist, s.dcHn, X3, Y2, 220, Y2 + 70, Y2 + H2 - 3, dcOn, s.night, red);
+  W(s.dcW); eText(X3 + 14, Y2 + 70, v, "W", &fonts::DejaVu40, dcOn, red, bg);
 
-  eConn(240, Y1 + 66, 50, false, shoreOn, 0, red, now);
-  eConn(510, Y1 + 66, 50, false, acOn, 0, red, now);
-  eConn(240, Y2 + 66, 50, false, solarOn, 0, red, now);
-  eConn(510, Y2 + 66, 50, false, dcOn, 0, red, now);
-  eConn(400, Y1 + 132, Y2 - Y1 - 132, true, charging || inverting, inverting ? 1 : 2, red, now);
+  eConn(240, Y1 + 55, 50, false, shoreOn, 0, red, now);
+  eConn(510, Y1 + 55, 50, false, acOn, 0, red, now);
+  eConn(240, Y2 + 58, 50, false, solarOn, 0, red, now);
+  eConn(510, Y2 + 58, 50, false, dcOn, 0, red, now);
+  eConn(400, Y1 + H1, Y2 - Y1 - H1, true, charging || inverting, inverting ? 1 : 2, red, now);
 }
 
 // ── Settings-Seite: QR-Code zur Node-RED-Einstellungsseite ─────────────────
@@ -1343,7 +1393,7 @@ static void enginePage(const DashState& s, bool online, bool red, uint16_t bg) {
   if (rOk && s.mRangeNm != NA_I) { snprintf(v, sizeof(v), "%d", s.mRangeNm); engValue(600, 292, v, "nm", "", red, bg); }
 }
 
-// ── Screen 9: SOS — VHF-Notruf zum Ablesen (MAYDAY / PAN PAN) ──────────────
+// ── Screen 8: SOS — VHF-Notruf zum Ablesen (MAYDAY / PAN PAN) ──────────────
 // Text mit UTF-8-"°": die DejaVu-Fonts haben kein Grad-Zeichen → als kleiner Kringel gezeichnet
 static int drawTextDeg(const char* str, int x, int y, const lgfx::IFont* font, uint16_t col, uint16_t bg) {
   char seg[96]; int n = 0;
@@ -1421,51 +1471,7 @@ static void sosPage(const DashState& s, bool online, bool red, uint16_t bg) {
   }
 }
 
-// ── Screen 3: Tanks (Water, Diesel, Black Main, Black Guest) ──────────────
-static void tanksPage(const DashState& s, bool online, bool red, uint16_t bg) {
-  static const char* defNames[] = {"WATER", "DIESEL", "BLACK MAIN", "BLACK GUEST"};
-  for (int i = 0; i < 4; i++) {
-    const TankV& t = s.tanks[i];
-    const int x = 12 + i * 195, y = 72, w = 191, h = 320;
-    bool hi = online && !strcmp(t.st, "high"), wr = online && !strcmp(t.st, "warn");
-    uint16_t brd = red ? C_ONRED : hi ? C_RED : wr ? C_AMBER : C_BORDER;
-    for (int j = 0; j < (hi ? 4 : 2); j++) fb.drawRoundRect(x + j, y + j, w - 2 * j, h - 2 * j, 14 - j, brd);
-    centerText(t.name[0] ? t.name : defNames[i], x + w / 2, y + 22, &fonts::DejaVu18, red ? C_ONRED : C_GREY, bg);
-    char b[24];
-    bool has = online && t.pct != NA_I;
-    if (has) snprintf(b, sizeof(b), "%d", t.pct); else strcpy(b, "--");
-    fb.setFont(&fonts::DejaVu40);
-    int wv = fb.textWidth(b);
-    fb.setFont(&fonts::DejaVu18);
-    int wu = fb.textWidth("%") + 4;
-    int bx = x + w / 2 - (wv + wu) / 2;
-    uint16_t vc = red ? C_ONRED : hi ? C_RED : wr ? C_AMBER : C_WHITE;
-    fb.setFont(&fonts::DejaVu40); fb.setTextDatum(textdatum_t::baseline_left); fb.setTextColor(vc, bg);
-    fb.drawString(b, bx, y + 80);
-    fb.setFont(&fonts::DejaVu18); fb.setTextColor(red ? C_ONRED : C_GREY, bg);
-    fb.drawString("%", bx + wv + 4, y + 80);
-    // Tank-Grafik: Behälter mit Füllstand von unten, Marken bei 25/50/75 %
-    const int vx = x + 50, vy = y + 100, vw = w - 100, vh = 172, rr = 14;
-    if (!red) fb.fillRoundRect(vx, vy, vw, vh, rr, C_TPILL);
-    uint16_t fc = red ? C_ONRED : !strcmp(t.kind, "fuel") ? C_WSUN : !strcmp(t.kind, "black") ? C_BROWN : C_WRAIN;
-    if (has && t.pct > 0) {
-      int fh = (vh - 6) * constrain(t.pct, 0, 100) / 100, fy = vy + vh - 3 - fh;
-      fb.fillRoundRect(vx + 3, fy, vw - 6, fh, min(rr - 3, fh / 2), fc);
-      if (fh > rr) fb.fillRect(vx + 3, fy, vw - 6, rr, fc);   // obere Kante gerade
-    }
-    for (int m = 1; m <= 3; m++) {
-      int my = vy + vh - vh * m / 4;
-      for (int dx = vx + 4; dx < vx + vw - 4; dx += 6) fb.drawFastHLine(dx, my, 3, red ? C_ONRED : C_BORDER);
-    }
-    for (int j = 0; j < 3; j++) fb.drawRoundRect(vx + j, vy + j, vw - 2 * j, vh - 2 * j, rr - j, red ? C_ONRED : C_DIM);
-    if (online && t.l != NA_I) snprintf(b, sizeof(b), "%d / %d l", t.l, t.cap);
-    else if (online && t.cap != NA_I) snprintf(b, sizeof(b), "-- / %d l", t.cap);
-    else strcpy(b, "--");
-    centerText(b, x + w / 2, y + 294, &fonts::DejaVu18, red ? C_ONRED : C_GREY, bg);
-  }
-}
-
-// ── Screen 6: Segeln — B&G-Windanzeige + Rigg-Load (Cyclops) ─────────────
+// ── Screen 5: Segeln — B&G-Windanzeige + Rigg-Load (Cyclops) ─────────────
 static void windDial(const DashState& s, bool online, bool red, uint16_t bg) {
   const int cx = 200, cy = 232, R = 140;
   auto A = [](float d) { return d - 90.0f; };  // 0° = Bug oben
@@ -1674,7 +1680,7 @@ static void sailPage(const DashState& s, bool online, bool red, uint16_t bg) {
   rigTileDraw(599, 288, "STBD LOAD", s.rigS, s.rigSst, s, online, red, bg);
 }
 
-// ── Screen 8: Anker (Radar-Ansicht, Nord oben, Mitte = Anker) ─────────────
+// ── Screen 7: Anker (Radar-Ansicht, Nord oben, Mitte = Anker) ─────────────
 static const char* card8(int d) {
   static const char* C[] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
   return C[((int)lroundf(((d % 360) + 360) % 360 / 45.0f)) % 8];
@@ -1858,7 +1864,7 @@ static void anchorPage(const DashState& s, bool online, bool red, uint16_t bg) {
   }
 }
 
-// Touch auf dem Anker-Screen (8); gibt true zurück, wenn der Tipp verbraucht wurde
+// Touch auf dem Anker-Screen (7); gibt true zurück, wenn der Tipp verbraucht wurde
 static bool anchorTouch(int tx, int ty) {
   DashState s;
   xSemaphoreTake(sMutex, portMAX_DELAY); s = S; xSemaphoreGive(sMutex);
@@ -1903,7 +1909,7 @@ static bool anchorTouch(int tx, int ty) {
   return tx >= PX && ty >= 72 && ty <= 392;          // Tipps ins Panel nicht als Quittieren werten
 }
 
-// ── AIS (Screen 7): Radar Heading oben (ohne Heading: Nord oben), eigenes Boot in der Mitte, 30-min-Kurslinien ──
+// ── AIS (Screen 6): Radar Heading oben (ohne Heading: Nord oben), eigenes Boot in der Mitte, 30-min-Kurslinien ──
 static void drawFit(const char* str, int x, int y, int maxW) {   // kürzt Text auf maxW Pixel
   char b[40]; strlcpy(b, str, sizeof(b));
   for (int l = strlen(b); l > 0 && fb.textWidth(b) > maxW; ) b[--l] = 0;
@@ -2145,7 +2151,7 @@ static void render(const DashState& s, bool online, bool redPhase) {
   // SOS-Knopf (Rettungsring) rechts daneben, Touch-Zone x 125..181 → springt auf den Notruf-Screen
   {
     const int sx = 151, sy = 36;
-    uint16_t c = red ? C_ONRED : (page == 9 ? C_WHITE : C_DIM);
+    uint16_t c = red ? C_ONRED : (page == 8 ? C_WHITE : C_DIM);
     fb.drawCircle(sx, sy, 23, c); fb.drawCircle(sx, sy, 22, c);
     thickArc(sx, sy, 9, 0, 360, 6, red ? C_ONRED : C_WHITE);
     for (int q = 0; q < 4; q++) thickArc(sx, sy, 9, q * 90 + 22.5f, q * 90 + 67.5f, 6, red ? bg : C_RED);
@@ -2189,25 +2195,40 @@ static void render(const DashState& s, bool online, bool redPhase) {
   if (showSettings) {
     settingsPage(red, bg);
   } else if (page == 1) {
-  // Linke Spalte: Batterie oben, Frischwasser unten
-  if (online && !isnan(s.battV)) {
-    if (!isnan(s.battA)) snprintf(buf, sizeof(buf), "%.2f V  %.1f A", s.battV, s.battA);
-    else snprintf(buf, sizeof(buf), "%.2f V", s.battV);
-  } else strcpy(buf, "-- V");
-  if (s.homeSupply) supplyTile(s, online, red, bg);
-  else {
-  halfTile(72, "BATTERY", s.battSt, online, s.battSoc, s.battThr, buf, C_GREEN, red, bg);
-
-  if (online && s.waterL >= 0 && s.waterCap > 0) snprintf(buf, sizeof(buf), "%d l of %d l", s.waterL, s.waterCap);
-  else strcpy(buf, "-- l");
-  halfTile(238, "WATER", s.waterSt, online, s.waterPct, s.waterThr, buf, C_BLUE, red, bg);
-  }
+  // Linke Spalte: Batterie + alle Tanks in einer Box
+  supplyTile(s, online, red, bg);
 
   // Kachel Wind
   {
     const int x = 276, cx = x + 124;
     bool al = online && !strcmp(s.windSt, "alarm");
     if (online) histChart(s.windHist, s.windN, x + 6, 236, 72 + 120, 72 + 314, true, al, red, bg);
+    // Solarleistung: Sonne scheint von der oberen rechten Ecke in die Box, Strahlen wachsen mit der Leistung;
+    // ohne Ertrag (≤ 5 W, z. B. nachts) oder ohne Daten verschwindet sie
+    if (online && s.eOk && s.pvW != NA_I && s.pvW > 5) {
+      const int sx = x + 246, sy = 74;
+      int pw = online && s.eOk ? s.pvW : NA_I;
+      bool on = pw != NA_I && pw > 5;
+      float k = pw == NA_I ? 0 : constrain(pw / 1500.0f, 0.0f, 1.0f);
+      uint16_t sc = red ? C_ONRED : on ? C_WSUN : C_DIM;
+      fb.setClipRect(x + 2, 74, 244, 316);
+      if (on && !red) fb.fillCircle(sx, sy, 30 + 8 * k, lgfx::color565(s.night ? 40 : 56, s.night ? 0 : 42, 0));   // Lichtschein
+      for (float a = 100; a <= 170.1f; a += 17.5f) {
+        float t = a * PI / 180, r1 = 40 + 22 * k;
+        fb.drawWideLine(sx + cosf(t) * 30, sy + sinf(t) * 30, sx + cosf(t) * r1, sy + sinf(t) * r1, 1.5f, sc);
+      }
+      fb.fillCircle(sx, sy, 22, sc);
+      fb.clearClipRect();
+      for (int dy = 0; dy < 14; dy++)   // Ecke außerhalb des abgerundeten Rahmens wieder freiräumen
+        for (int dx = 0; dx < 14; dx++)
+          if (dx * dx + dy * dy > 13 * 13) fb.drawPixel(x + 234 + dx, 72 + 13 - dy, bg);
+      char pb[12];
+      if (pw == NA_I) strcpy(pb, "--"); else snprintf(pb, sizeof(pb), "%d", pw);
+      fb.setFont(&fonts::DejaVu12); int wu = fb.textWidth("W");
+      fb.setTextDatum(textdatum_t::baseline_right); fb.setTextColor(sc, bg);
+      fb.drawString("W", x + 234, 72 + 66);
+      fb.setFont(&fonts::DejaVu18); fb.drawString(pb, x + 232 - wu, 72 + 66);
+    }
     tileFrame(x, "WIND", al, red, bg);
     gTransp = true;
     uint16_t col = online ? stColor(s.windSt, red) : C_AMBER;
@@ -2307,16 +2328,14 @@ static void render(const DashState& s, bool online, bool redPhase) {
   } else if (page == 2) {
     energyPage(s, online, red, bg, millis());
   } else if (page == 3) {
-    tanksPage(s, online, red, bg);
-  } else if (page == 4) {
     weatherPage(s, online, red, bg);
-  } else if (page == 5) {
+  } else if (page == 4) {
     enginePage(s, online, red, bg);
-  } else if (page == 6) {
+  } else if (page == 5) {
     sailPage(s, online, red, bg);
-  } else if (page == 8) {
-    anchorPage(s, online, red, bg);
   } else if (page == 7) {
+    anchorPage(s, online, red, bg);
+  } else if (page == 6) {
     aisPage(s, aisR, online, red, bg);
   } else {
     sosPage(s, online, red, bg);
@@ -2333,8 +2352,8 @@ static void render(const DashState& s, bool online, bool redPhase) {
   centerText(hint, 400, 446, &fonts::DejaVu18, red ? C_ONRED : C_GREY, bg);
 
   // Seiten-Punkte
-  for (int i = 0; i < 9; i++)
-    fb.fillCircle(344 + i * 14, 470, 4, red ? C_ONRED : (page == i + 1 ? C_GREY : C_BORDER));
+  for (int i = 0; i < 8; i++)
+    fb.fillCircle(351 + i * 14, 470, 4, red ? C_ONRED : (page == i + 1 ? C_GREY : C_BORDER));
 
   fb.pushSprite(0, 0);
 }
@@ -2362,6 +2381,7 @@ void setup() {
     for (;;) delay(1000);
   }
 
+  Serial.printf("DashState %u B, AisState %u B\n", (unsigned)sizeof(DashState), (unsigned)sizeof(AisState));   // Stack-Budget im Blick
   sMutex = xSemaphoreCreateMutex();
   xTaskCreatePinnedToCore(netTask, "net", 12288, nullptr, 1, nullptr, 0);
 }
@@ -2398,19 +2418,19 @@ void loop() {
       }
       dataRev++;
     } else if (abs(dx) > 120 && !showSettings) {
-      page = constrain(page + (dx < 0 ? 1 : -1), 1, 9);
+      page = constrain(page + (dx < 0 ? 1 : -1), 1, 8);
       dataRev++;  // sofort neu zeichnen
-    } else if (page == 8 && !showSettings && t0y >= 72 && t0y <= 392 && anchorTouch(t0x, t0y)) {
+    } else if (page == 7 && !showSettings && t0y >= 72 && t0y <= 392 && anchorTouch(t0x, t0y)) {
       dataRev++;
-    } else if (page == 7 && !showSettings && t0y >= 72 && t0y <= 392 && aisTouch(t0x, t0y)) {
+    } else if (page == 6 && !showSettings && t0y >= 72 && t0y <= 392 && aisTouch(t0x, t0y)) {
       dataRev++;
     } else if (t0x >= 125 && t0x < 181 && t0y < 72) {
-      page = 9; sosStep = 0; showSettings = false; dataRev++;    // Rettungsring → Notruf-Screen
-    } else if (page == 9 && !showSettings && t0y >= 68 && t0y < 118) {
+      page = 8; sosStep = 0; showSettings = false; dataRev++;    // Rettungsring → Notruf-Screen
+    } else if (page == 8 && !showSettings && t0y >= 68 && t0y < 118) {
       sosPanPan = t0x >= 400; sosStep = 0; dataRev++;             // MAYDAY | PAN PAN
-    } else if (page == 9 && !showSettings && t0y >= 118 && t0y < 148) {
+    } else if (page == 8 && !showSettings && t0y >= 118 && t0y < 148) {
       sosStep = constrain((t0x - 12) / 262, 0, 2); dataRev++;     // Schritt-Tabs
-    } else if (page == 9 && !showSettings && t0y >= 148 && t0y <= 392) {
+    } else if (page == 8 && !showSettings && t0y >= 148 && t0y <= 392) {
       sosStep = (sosStep + 1) % 3; dataRev++;                     // Tipp auf den Text → nächster Schritt
     } else if (t0x >= 67 && t0x < 125 && t0y < 72) {
       showSettings = !showSettings; settingsOpenedMs = millis(); dataRev++;
@@ -2456,7 +2476,7 @@ void loop() {
     xSemaphoreGive(sMutex);
     // neuer Alarm → Übersicht, reine Rigg-Alarme → Segel-Screen, reine AIS-Alarme → AIS-Screen
     // nie vom SOS-Screen wegspringen — wer gerade einen Notruf abliest, darf nicht unterbrochen werden
-    if (b && !wasBlink && page != 9) { int tgt = aisOnly ? 7 : rigOnly ? 6 : engOnly ? 5 : 1; if (page != tgt || showSettings) { page = tgt; showSettings = false; dataRev++; } }
+    if (b && !wasBlink && page != 8) { int tgt = aisOnly ? 6 : rigOnly ? 5 : engOnly ? 4 : 1; if (page != tgt || showSettings) { page = tgt; showSettings = false; dataRev++; } }
     if (showSettings && now - settingsOpenedMs > 60000) { showSettings = false; dataRev++; }
     wasBlink = b;
   }

@@ -201,7 +201,11 @@ configs = [{'id': CERBO_BROKER, 'type': 'mqtt-broker', 'name': 'Cerbo GX (ESP-Da
             'birthTopic': '', 'birthQos': '0', 'birthPayload': '', 'birthMsg': {},
             'closeTopic': '', 'closeQos': '0', 'closePayload': '', 'closeMsg': {},
             'willTopic': '', 'willQos': '0', 'willPayload': '', 'willMsg': {}, 'userProps': '', 'sessionExpiry': ''}]
-for i, t in enumerate(['N/+/system/0/#', 'N/+/solarcharger/+/History/Daily/0/Yield', 'N/+/vebus/+/Ac/ActiveIn/L1/V']):
+# zusätzlich: weitere Batterien (z. B. Starterbatterie) und einzelne MPPTs mit Namen — wie die Victron-Box der Pro App
+CERBO_TOPICS = ['N/+/system/0/#', 'N/+/solarcharger/+/History/Daily/0/Yield', 'N/+/vebus/+/Ac/ActiveIn/L1/V',
+                'N/+/solarcharger/+/History/Daily/1/Yield', 'N/+/solarcharger/+/Yield/Power', 'N/+/solarcharger/+/CustomName',
+                'N/+/battery/+/Soc', 'N/+/battery/+/Dc/0/Voltage', 'N/+/battery/+/Dc/0/Current', 'N/+/battery/+/CustomName']
+for i, t in enumerate(CERBO_TOPICS):
     add(f'Cerbo {i}', 'mqtt in', 150, 880 + i * 40, [['Victron speichern']], topic=t, qos='0',
         datatype='json', broker=CERBO_BROKER, nl=False, rap=True, rh=0, inputs=0)
 fn('Victron speichern', """\
@@ -332,7 +336,7 @@ const DEF = { windAlarmOn: true, windAlarmKn: 25, windHystKn: 2, windSource: 'au
     waterAlarmOn: true, waterLowPct: 15, waterHystPct: 3, waterInstance: 'auto',
     baroAlarmOn: true, baroLowHpa: 995, baroHystHpa: 1, baroWinMin: 2,
     aisMode: 'cruising', aisCruiseNm: 0.5, aisOffshoreNm: 2, aisTcpaMin: 20, aisRangeNm: 2,
-    homeLeft: 'supply', sailStyle: 'tacho', sailCloseFrom: 30, sailCloseTo: 50, sosPob: 2, sosDesc: 'sailing trimaran, 14 metres',
+    sailStyle: 'tacho', sailCloseFrom: 30, sailCloseTo: 50, sosPob: 2, sosDesc: 'sailing trimaran, 14 metres',
     bwSwap: false, bwWarnPct: 75, bwHighPct: 90, fuelWarnPct: 20, fuelLowPct: 10,
     rigAlarmOn: true, rigWarnT: 3.2, rigAlarmT: 4.2, rigHystT: 0.1, rigScaleT: 5,
     engTempAlarmOn: true, engTempWarnC: 90, engTempAlarmC: 95, engTempHystC: 2,
@@ -358,7 +362,6 @@ if (msg.req.method === 'POST') {
     if (['auto', 'true', 'apparent'].indexOf(b.windSource) >= 0) cfg.windSource = b.windSource;
     if (['full', 'short', 'off'].indexOf(b.soundNight) >= 0) cfg.soundNight = b.soundNight;
     if (['tacho', 'classic'].indexOf(b.sailStyle) >= 0) cfg.sailStyle = b.sailStyle;
-    if (['supply', 'split'].indexOf(b.homeLeft) >= 0) cfg.homeLeft = b.homeLeft;
     if (['anchor', 'cruising', 'offshore'].indexOf(b.aisMode) >= 0) cfg.aisMode = b.aisMode;
     if (typeof b.battInstance === 'string' && /^[\\w-]{1,20}$/.test(b.battInstance)) cfg.battInstance = b.battInstance;
     if (typeof b.sosDesc === 'string') cfg.sosDesc = b.sosDesc.replace(/[^\\w ,.\\-\\/]/g, '').slice(0, 40);

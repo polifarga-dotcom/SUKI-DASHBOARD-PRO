@@ -8,7 +8,7 @@ const DEF = {
     windAlarmOn: true, windAlarmKn: 25, windHystKn: 2, windSource: 'auto', windAvgSec: 10, windWinMin: 2,
     battAlarmOn: true, battLowSoc: 30, battHystSoc: 3, battLowVolt: 0, battInstance: 'auto',
     waterAlarmOn: true, waterLowPct: 15, waterHystPct: 3, waterInstance: 'auto',
-    homeLeft: 'supply', sailStyle: 'tacho', sailCloseFrom: 30, sailCloseTo: 50,
+    sailStyle: 'tacho', sailCloseFrom: 30, sailCloseTo: 50,
     aisMode: 'cruising', aisCruiseNm: 0.5, aisOffshoreNm: 2, aisTcpaMin: 20, aisRangeNm: 2,
     sosPob: 2, sosDesc: 'sailing trimaran, 14 metres',
     bwSwap: false, bwWarnPct: 75, bwHighPct: 90, fuelWarnPct: 20, fuelLowPct: 10,
@@ -270,18 +270,53 @@ if (vic._t && now - vic._t < 60000) {
     const pvDay = vicKeys(/^solarcharger\/\d+\/History\/Daily\/0\/Yield$/);
     const invP = V('Dc/InverterCharger/Power') != null ? V('Dc/InverterCharger/Power') : V('Dc/Vebus/Power');
     const bState = V('Dc/Battery/State');              // 0 idle, 1 charging, 2 discharging
+    const pvYest = vicKeys(/^solarcharger\/\d+\/History\/Daily\/1\/Yield$/);
+    // weitere Batterien (alle außer dem aktiven Batteriemonitor) und einzelne MPPTs, wie in der Pro App
+    const inst = (re) => [...new Set(Object.keys(vic).map((k) => (re.exec(k) || [])[1]).filter(Boolean))];
+    const primB = (/battery\/(\d+)/.exec(String(vic['system/0/ActiveBatteryService'] || '')) || [])[1];
+    const r2 = (v) => (isNum(v) ? Math.round(v * 100) / 100 : null);
+    const bats = inst(/^battery\/(\d+)\//).filter((i) => i !== primB && isNum(vic['battery/' + i + '/Dc/0/Voltage']))
+        .map((i) => ({ n: String(vic['battery/' + i + '/CustomName'] || 'Battery ' + i).slice(0, 16),
+            soc: r0(vic['battery/' + i + '/Soc']), v: r2(vic['battery/' + i + '/Dc/0/Voltage']), a: r1(vic['battery/' + i + '/Dc/0/Current']) }))
+        .sort((a, b) => a.n.localeCompare(b.n));
+    const mppts = inst(/^solarcharger\/(\d+)\//).filter((i) => isNum(vic['solarcharger/' + i + '/Yield/Power']))
+        .map((i) => ({ n: String(vic['solarcharger/' + i + '/CustomName'] || 'MPPT ' + i).slice(0, 14),
+            w: r0(vic['solarcharger/' + i + '/Yield/Power']), kwh: r2(vic['solarcharger/' + i + '/History/Daily/0/Yield']) }))
+        .sort((a, b) => a.n.localeCompare(b.n));
     energy = {
         ok: true,
         shore: { on: src != null && src !== 240 && ((shoreW || 0) > 5 || (shoreV || 0) > 50), w: r0(shoreW), v: r0(shoreV) },
         inv: { st: SYS_STATE[V('SystemState/State')] || '--', w: r0(invP) },
         ac: { w: r0(sumPh('Ac/ConsumptionOnOutput') != null ? sumPh('Ac/ConsumptionOnOutput') : sumPh('Ac/Consumption')) },
         pv: { w: r0(V('Dc/Pv/Power')), a: r1(V('Dc/Pv/Current')),
-            today: pvDay.length ? Math.round(pvDay.reduce((a, b) => a + b, 0) * 100) / 100 : null },
+            today: pvDay.length ? Math.round(pvDay.reduce((a, b) => a + b, 0) * 100) / 100 : null,
+            yest: pvYest.length ? Math.round(pvYest.reduce((a, b) => a + b, 0) * 100) / 100 : null, mppts: mppts.slice(0, 6) },
         bat: { soc: r0(V('Dc/Battery/Soc')), v: V('Dc/Battery/Voltage') != null ? Math.round(V('Dc/Battery/Voltage') * 100) / 100 : null,
             a: r1(V('Dc/Battery/Current')), w: r0(V('Dc/Battery/Power')),
-            st: ['Idle', 'Charging', 'Discharging'][bState] || '--', ttg: fmtTTG(V('Dc/Battery/TimeToGo')) },
+            st: ['Idle', 'Charging', 'Discharging'][bState] || '--', ttg: fmtTTG(V('Dc/Battery/TimeToGo')),
+            n: primB && vic['battery/' + primB + '/CustomName'] ? String(vic['battery/' + primB + '/CustomName']).slice(0, 16) : '' },
+        bats: bats.slice(0, 3),
         dc: { w: r0(V('Dc/System/Power')) },
     };
+}
+// Verbrauchs-/Ertragsverlauf der letzten 10 min (Hintergrund-Diagramm in Solar, AC Loads, DC Loads): 60 Mittelwerte
+{
+    let eh = (flow.get('energy_hist') || []).filter((h) => now - h[0] < 600000);
+    if (energy.ok && (!eh.length || now - eh[eh.length - 1][0] >= 1000)) eh.push([now, energy.pv.w, energy.ac.w, energy.dc.w]);
+    flow.set('energy_hist', eh);
+    if (energy.ok) {
+        const EW = 600000, ES = now - EW, EN = 60;
+        const bucket = (k) => {
+            const sum = new Array(EN).fill(0), cnt = new Array(EN).fill(0);
+            for (const h of eh) {
+                if (!isNum(h[k])) continue;
+                const i = Math.min(EN - 1, Math.floor((h[0] - ES) / EW * EN));
+                sum[i] += h[k]; cnt[i]++;
+            }
+            return sum.map((v, i) => (cnt[i] ? Math.round(v / cnt[i]) : null));
+        };
+        energy.pv.hist = bucket(1); energy.ac.hist = bucket(2); energy.dc.hist = bucket(3);
+    }
 }
 
 // ── Wetter (Open-Meteo, alle 30 min) + Mond (met.no) für Screen 3 ─────────
@@ -718,7 +753,6 @@ const state = {
     msg: alarms.length ? alarms.map((a) => a.text).join('  |  ') : warns.join('  |  '),
     batt: batt,
     energy: energy,
-    home: cfg.homeLeft,   // Screen 1 links: 'supply' = Batterie + alle Tanks in einer Box, 'split' = Battery + Water
     weather: weather,
     engine: engine,
     tanks: tanksScreen,
