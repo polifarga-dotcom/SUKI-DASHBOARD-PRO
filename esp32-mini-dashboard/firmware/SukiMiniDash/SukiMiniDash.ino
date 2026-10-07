@@ -121,7 +121,8 @@ struct DashState {
   bool sTwCalc = false;
   float sAwsMax = NAN, sAwsHist[60];
   char rigPst[8] = "na", rigSst[8] = "na";
-  bool rigOnlyAlarm = false, engOnlyAlarm = false;
+  bool rigOnlyAlarm = false, engOnlyAlarm = false, stormOnlyAlarm = false;
+  bool stormNote = false;   // gelbe Gewitterwarnung angezeigt, per Tipp 4 h quittierbar
   bool classicDial = false;
   int closeFrom = 30, closeTo = 50;  // Am-Wind-Sektoren (° AWA)   // alle aktiven Alarme sind Rigg-Alarme → Segel-Screen zeigen
   // Anker-Screen (Screen 7)
@@ -415,8 +416,9 @@ static void parseState(const String& body) {
   strlcpy(n.rigSst, rg["sst"] | "na", sizeof(n.rigSst));
   {
     JsonArray ak = doc["alarmKeys"].as<JsonArray>();
-    n.rigOnlyAlarm = n.engOnlyAlarm = ak.size() > 0;
+    n.rigOnlyAlarm = n.engOnlyAlarm = n.stormOnlyAlarm = ak.size() > 0;
     for (JsonVariant k : ak) {
+      if (strncmp(k | "", "storm_", 6)) n.stormOnlyAlarm = false;
       if (strncmp(k | "", "rig", 3)) n.rigOnlyAlarm = false;
       if (strcmp(k | "", "engtemp")) n.engOnlyAlarm = false;
     }
@@ -449,6 +451,8 @@ static void parseState(const String& body) {
     for (JsonVariant k : ak) { if (!strncmp(k | "", "ais_", 4)) an.alarmKey = true; else an.onlyAlarm = false; }
     xSemaphoreTake(sMutex, portMAX_DELAY); AIS = an; xSemaphoreGive(sMutex);
   }
+
+  n.stormNote = !doc["storm"]["noteKey"].isNull();
 
   JsonObject m = doc["engine"];
   n.mOn = m["on"] | false;
@@ -2369,7 +2373,7 @@ static void render(const DashState& s, bool online, bool redPhase) {
   fb.setFont(&fonts::DejaVu24);
   const lgfx::IFont* mf = fb.textWidth(msg) > 768 ? (const lgfx::IFont*)&fonts::DejaVu18 : &fonts::DejaVu24;
   centerText(msg, 400, 418, mf, mcol, bg);
-  const char* hint = online && s.blink ? "Tap to acknowledge" : (online && s.acked ? "Acknowledged" : "");
+  const char* hint = online && s.blink ? "Tap to acknowledge" : online && s.stormNote ? "Tap to acknowledge warning (4 h)" : (online && s.acked ? "Acknowledged" : "");
   centerText(hint, 400, 446, &fonts::DejaVu18, red ? C_ONRED : C_GREY, bg);
 
   // Seiten-Punkte
@@ -2465,7 +2469,7 @@ void loop() {
       showSettings = false; dataRev++;
     } else {
       xSemaphoreTake(sMutex, portMAX_DELAY);
-      bool blinking = S.blink, night = S.night;
+      bool blinking = S.blink || S.stormNote, night = S.night;   // auch gelbe Gewitterwarnung quittierbar
       xSemaphoreGive(sMutex);
       if (localNightMs && millis() - localNightMs < 3000) night = localNightVal;
       if (t0x < 67 && t0y < 72) {
@@ -2499,12 +2503,12 @@ void loop() {
   {
     static bool wasBlink = false;
     xSemaphoreTake(sMutex, portMAX_DELAY);
-    bool b = S.blink, rigOnly = S.rigOnlyAlarm, engOnly = S.engOnlyAlarm, aisOnly = AIS.onlyAlarm;
+    bool b = S.blink, rigOnly = S.rigOnlyAlarm, engOnly = S.engOnlyAlarm, aisOnly = AIS.onlyAlarm, stormOnly = S.stormOnlyAlarm;
     xSemaphoreGive(sMutex);
     // neuer Alarm → Übersicht, reine Rigg-Alarme → Segel-Screen, reine AIS-Alarme → AIS-Screen
     // nie vom SOS-Screen wegspringen — wer gerade einen Notruf abliest, darf nicht unterbrochen werden
     if (b && offMode) { offMode = false; dataRev++; if (page == 8) page = 1; }   // Alarm weckt das Display (auch ein schon laufender)
-    if (b && !wasBlink && page != 8) { int tgt = aisOnly ? 6 : rigOnly ? 5 : engOnly ? 4 : 1; if (page != tgt || showSettings) { page = tgt; showSettings = false; dataRev++; } }
+    if (b && !wasBlink && page != 8) { int tgt = aisOnly ? 6 : rigOnly ? 5 : engOnly ? 4 : stormOnly ? 3 : 1; if (page != tgt || showSettings) { page = tgt; showSettings = false; dataRev++; } }
     if (showSettings && now - settingsOpenedMs > 60000) { showSettings = false; dataRev++; }
     wasBlink = b;
   }

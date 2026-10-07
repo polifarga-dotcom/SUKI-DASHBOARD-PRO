@@ -225,6 +225,90 @@ return p ? { topic: 'R/' + p + '/keepalive', payload: '' } : null;""", 400, 1000
 add('Cerbo keepalive', 'mqtt out', 640, 960, topic='', qos='0', retain='false', respTopic='',
     contentType='', userProps='', correl='', expiry='', broker=CERBO_BROKER)
 
+# ── 1d) Gewitterwarnungen: MeteoAlarm (offizielle Warnungen der nationalen Wetterdienste), alle 20 min ──
+# Region aus der GPS-Position per OpenStreetMap/Nominatim (nur nach > 10 km Ortswechsel); auf See bleibt die
+# letzte Region bis 100 km gültig (Küstengewässer). Orange/Rot = Alarm, Gelb = Hinweis (evaluate.js).
+inject('Gewitter 20 min', 140, 1160, 'Gewitter Region', 1200, [], once_delay=40)
+fn('Gewitter Region', """\
+const cfg = flow.get('cfg') || {};
+if (cfg.stormAlarmOn === false) { node.status({ fill: 'grey', text: 'aus' }); return null; }
+const nav = flow.get('sk_nav');
+let lat = null, lon = null;
+if (nav && nav.data && nav.data.position && nav.data.position.value) {
+    lat = nav.data.position.value.latitude; lon = nav.data.position.value.longitude;
+} else {
+    const a = flow.get('anchor'); const p = a && a.data && a.data.position;
+    if (p) { lat = p.lat; lon = p.lon; }
+}
+if (typeof lat !== 'number' || typeof lon !== 'number') { node.status({ fill: 'yellow', text: 'keine Position' }); return null; }
+const geo = flow.get('storm_geo');
+const km = (a, b, c, d) => Math.hypot((c - a) * 111.32, (d - b) * 111.32 * Math.cos(a * Math.PI / 180));
+msg.lat = lat; msg.lon = lon;
+if (geo && km(geo.lat, geo.lon, lat, lon) < 10 && Date.now() - geo.t < 24 * 3600000) return [null, msg];   // Region bekannt
+msg.url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=14&lat=' + lat.toFixed(4) + '&lon=' + lon.toFixed(4);
+msg.headers = { 'User-Agent': 'SUKI-MiniDash/1.0 (sailing yacht dashboard)' };
+msg.requestTimeout = 15000;
+return [msg, null];""", 360, 1160, [['Nominatim GET'], ['MeteoAlarm URL']], outputs=2)
+add('Nominatim GET', 'http request', 560, 1140, [['Region speichern']], method='GET', ret='obj',
+    paytoqs='ignore', url='', tls='', persist=False, proxy='', insecureHTTPParser=False,
+    authType='', senderr=False, headers=[])
+fn('Region speichern', """\
+const a = msg.statusCode === 200 && msg.payload && msg.payload.address;
+const old = flow.get('storm_geo');
+const km = (a1, b1, c1, d1) => Math.hypot((c1 - a1) * 111.32, (d1 - b1) * 111.32 * Math.cos(a1 * Math.PI / 180));
+const names = a ? ['state', 'region', 'province', 'county', 'state_district'].map((k) => a[k]).filter(Boolean) : [];
+if (a && names.length) {
+    flow.set('storm_geo', { lat: msg.lat, lon: msg.lon, t: Date.now(), cc: a.country_code, names });
+} else if (old && old.names && old.names.length && km(old.lat, old.lon, msg.lat, msg.lon) < 100) {
+    // auf See: letzte Küstenregion behalten (Zeitstempel nicht erneuern, damit es weiter versucht wird)
+} else {
+    flow.set('storm_geo', { lat: msg.lat, lon: msg.lon, t: Date.now(), cc: a ? a.country_code : (old && km(old.lat, old.lon, msg.lat, msg.lon) < 300 ? old.cc : null), names: [] });
+}
+return msg;""", 760, 1140, [['MeteoAlarm URL']])
+fn('MeteoAlarm URL', """\
+// MeteoAlarm-Feed des Landes (Atom, legacy) — Landesnamen wie in feeds.meteoalarm.org
+const FEED = { it: 'italy', fr: 'france', es: 'spain', pt: 'portugal', gr: 'greece', hr: 'croatia', si: 'slovenia', mt: 'malta',
+    me: 'montenegro', cy: 'cyprus', de: 'germany', nl: 'netherlands', be: 'belgium', dk: 'denmark', se: 'sweden', no: 'norway',
+    fi: 'finland', gb: 'united-kingdom', ie: 'ireland', at: 'austria', ch: 'switzerland', pl: 'poland', ee: 'estonia', lv: 'latvia',
+    lt: 'lithuania', bg: 'bulgaria', ro: 'romania', rs: 'serbia', ba: 'bosnia-herzegovina', is: 'iceland', lu: 'luxembourg',
+    hu: 'hungary', cz: 'czechia', sk: 'slovakia', md: 'moldova', il: 'israel', mk: 'republic-of-north-macedonia' };
+const geo = flow.get('storm_geo') || {};
+const f = geo.cc && FEED[geo.cc];
+if (!f) {   // kein MeteoAlarm-Land (oder weit draußen auf See)
+    flow.set('storm', { t: Date.now(), ok: true, cc: geo.cc || null, region: '', list: [] });
+    node.status({ fill: 'yellow', text: 'keine MeteoAlarm-Region' });
+    return null;
+}
+return { url: 'https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-' + f, requestTimeout: 20000 };""", 960, 1160, [['MeteoAlarm GET']])
+add('MeteoAlarm GET', 'http request', 1160, 1160, [['MeteoAlarm speichern']], method='GET', ret='txt',
+    paytoqs='ignore', url='', tls='', persist=False, proxy='', insecureHTTPParser=False,
+    authType='', senderr=False, headers=[])
+fn('MeteoAlarm speichern', """\
+if (msg.statusCode !== 200 || typeof msg.payload !== 'string') { node.status({ fill: 'red', text: 'Fehler ' + msg.statusCode }); return null; }
+const geo = flow.get('storm_geo') || {};
+// Namen vergleichbar machen: klein, ohne Akzente/Satzzeichen
+const norm = (x) => String(x || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const mine = (geo.names || []).map(norm).filter(Boolean);
+const tag = (e, t) => { const m = new RegExp('<cap:' + t + '>([^<]*)</cap:' + t + '>').exec(e); return m ? m[1] : ''; };
+const list = [];
+let region = '';
+for (const e of msg.payload.split('<entry>').slice(1)) {
+    const ev = tag(e, 'event'), area = tag(e, 'areaDesc');
+    if (!/thunderstorm/i.test(ev)) continue;
+    const an = norm(area);
+    if (!mine.some((n) => n === an || (an.length > 3 && n.indexOf(an) >= 0) || (n.length > 3 && an.indexOf(n) >= 0))) continue;
+    const lvl = /^red/i.test(ev) ? 'red' : /^orange/i.test(ev) ? 'orange' : /^yellow/i.test(ev) ? 'yellow' : null;
+    if (!lvl) continue;
+    const from = Date.parse(tag(e, 'onset') || tag(e, 'effective')), to = Date.parse(tag(e, 'expires'));
+    if (!isFinite(from) || !isFinite(to) || to < Date.now()) continue;
+    list.push({ lvl, ev, area, from, to });
+    region = area;
+}
+if (!region && mine.length) region = (geo.names || [])[0];
+flow.set('storm', { t: Date.now(), ok: true, cc: geo.cc, region, list });
+node.status({ fill: list.length ? 'yellow' : 'green', text: (region || '?') + ': ' + (list.map((w) => w.lvl).join(',') || 'keine') });
+return null;""", 1360, 1160)
+
 # ── 1c) Wetter: Open-Meteo (Vorhersage, Sonne) + met.no (Mond), alle 30 min ───
 inject('Wetter 30 min', 140, 1080, 'Wetter URL', 1800, [], once_delay=15)
 fn('Wetter URL', """\
@@ -341,11 +425,11 @@ const DEF = { windAlarmOn: true, windAlarmKn: 25, windHystKn: 2, windSource: 'au
     rigAlarmOn: true, rigWarnT: 3.2, rigAlarmT: 4.2, rigHystT: 0.1, rigScaleT: 5,
     engTempAlarmOn: true, engTempWarnC: 90, engTempAlarmC: 95, engTempHystC: 2,
     engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true, fuelCurve: '800:0.8,1000:1.2,1500:2.2,2000:3.8,2500:6.2,3000:9.5',
-    anchorAlarmOn: true, anchorLocalFallback: true, ackMinutes: 5, staleSec: 30, testUntil: 0, night: false,
+    anchorAlarmOn: true, anchorLocalFallback: true, stormAlarmOn: true, ackMinutes: 5, staleSec: 30, testUntil: 0, night: false,
     soundOn: true, soundNight: 'short' };
 const RANGE = { windWinMin: [1, 360], windAlarmKn: [5, 80], windHystKn: [0, 10], windAvgSec: [2, 120], battLowSoc: [5, 95],
     battHystSoc: [0, 20], battLowVolt: [0, 60], waterLowPct: [0, 95], waterHystPct: [0, 20], baroLowHpa: [900, 1050], baroHystHpa: [0, 10], baroWinMin: [1, 360], sosPob: [1, 30], aisCruiseNm: [0.1, 5], aisOffshoreNm: [0.2, 10], aisTcpaMin: [1, 120], aisRangeNm: [0.25, 24], sailCloseFrom: [0, 90], sailCloseTo: [0, 120], bwWarnPct: [10, 100], bwHighPct: [10, 100], fuelWarnPct: [0, 90], fuelLowPct: [0, 90], rigWarnT: [0.5, 20], rigAlarmT: [0.5, 25], rigHystT: [0, 2], rigScaleT: [1, 30], engTempWarnC: [40, 130], engTempAlarmC: [40, 130], engTempHystC: [0, 10], engMaxRpm: [1000, 6000], engRedRpm: [500, 6000], engGreenFrom: [0, 6000], engGreenTo: [0, 6000], ackMinutes: [1, 120], staleSec: [5, 300] };
-const BOOL = ['night', 'soundOn', 'baroAlarmOn', 'rigAlarmOn', 'bwSwap', 'engTempAlarmOn', 'fuelUseSensor', 'windAlarmOn', 'battAlarmOn', 'waterAlarmOn', 'anchorAlarmOn', 'anchorLocalFallback'];
+const BOOL = ['night', 'soundOn', 'baroAlarmOn', 'rigAlarmOn', 'bwSwap', 'engTempAlarmOn', 'fuelUseSensor', 'windAlarmOn', 'battAlarmOn', 'waterAlarmOn', 'anchorAlarmOn', 'anchorLocalFallback', 'stormAlarmOn'];
 const cfg = Object.assign({}, DEF, flow.get('cfg') || {});
 
 if (msg.req.method === 'POST') {
@@ -402,7 +486,13 @@ http_in('POST ack', '/esp-dash/api/ack', 'post', 150, 580, 'Quittieren')
 fn('Quittieren', """\
 const cfg = flow.get('cfg') || {};
 const st = flow.get('state') || {};
-flow.set('ack', { until: Date.now() + (cfg.ackMinutes || 5) * 60000, keys: st.alarmKeys || [] });
+// je Alarm eigene Quittierdauer: Gewitterwarnungen (MeteoAlarm) 4 h, alle anderen ackMinutes
+const now = Date.now(), old = flow.get('ack') || {};
+const kUntil = {};
+for (const [k, u] of Object.entries(old.kUntil || {})) if (u > now) kUntil[k] = u;
+for (const k of st.alarmKeys || []) kUntil[k] = now + (k.indexOf('storm_') === 0 ? 240 : (cfg.ackMinutes || 5)) * 60000;
+if (st.storm && st.storm.noteKey) kUntil[st.storm.noteKey] = now + 240 * 60000;   // gelbe Gewitterwarnung: Hinweis 4 h ausblenden
+flow.set('ack', { until: now + (cfg.ackMinutes || 5) * 60000, keys: st.alarmKeys || [], kUntil });
 node.status({ fill: 'blue', text: 'quittiert ' + new Date().toLocaleTimeString() });
 msg.payload = { ok: true };
 return msg;""", 360, 580, [['ack antwort']])

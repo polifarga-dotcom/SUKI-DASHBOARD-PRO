@@ -94,6 +94,9 @@
 <div class="row"><label>Use fuel-rate sensor<small>If the engine sends fuel.rate via NMEA 2000; otherwise the curve below is used</small></label><input type="checkbox" id="fuelUseSensor"></div>
 <div class="row" style="flex-wrap:wrap"><label style="flex-basis:100%">Fuel curve (rpm:l/h)<small>Comma-separated points, linear in between — take the values from your engine manual</small></label><input type="text" id="fuelCurve" style="width:100%;margin-top:8px"></div>
 
+<h2>Thunderstorm warnings</h2>
+<div class="row"><label>Thunderstorm alarm<small>Official warnings from MeteoAlarm (national weather services) for the region at the GPS position. Orange and red = alarm, acknowledge silences it for 4 h. Yellow = note only.</small></label><input type="checkbox" id="stormAlarmOn"></div>
+
 <h2>Anchor</h2>
 <div class="row"><label>Show anchor alarm<small>Status comes from Supabase (anchor-check)</small></label><input type="checkbox" id="anchorAlarmOn"></div>
 <div class="row"><label>Local fallback<small>Drag check against the last known anchor position while the cloud is unreachable</small></label><input type="checkbox" id="anchorLocalFallback"></div>
@@ -112,7 +115,7 @@
 </main>
 <script>
 var NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','aisCruiseNm','aisOffshoreNm','aisTcpaMin','sailCloseFrom','sailCloseTo','sosPob','bwWarnPct','bwHighPct','fuelWarnPct','fuelLowPct','engTempWarnC','engTempAlarmC','engTempHystC','rigWarnT','rigAlarmT','rigHystT','rigScaleT','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec'];
-var BOOL = ['night','soundOn','baroAlarmOn','rigAlarmOn','bwSwap','engTempAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback'];
+var BOOL = ['night','soundOn','baroAlarmOn','rigAlarmOn','bwSwap','engTempAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback','stormAlarmOn'];
 var STR = ['sailStyle','sosDesc','soundNight','fuelInstance','fuelCurve','windSource','battInstance','waterInstance'];
 function $(id){return document.getElementById(id);}
 function req(method, url, body, cb){

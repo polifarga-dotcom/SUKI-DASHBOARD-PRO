@@ -680,7 +680,7 @@ function render() {
 
   $('msg').textContent = !s ? 'No connection to Node-RED' : s.msg;
   $('msg').className = 'msg ' + (s ? cls(s.status === 'alarm' && !ackd ? 'alarm' : 'warn') : 'warn-c');
-  $('hint').textContent = blink ? 'Tap to acknowledge' : (s && s.acked ? 'Acknowledged' : '');
+  $('hint').textContent = blink ? 'Tap to acknowledge' : (s && s.storm && s.storm.noteKey ? 'Tap to acknowledge warning (4 h)' : (s && s.acked ? 'Acknowledged' : ''));
 }
 
 // ── ANCHOR UP: 1. Tipp = bestätigen, 2. Tipp innerhalb 4 s = systemweit einholen (Supabase) ──
@@ -1305,7 +1305,7 @@ function renderEnergy(e) {
 // ── Screens: wischen, Pfeiltasten oder Punkte; neuer Alarm → zurück zu Screen 1 ──
 var page = 1, wasBlink = false, swX = null, swiped = false;
 // Reihenfolge der Screens: Übersicht, Energy Flow, Tanks, Wetter, Motor, Segeln, Anker, AIS, SOS (VHF-Notruf)
-var PAGES = ['p1', 'p2', 'p3', 'p4', 'p6', 'pA', 'p5', 'pS'], NP = PAGES.length, PG_ENGINE = 4, PG_SAIL = 5, PG_AIS = 6, PG_ANCHOR = 7, PG_SOS = 8;
+var PAGES = ['p1', 'p2', 'p3', 'p4', 'p6', 'pA', 'p5', 'pS'], NP = PAGES.length, PG_WEATHER = 3, PG_ENGINE = 4, PG_SAIL = 5, PG_AIS = 6, PG_ANCHOR = 7, PG_SOS = 8;
 function showPage(n) {
   page = n;
   PAGES.forEach(function (id, i) {
@@ -1329,7 +1329,7 @@ setInterval(function () {
   var b = !!(S && S.blink);
   var ak = (S && S.alarmKeys) || [], only = function (p) { return ak.length && ak.every(function (k) { return k.indexOf(p) === 0; }); };
   if (b && offMode) { offMode = false; $('offscr').className = ''; wasBlink = false; page = 0; }   // Alarm weckt das Display (auch ein schon laufender)
-  if (b && !wasBlink && page !== PG_SOS) showPage(only('rig') ? PG_SAIL : only('engtemp') ? PG_ENGINE : only('ais_') ? PG_AIS : 1);
+  if (b && !wasBlink && page !== PG_SOS) showPage(only('rig') ? PG_SAIL : only('engtemp') ? PG_ENGINE : only('ais_') ? PG_AIS : only('storm_') ? PG_WEATHER : 1);
   wasBlink = b;
 }, 300);
 
@@ -1346,7 +1346,7 @@ $('nbtn').addEventListener('click', function (e) {
 $('scr').addEventListener('click', function () {
   if (swiped) { swiped = false; return; }
   if (offMode) return;
-  if (!S || !S.blink) return;
+  if (!S || !(S.blink || (S.storm && S.storm.noteKey))) return;   // Alarm oder gelbe Gewitterwarnung quittieren
   var x = new XMLHttpRequest();
   x.open('POST', '/esp-dash/api/ack');
   x.setRequestHeader('Content-Type', 'application/json');

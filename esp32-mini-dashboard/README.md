@@ -98,6 +98,16 @@ Jeder blinkende (nicht quittierte) Alarm beendet den Off-Screen sofort. Kein Wis
   (Distanz > Radius länger als `alarm_delay_s`).
 - **Warnung** (oranger Punkt, kein Blinken): veraltete SignalK-Daten, Cloud nicht erreichbar, ESP ohne Verbindung.
 
+## Gewitterwarnung (MeteoAlarm)
+
+Offizielle Warnungen der nationalen Wetterdienste über MeteoAlarm (`feeds.meteoalarm.org`, Atom-Feed pro Land),
+alle 20 min. Die Region kommt aus der GPS-Position per OpenStreetMap/Nominatim (nur nach > 10 km Ortswechsel,
+`zoom=14`, damit auch Positionen im Hafenbecken eine Region ergeben); auf See bleibt die letzte Region bis 100 km
+gültig. **Orange / Rot** = Alarm (Blinken + Summer, Quittieren stillt ihn für **4 h**; eine Verschärfung auf Rot
+blinkt sofort wieder), **Gelb** = nur Hinweis (per Tipp ebenfalls 4 h quittierbar; eine neue/verlängerte Warnung erscheint wieder). Ohne MeteoAlarm-Region (außerhalb Europas / weit draußen) gibt es nur
+einen Hinweis, wenn Open-Meteo in den nächsten 2 h Gewitter vorhersagt. Settings → Thunderstorm warnings
+(`stormAlarmOn`). Reine Gewitteralarme springen auf den Wetter-Screen. Quittierdauer je Alarm: `ack.kUntil`.
+
 ## Alarm-Summer
 
 Angeschlossen am **Sensor AD**-Stecker (PH2.0, 3 Pins: 3V3 / GND / Signal, Signal = GPIO 6 laut Waveshare-Beispiel

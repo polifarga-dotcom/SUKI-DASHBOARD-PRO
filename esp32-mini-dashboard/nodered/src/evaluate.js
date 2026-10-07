@@ -17,7 +17,7 @@ const DEF = {
     engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true,
     fuelCurve: '800:0.8,1000:1.2,1500:2.2,2000:3.8,2500:6.2,3000:9.5',
     baroAlarmOn: true, baroLowHpa: 995, baroHystHpa: 1, baroWinMin: 2,
-    anchorAlarmOn: true, anchorLocalFallback: true,
+    anchorAlarmOn: true, stormAlarmOn: true, anchorLocalFallback: true,
     ackMinutes: 5, staleSec: 30, testUntil: 0, night: false,
     soundOn: true, soundNight: 'short',
 };
@@ -730,13 +730,45 @@ if (posOk) {
 ais.up = hdgDeg != null ? Math.round(hdgDeg) : ownSog * MS2KN > 1 ? Math.round(ownCog * 180 / Math.PI) : null;
 ais.upSrc = hdgDeg != null ? 'HDG' : ais.up != null ? 'COG' : 'N';
 
+// ── Gewitterwarnung (MeteoAlarm): Orange/Rot = Alarm (4 h quittierbar), Gelb = Hinweis ──
+const stc = flow.get('storm');
+const storm = { on: cfg.stormAlarmOn !== false, lvl: null, region: (stc && stc.region) || '', to: null,
+    fresh: !!(stc && now - stc.t < 3 * 3600000) };
+if (storm.on && stc && storm.fresh) {
+    const RANK = { yellow: 1, orange: 2, red: 3 };
+    const act = (stc.list || []).filter((w) => w.from <= now && now <= w.to).sort((a, b) => RANK[b.lvl] - RANK[a.lvl]);
+    const best = act[0];
+    const hhmm = (ms) => new Date(ms).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' });
+    if (best) {
+        storm.lvl = best.lvl; storm.to = hhmm(best.to); storm.region = best.area;
+        const txt = `THUNDERSTORM ${best.lvl.toUpperCase()} until ${hhmm(best.to)} (${best.area})`;
+        if (best.lvl === 'yellow') {
+            // Gelb: Hinweis, per Tipp 4 h ausblendbar; Schlüssel mit Ende der Warnung → eine neue Warnung erscheint wieder
+            const nk = 'storm_yellow@' + best.to, ku = (flow.get('ack') || {}).kUntil || {};
+            if (!(ku[nk] > now)) { warns.push(txt); storm.noteKey = nk; } else storm.noteAcked = true;
+        } else alarms.push({ key: 'storm_' + best.lvl, text: txt });
+    } else if (!storm.region) {
+        // keine MeteoAlarm-Region (außerhalb Europas / weit auf See): nur Hinweis aus der Open-Meteo-Vorhersage
+        const hh = wxc && wxc.data && wxc.data.hourly;
+        if (hh && Array.isArray(hh.time)) {
+            const loc = new Date(now).toLocaleString('sv-SE', { timeZone: tz });
+            const i0 = hh.time.indexOf(loc.substr(0, 10) + 'T' + loc.substr(11, 2) + ':00');
+            if (i0 >= 0 && hh.weather_code.slice(i0, i0 + 3).some((c) => c >= 95)) warns.push('Thunderstorm forecast next 2 h (no official warning area)');
+        }
+    }
+} else if (storm.on && stc && !storm.fresh) {
+    warns.push('Thunderstorm warnings not updated');
+}
+
 // ── Test-Alarm ────────────────────────────────────────────────────────────
 if (cfg.testUntil && now < cfg.testUntil) alarms.push({ key: 'test', text: 'TEST ALARM' });
 
 // ── Quittierung: gilt nur für die Alarme, die beim Quittieren aktiv waren ──
 const ack = flow.get('ack') || { until: 0, keys: [] };
-const acked = now < ack.until;
-const blink = alarms.some((a) => !acked || ack.keys.indexOf(a.key) < 0);
+// je Alarm eigene Quittierdauer (kUntil), ältere Form { until, keys } weiter verstehen
+const kU = ack.kUntil || {};
+const isAcked = (k) => (kU[k] != null ? now < kU[k] : now < ack.until && ack.keys.indexOf(k) >= 0);
+const blink = alarms.some((a) => !isAcked(a.key));
 
 const state = {
     v: 1,
@@ -754,6 +786,7 @@ const state = {
     batt: batt,
     energy: energy,
     weather: weather,
+    storm: storm,
     engine: engine,
     tanks: tanksScreen,
     sos: sos,
