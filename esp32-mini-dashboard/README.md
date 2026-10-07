@@ -5,7 +5,7 @@ grüner Punkt = alles ok. Bei einem Alarm blinkt der ganze Bildschirm rot/schwar
 Antippen quittiert (stoppt das Blinken für X Minuten, nur für die gerade aktiven Alarme).
 
 ```
-SignalK (Pi :3000) ──REST 2 s──┐
+SignalK (Pi :3000) ──WebSocket─┐
                                ├─> Node-RED Tab "ESP32 Mini Dashboard" ──> /esp-dash/api/state ──> ESP32 (1 s Poll)
 Supabase mfd-anchor ──5 s──────┘        (Schwellwerte, Hysterese, Quittierung)       └──> Browser-Simulator /esp-dash
 ```
@@ -23,6 +23,12 @@ ohne neues Flashen.
 | `POST /esp-dash/api/anchor` | Anker-Aktionen `drop_now`, `set`, `restore`, `move`, `radius`, `up`, `mute`, `dry` |
 | `POST /esp-dash/api/anchor-up` | Anker systemweit einholen (Supabase `silence_alarm`); `{"dryRun":true}` prüft nur die Verbindung |
 
+## Screen 1: linke Spalte
+
+Settings → Screen 1 → *Left column* (`homeLeft`): **Battery + all tanks** (Standard seit 2026-10-07, eine Box:
+Batterie-SOC groß mit V/A und Balken, darunter Water / Diesel / Black Main / Black Guest als Balken mit Liter und %)
+oder **Battery + Water** (die früheren zwei getrennten Boxen).
+
 ## Screen 2: Victron Energy Flow
 
 Nach links wischen (Simulator: Maus ziehen, Pfeiltasten oder die Punkte unten) zeigt den Energy Flow im
@@ -35,7 +41,10 @@ schickt alle 30 s das Venus-Keepalive. Bei einem neuen Alarm springt das Display
 
 Wetter für die aktuelle GPS-Position (SignalK, sonst letzte Position aus Supabase), alle 30 min:
 Open-Meteo (aktuell + 3 Tage, Wind in kn, Sonnenauf-/untergang) und met.no (Mondauf-/untergang, Phase).
-Beide ohne API-Key. Ohne Internet bleibt die letzte Vorhersage stehen, „updated“ wird nach 3 h orange.
+Beide ohne API-Key. Darunter der **Tagesverlauf** in 4 Karten mit Mini-Icons, beginnend beim laufenden
+Abschnitt: MORNING 06–12, MIDDAY 12–18, EVENING 18–22, NIGHT 22–06 (aus den Open-Meteo-Stundenwerten:
+Max/Min-Temperatur, stärkster Wind + Böe, Hauptrichtung, max. Regenwahrscheinlichkeit, Regenmenge; der laufende
+Abschnitt zählt ab der aktuellen Stunde, „now–12“). Ganz unten die nächsten 3 Tage kompakt. Ohne Internet bleibt die letzte Vorhersage stehen, „updated“ wird nach 3 h orange.
 
 ## Screen 4: Motor
 
@@ -46,13 +55,25 @@ SignalK liefert `propulsion.*` nur bei laufendem Motor; Motorstunden/Temperatur 
 Schätzung aus der Verbrauchskurve (Settings → Engine, Format `rpm:l/h,...`).
 Vorschau mit laufendem Motor im Simulator: `/esp-dash?demoRpm=2150` (nur lokal im Browser).
 
-## Screen 5: Anker
+## Screen 8: Anker
 
 Wie die Anchor-Seite der Pro App, als Radar-Ansicht (Nord oben, Mitte = Anker, Kreis = Alarmradius,
 Track der letzten 2 h, Boot als Pfeil in Kursrichtung). Werte: Distanz, Tiefe, Scope, Peilung zum Anker.
 Einstellungen Radius/Kette/Peilung mit −/+; Aktionen DROP NOW, SET, RESTORE, ANCHOR UP, MUTE (mit Bestätigung).
 Alles geht über `POST /esp-dash/api/anchor` → Supabase `mfd-anchor` und ist damit sofort systemweit
 (Pro App, Zeus, anchor-check-Alarm).
+
+## Screen 7: AIS (vor dem Anker-Screen)
+
+Radar-Ansicht **Heading oben** (eigenes Heading aus SignalK, sonst COG ab 1 kn Fahrt, sonst Nord oben; Anzeige „HDG UP 123°“ unten rechts, N-Markierung am Außenring), eigenes Boot in der Mitte (Reichweite 0.25–24 NM mit +/−). AIS-Ziele kommen per
+SignalK-WebSocket (`vessels.*`, alle 5 s), die eigene MMSI wird ignoriert. Jedes Ziel und das eigene Boot
+haben eine Kurslinie für 30 min Fahrt (COG × SOG). Node-RED rechnet CPA/TCPA aus der relativen Bewegung.
+Modi (Settings → AIS): ANCHOR = kein Alarm, CRUISE = CPA < `aisCruiseNm` (0.5 NM), OFFSHORE = CPA < `aisOffshoreNm`
+(2 NM), jeweils nur bei TCPA < `aisTcpaMin` (20 min); orange = doppelte Grenzen. Alarm: ganzer Bildschirm blinkt
+rot + Summer, Knopf ACKNOWLEDGE ALARM quittiert. Ziel antippen zeigt MMSI, Rufzeichen, Typ, Länge, Status, Ziel,
+SOG/COG, Distanz/Peilung, CPA und Alter der Meldung. Ziele ohne Meldung > 10 min werden grau, nach 20 min entfernt.
+
+Screen 9 ist der SOS-Screen (Rettungsring-Knopf oben links).
 
 ## Alarmlogik
 

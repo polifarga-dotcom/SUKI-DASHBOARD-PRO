@@ -62,8 +62,7 @@ def num_prop(p, v):
 
 # ── 1) Datenquellen ──────────────────────────────────────────────────────────
 y = 60
-for topic, path, every in [('batt', '/electrical/batteries', 2), ('wind', '/environment/wind', 2),
-                           ('nav', '/navigation', 2), ('tanks', '/tanks', 5), ('baro', '/environment/outside/pressure', 2), ('prop', '/propulsion', 2), ('depth', '/environment/depth', 2)]:
+for topic, path, every in [('id_name', '/name', 60), ('id_mmsi', '/mmsi', 60), ('id_comm', '/communication', 60)]:
     inject(f'SK {topic}', 140, y, 'SignalK GET', every,
            [str_prop('topic', topic), str_prop('url', SK + path), num_prop('requestTimeout', 3000)])
     y += 40
@@ -78,7 +77,7 @@ add('Supabase GET', 'http request', 360, 200, [['Anker speichern']], method='GET
     authType='', senderr=False, headers=[])
 
 fn('SK speichern', """\
-if (msg.statusCode === 200 && msg.payload && typeof msg.payload === 'object') {
+if (msg.statusCode === 200 && msg.payload != null && (typeof msg.payload === 'object' || msg.topic.indexOf('id_') === 0)) {
     flow.set('sk_' + msg.topic, { data: msg.payload, t: Date.now() });
 }
 return null;""", 560, 100)
@@ -92,6 +91,107 @@ if (msg.statusCode === 200 && msg.payload && typeof msg.payload === 'object' && 
     flow.set('anchor', prev);
 }
 return null;""", 560, 200)
+
+# ── 1a) SignalK-Stream per WebSocket (ersetzt das REST-Polling) ─────────────
+# Eine Verbindung, nur die benötigten Pfade, nur bei Änderung und max. 1 Wert/s je Pfad
+# (policy "instant" + minPeriod — "ideal" drosselt bei SignalK NICHT, das ergab ~90 Deltas/s).
+# Die Deltas werden in dieselbe Baumstruktur geschrieben wie früher die REST-Antworten
+# (flow.sk_batt, sk_wind, sk_nav, …) — die Auswertung bleibt dadurch unverändert.
+SK_WS = nid('SignalK WS client')
+ws_cfg = {'id': SK_WS, 'type': 'websocket-client', 'path': 'ws://192.168.0.100:3000/signalk/v1/stream?subscribe=none',
+          'tls': '', 'wholemsg': 'false', 'hb': '0', 'subprotocol': '', 'headers': []}
+add('SignalK Stream', 'websocket in', 150, 40, [['SK Delta']], server='', client=SK_WS)
+fn('SK Delta', """\
+let m;
+try { m = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload; } catch (e) { return null; }
+if (!m || !Array.isArray(m.updates)) return null;           // Hello-Nachricht o. ä.
+// AIS: andere Schiffe (Kontext vessels.urn:mrn:imo:mmsi:…) — eigenes Schiff (eigene MMSI) ignorieren
+const own = String(flow.get('sk_id_mmsi') ? flow.get('sk_id_mmsi').data : '211897610');
+if (m.context && m.context !== 'vessels.self' && m.context.indexOf(own) < 0) {
+    const ais = flow.get('ais') || {};
+    const id = m.context;
+    const tg = ais[id] || { ctx: id };
+    const now = Date.now();
+    for (const u of m.updates) for (const v of (u.values || [])) {
+        const p = v.path, val = v.value;
+        // echte Meldezeit verwenden (beim Abo kommen auch alte gespeicherte Positionen)
+        const tu = Date.parse(u.timestamp);
+        if (p === 'navigation.position' && val) { tg.lat = val.latitude; tg.lon = val.longitude; tg.tPos = isNaN(tu) ? now : Math.min(tu, now); }
+        else if (p === 'navigation.courseOverGroundTrue') tg.cog = val;
+        else if (p === 'navigation.speedOverGround') tg.sog = val;
+        else if (p === 'navigation.headingTrue') tg.hdg = val;
+        else if (p === 'navigation.state') tg.state = val;
+        else if (p === 'navigation.destination.commonName') tg.dest = val;
+        else if (p === 'design.length') tg.len = val && typeof val === 'object' ? val.overall : val;
+        else if (p === 'design.beam') tg.beam = val;
+        else if (p === 'design.aisShipType') tg.type = val && typeof val === 'object' ? val.name : val;
+        else if (p === 'communication.callsignVhf') tg.cs = val;
+        else if (p === '' && val && typeof val === 'object') {      // statische Daten kommen als Wurzel-Objekt
+            if (val.name) tg.name = val.name;
+            if (val.mmsi) tg.mmsi = val.mmsi;
+        } else if (p === 'name') tg.name = val;
+        else if (p === 'mmsi') tg.mmsi = val;
+    }
+    if (!tg.mmsi) { const mm = id.match(/mmsi:(\\d+)/); if (mm) tg.mmsi = mm[1]; }
+    if (tg.mmsi && String(tg.mmsi) === own) return null;
+    tg.t = now;
+    ais[id] = tg;
+    flow.set('ais', ais);
+    return null;
+}
+const MAP = [['electrical.batteries.', 'batt'], ['environment.wind.', 'wind'], ['navigation.', 'nav'], ['tanks.', 'tanks'],
+    ['environment.depth.', 'depth'], ['propulsion.', 'prop'], ['rigging.', 'rig'], ['environment.water.', 'water']];
+const now = Date.now();
+flow.set('sk_ws_last', now);
+for (const u of m.updates) {
+    if (!Array.isArray(u.values)) continue;
+    const ts = u.timestamp || new Date(now).toISOString();
+    for (const v of u.values) {
+        if (!v || typeof v.path !== 'string' || !v.path) continue;
+        if (v.path === 'environment.outside.pressure') {
+            flow.set('sk_baro', { data: { value: v.value, timestamp: ts }, t: now });
+            continue;
+        }
+        const hit = MAP.find((p) => v.path.indexOf(p[0]) === 0);
+        if (!hit) continue;
+        const key = 'sk_' + hit[1];
+        const obj = flow.get(key) || { data: {} };
+        if (!obj.data || typeof obj.data !== 'object') obj.data = {};
+        const parts = v.path.slice(hit[0].length).split('.');
+        let node_ = obj.data;
+        for (let i = 0; i < parts.length - 1; i++) {
+            if (!node_[parts[i]] || typeof node_[parts[i]] !== 'object') node_[parts[i]] = {};
+            node_ = node_[parts[i]];
+        }
+        node_[parts[parts.length - 1]] = { value: v.value, timestamp: ts, $source: u.$source };
+        obj.t = now;
+        flow.set(key, obj);
+    }
+}
+return null;""", 360, 40)
+inject('SK Abo prüfen 10 s', 150, 0, 'SK Abo', 10, [], once_delay=3)
+fn('SK Abo', """\
+// (Neu-)Abonnieren, wenn seit 10 s kein Delta kam — z. B. nach Start oder Verbindungsabbruch.
+// Erst alles abbestellen, damit keine doppelten Abos entstehen.
+const last = flow.get('sk_ws_last') || 0;
+const VER = 5;   // bei Änderung der Abo-Liste hochzählen → wird sofort neu abonniert
+if (Date.now() - last < 10000 && flow.get('sk_ws_ver') === VER) return null;
+flow.set('sk_ws_ver', VER);
+const PATHS = ['electrical.batteries.*', 'environment.wind.*', 'navigation.position', 'navigation.headingTrue',
+    'navigation.headingMagnetic', 'navigation.speedOverGround', 'navigation.speedThroughWater', 'tanks.*',
+    'environment.outside.pressure', 'propulsion.*', 'environment.depth.*', 'rigging.*', 'environment.water.temperature',
+    'navigation.courseOverGroundTrue'];
+const AIS = ['navigation.position', 'navigation.courseOverGroundTrue', 'navigation.speedOverGround', 'navigation.headingTrue',
+    'navigation.state', 'navigation.destination.commonName', 'design.length', 'design.beam', 'design.aisShipType',
+    'communication.callsignVhf', 'name', 'mmsi', ''];
+node.status({ fill: 'yellow', text: 'abonniere ' + new Date().toLocaleTimeString() });
+return [[
+    { payload: JSON.stringify({ context: '*', unsubscribe: [{ path: '*' }] }) },
+    { payload: JSON.stringify({ context: 'vessels.self', subscribe: PATHS.map((p) => ({ path: p, policy: 'instant', minPeriod: p.indexOf('environment.wind') === 0 ? 1000 : 2000 })) }) },   // nur bei Änderung; Wind max. 1/s, Rest max. alle 2 s
+    // AIS: alle anderen Schiffe, je Pfad max. alle 5 s (SignalK schickt beim Abo sofort alle bekannten Werte)
+    { payload: JSON.stringify({ context: 'vessels.*', subscribe: AIS.map((p) => ({ path: p, policy: 'instant', minPeriod: 5000 })) }) },
+]];""", 360, 0, [['SignalK Abo senden']])
+add('SignalK Abo senden', 'websocket out', 580, 0, server='', client=SK_WS)
 
 # ── 1b) Victron: lokaler MQTT-Broker des Cerbo (gleiche Werte wie VRM) ────────
 CERBO_BROKER = nid('Cerbo MQTT broker')
@@ -140,6 +240,7 @@ msg.url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat.toFixed(3) + 
     '&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m' +
     '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,' +
     'wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset' +
+    '&hourly=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation_probability,precipitation' +
     '&wind_speed_unit=kn&timezone=auto&forecast_days=4';
 msg.requestTimeout = 15000;
 return msg;""", 360, 1080, [['Open-Meteo GET']])
@@ -152,6 +253,20 @@ if (msg.statusCode !== 200 || !msg.payload || !msg.payload.daily) {
     return null;
 }
 flow.set('wx', { data: msg.payload, t: Date.now(), lat: msg.lat, lon: msg.lon });
+// Zeitzone der aktuellen Position übernehmen (IANA, z. B. Europe/Rome) — bei Wechsel in config.json sichern
+const tzNew = msg.payload.timezone;
+let tzOk = false;
+try { new Date().toLocaleString('en-GB', { timeZone: tzNew }); tzOk = typeof tzNew === 'string'; } catch (e) {}
+if (tzOk && tzNew !== flow.get('tz_auto')) {
+    flow.set('tz_auto', tzNew);
+    const cfg = flow.get('cfg') || {};
+    if (cfg.tzAuto !== tzNew || cfg.tz !== undefined) {
+        cfg.tzAuto = tzNew;
+        delete cfg.tz;   // alte manuelle Einstellung (abgeschafft)
+        flow.set('cfg', cfg);
+        node.send([null, { payload: JSON.stringify(cfg, null, 2) }]);
+    }
+}
 node.status({ fill: 'green', text: 'ok ' + new Date().toLocaleTimeString() });
 // Mond pro Tag bei met.no (Auf-/Untergang + Phase), Offset = Zeitzone der Position
 const off = msg.payload.utc_offset_seconds || 0;
@@ -164,9 +279,9 @@ for (const date of msg.payload.daily.time) {
             '&date=' + date + '&offset=' + encodeURIComponent(offset),
         headers: { 'User-Agent': 'SUKI-MiniDash/1.0 (sailing yacht dashboard)' },
         requestTimeout: 15000,
-    });
+    }, false);
 }
-return null;""", 760, 1080, [['met.no GET']])
+return null;""", 760, 1080, [['met.no GET'], ['Config schreiben']], outputs=2)
 add('met.no GET', 'http request', 960, 1080, [['Mond speichern']], method='GET', ret='obj',
     paytoqs='ignore', url='', tls='', persist=False, proxy='', insecureHTTPParser=False,
     authType='', senderr=False, headers=[])
@@ -216,12 +331,17 @@ const DEF = { windAlarmOn: true, windAlarmKn: 25, windHystKn: 2, windSource: 'au
     battAlarmOn: true, battLowSoc: 30, battHystSoc: 3, battLowVolt: 0, battInstance: 'auto',
     waterAlarmOn: true, waterLowPct: 15, waterHystPct: 3, waterInstance: 'auto',
     baroAlarmOn: true, baroLowHpa: 995, baroHystHpa: 1, baroWinMin: 2,
+    aisMode: 'cruising', aisCruiseNm: 0.5, aisOffshoreNm: 2, aisTcpaMin: 20, aisRangeNm: 2,
+    homeLeft: 'supply', sailStyle: 'tacho', sailCloseFrom: 30, sailCloseTo: 50, sosPob: 2, sosDesc: 'sailing trimaran, 14 metres',
+    bwSwap: false, bwWarnPct: 75, bwHighPct: 90, fuelWarnPct: 20, fuelLowPct: 10,
+    rigAlarmOn: true, rigWarnT: 3.2, rigAlarmT: 4.2, rigHystT: 0.1, rigScaleT: 5,
+    engTempAlarmOn: true, engTempWarnC: 90, engTempAlarmC: 95, engTempHystC: 2,
     engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true, fuelCurve: '800:0.8,1000:1.2,1500:2.2,2000:3.8,2500:6.2,3000:9.5',
-    anchorAlarmOn: true, anchorLocalFallback: true, ackMinutes: 5, staleSec: 30, tz: 'Europe/Rome', testUntil: 0, night: false,
+    anchorAlarmOn: true, anchorLocalFallback: true, ackMinutes: 5, staleSec: 30, testUntil: 0, night: false,
     soundOn: true, soundNight: 'short' };
 const RANGE = { windWinMin: [1, 360], windAlarmKn: [5, 80], windHystKn: [0, 10], windAvgSec: [2, 120], battLowSoc: [5, 95],
-    battHystSoc: [0, 20], battLowVolt: [0, 60], waterLowPct: [0, 95], waterHystPct: [0, 20], baroLowHpa: [900, 1050], baroHystHpa: [0, 10], baroWinMin: [1, 360], engMaxRpm: [1000, 6000], engRedRpm: [500, 6000], engGreenFrom: [0, 6000], engGreenTo: [0, 6000], ackMinutes: [1, 120], staleSec: [5, 300] };
-const BOOL = ['night', 'soundOn', 'baroAlarmOn', 'fuelUseSensor', 'windAlarmOn', 'battAlarmOn', 'waterAlarmOn', 'anchorAlarmOn', 'anchorLocalFallback'];
+    battHystSoc: [0, 20], battLowVolt: [0, 60], waterLowPct: [0, 95], waterHystPct: [0, 20], baroLowHpa: [900, 1050], baroHystHpa: [0, 10], baroWinMin: [1, 360], sosPob: [1, 30], aisCruiseNm: [0.1, 5], aisOffshoreNm: [0.2, 10], aisTcpaMin: [1, 120], aisRangeNm: [0.25, 24], sailCloseFrom: [0, 90], sailCloseTo: [0, 120], bwWarnPct: [10, 100], bwHighPct: [10, 100], fuelWarnPct: [0, 90], fuelLowPct: [0, 90], rigWarnT: [0.5, 20], rigAlarmT: [0.5, 25], rigHystT: [0, 2], rigScaleT: [1, 30], engTempWarnC: [40, 130], engTempAlarmC: [40, 130], engTempHystC: [0, 10], engMaxRpm: [1000, 6000], engRedRpm: [500, 6000], engGreenFrom: [0, 6000], engGreenTo: [0, 6000], ackMinutes: [1, 120], staleSec: [5, 300] };
+const BOOL = ['night', 'soundOn', 'baroAlarmOn', 'rigAlarmOn', 'bwSwap', 'engTempAlarmOn', 'fuelUseSensor', 'windAlarmOn', 'battAlarmOn', 'waterAlarmOn', 'anchorAlarmOn', 'anchorLocalFallback'];
 const cfg = Object.assign({}, DEF, flow.get('cfg') || {});
 
 if (msg.req.method === 'POST') {
@@ -237,7 +357,11 @@ if (msg.req.method === 'POST') {
     for (const k of BOOL) if (b[k] !== undefined) cfg[k] = !!b[k];
     if (['auto', 'true', 'apparent'].indexOf(b.windSource) >= 0) cfg.windSource = b.windSource;
     if (['full', 'short', 'off'].indexOf(b.soundNight) >= 0) cfg.soundNight = b.soundNight;
+    if (['tacho', 'classic'].indexOf(b.sailStyle) >= 0) cfg.sailStyle = b.sailStyle;
+    if (['supply', 'split'].indexOf(b.homeLeft) >= 0) cfg.homeLeft = b.homeLeft;
+    if (['anchor', 'cruising', 'offshore'].indexOf(b.aisMode) >= 0) cfg.aisMode = b.aisMode;
     if (typeof b.battInstance === 'string' && /^[\\w-]{1,20}$/.test(b.battInstance)) cfg.battInstance = b.battInstance;
+    if (typeof b.sosDesc === 'string') cfg.sosDesc = b.sosDesc.replace(/[^\\w ,.\\-\\/]/g, '').slice(0, 40);
     if (typeof b.fuelInstance === 'string' && /^[\\w.-]{1,30}$/.test(b.fuelInstance)) cfg.fuelInstance = b.fuelInstance;
     if (typeof b.fuelCurve === 'string') {
         const ok = b.fuelCurve.split(',').every((p) => /^\\s*\\d+\\s*:\\s*\\d+(\\.\\d+)?\\s*$/.test(p));
@@ -245,10 +369,8 @@ if (msg.req.method === 'POST') {
         cfg.fuelCurve = b.fuelCurve.replace(/\\s/g, '');
     }
     if (typeof b.waterInstance === 'string' && /^[\\w-]{1,20}$/.test(b.waterInstance)) cfg.waterInstance = b.waterInstance;
-    if (typeof b.tz === 'string' && b.tz) {
-        try { new Date().toLocaleString('en-GB', { timeZone: b.tz }); cfg.tz = b.tz; }
-        catch (e) { msg.statusCode = 400; msg.payload = { error: 'Unknown time zone' }; return [msg, null]; }
-    }
+    // Zeitzone ist nicht manuell einstellbar — sie kommt automatisch aus der GPS-Position (tzAuto)
+    delete cfg.tz;
     if (b.testSeconds !== undefined) cfg.testUntil = Date.now() + Math.min(300, Math.max(0, Number(b.testSeconds) || 0)) * 1000;
     flow.set('cfg', cfg);
     const file = { payload: JSON.stringify(cfg, null, 2) };
@@ -269,7 +391,7 @@ add('Config schreiben', 'file', 610, 440, filename=CFG_FILE, filenameType='str',
 http_in('GET state', '/esp-dash/api/state', 'get', 150, 520, 'State')
 fn('State', """\
 msg.payload = flow.get('state') || { v: 1, status: 'warn', blink: false, msg: 'Starting ...',
-    batt: { st: 'na' }, energy: { ok: false }, weather: { ok: false }, engine: {}, water: { st: 'na' }, baro: { st: 'na', hist: [] }, wind: { st: 'na', hist: [] }, anchor: { st: 'na' } };
+    batt: { st: 'na' }, energy: { ok: false }, weather: { ok: false }, engine: {}, tanks: [], sos: {}, ais: { targets: [] }, sail: { rig: {} }, water: { st: 'na' }, baro: { st: 'na', hist: [] }, wind: { st: 'na', hist: [] }, anchor: { st: 'na' } };
 return msg;""", 360, 520, [['state antwort']])
 http_out('state antwort', 560, 520, {'Cache-Control': 'no-store'})
 
@@ -406,7 +528,7 @@ flow = {'id': TAB, 'label': LABEL, 'disabled': False,
         'info': 'Backend für das Waveshare ESP32-S3 7" Mini-Dashboard. Quelle: '
                 'SUKI DASHBOARD PRO/esp32-mini-dashboard/nodered (build_flow.py). '
                 'Nicht im Editor ändern — wird beim nächsten Deploy überschrieben.',
-        'nodes': nodes, 'configs': configs}
+        'nodes': nodes, 'configs': configs + [ws_cfg]}
 (HERE / 'flow.json').write_text(json.dumps(flow, indent=2, ensure_ascii=False))
 print(f'flow.json geschrieben ({len(nodes)} Nodes, Tab {TAB})')
 

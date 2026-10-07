@@ -49,13 +49,47 @@
 <div class="row"><label>Hysteresis (%)</label><input type="number" id="waterHystPct" min="0" max="20" step="1"></div>
 <div class="row"><label>Tank (SignalK instance)</label><select id="waterInstance"><option value="auto">Auto (lowest instance)</option></select></div>
 
+<h2>Screen 1</h2>
+<div class="row"><label>Left column<small>One box with battery and all tanks, or separate Battery + Water boxes</small></label><select id="homeLeft"><option value="supply">Battery + all tanks</option><option value="split">Battery + Water (separate)</option></select></div>
+
 <h2>Barometer</h2>
 <div class="row"><label>Pressure alarm enabled</label><input type="checkbox" id="baroAlarmOn"></div>
 <div class="row"><label>Alarm below (hPa)</label><input type="number" id="baroLowHpa" min="900" max="1050" step="1"></div>
 <div class="row"><label>Hysteresis (hPa)</label><input type="number" id="baroHystHpa" min="0" max="10" step="0.5"></div>
 <div class="row"><label>Chart window<small>Weather trends show over 1–3 h; short windows mostly show sensor noise</small></label><select id="baroWinMin"><option value="2">2 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option><option value="180">3 h</option><option value="360">6 h</option></select></div>
 
+<h2>Sailing</h2>
+<div class="row"><label>Wind instrument style</label><select id="sailStyle"><option value="tacho">Gauge (like tachometer)</option><option value="classic">Classic SailSteer</option></select></div>
+<div class="row"><label>Close-hauled sectors (° AWA)<small>Red/green band on the wind instrument</small></label><span><input type="number" id="sailCloseFrom" min="0" max="90" step="1" style="width:70px"> – <input type="number" id="sailCloseTo" min="0" max="120" step="1" style="width:70px"></span></div>
+
+<h2>AIS</h2>
+<div class="row"><label>Cruising alarm: CPA below (NM)</label><input type="number" id="aisCruiseNm" min="0.1" max="5" step="0.1"></div>
+<div class="row"><label>Offshore alarm: CPA below (NM)</label><input type="number" id="aisOffshoreNm" min="0.2" max="10" step="0.1"></div>
+<div class="row"><label>Only if closest approach within (min)</label><input type="number" id="aisTcpaMin" min="1" max="120" step="1"></div>
+
+<h2>Emergency (VHF)</h2>
+<div class="row"><label>Persons on board<small>Read out in MAYDAY / PAN PAN</small></label><input type="number" id="sosPob" min="1" max="30" step="1"></div>
+<div class="row" style="flex-wrap:wrap"><label style="flex-basis:100%">Vessel description<small>Helps rescuers find you, e.g. "white sailing trimaran, 14 metres"</small></label><input type="text" id="sosDesc" maxlength="40" style="width:100%;margin-top:8px"></div>
+
+<h2>Tanks</h2>
+<div class="row"><label>Black water: orange from (%)</label><input type="number" id="bwWarnPct" min="10" max="100" step="1"></div>
+<div class="row"><label>Black water: red from (%)</label><input type="number" id="bwHighPct" min="10" max="100" step="1"></div>
+<div class="row"><label>Swap Black Main / Guest<small>By default the lower SignalK instance is Main</small></label><input type="checkbox" id="bwSwap"></div>
+<div class="row"><label>Diesel: orange below (%)</label><input type="number" id="fuelWarnPct" min="0" max="90" step="1"></div>
+<div class="row"><label>Diesel: red below (%)</label><input type="number" id="fuelLowPct" min="0" max="90" step="1"></div>
+
+<h2>Rig load sensors</h2>
+<div class="row"><label>Rig load alarm enabled</label><input type="checkbox" id="rigAlarmOn"></div>
+<div class="row"><label>Green up to (t)<small>Above this the value turns orange (no alarm)</small></label><input type="number" id="rigWarnT" min="0.5" max="20" step="0.1"></div>
+<div class="row"><label>Alarm above (t)<small>Screen blinks + buzzer, port and starboard separately</small></label><input type="number" id="rigAlarmT" min="0.5" max="25" step="0.1"></div>
+<div class="row"><label>Hysteresis (t)</label><input type="number" id="rigHystT" min="0" max="2" step="0.05"></div>
+<div class="row"><label>Bar scale max (t)</label><input type="number" id="rigScaleT" min="1" max="30" step="0.5"></div>
+
 <h2>Engine</h2>
+<div class="row"><label>Coolant temperature alarm<small>Volvo Penta D2-60: thermostat opens 75 °C, fully open 87 °C</small></label><input type="checkbox" id="engTempAlarmOn"></div>
+<div class="row"><label>Warning from (°C)<small>Orange, no blinking</small></label><input type="number" id="engTempWarnC" min="40" max="130" step="1"></div>
+<div class="row"><label>Alarm from (°C)<small>TEMP box + screen blink, buzzer</small></label><input type="number" id="engTempAlarmC" min="40" max="130" step="1"></div>
+<div class="row"><label>Hysteresis (°C)</label><input type="number" id="engTempHystC" min="0" max="10" step="1"></div>
 <div class="row"><label>Tachometer max (rpm)</label><input type="number" id="engMaxRpm" min="1000" max="6000" step="100"></div>
 <div class="row"><label>Red zone from (rpm)</label><input type="number" id="engRedRpm" min="500" max="6000" step="100"></div>
 <div class="row"><label>Green zone (rpm)<small>Economical cruising range</small></label><span><input type="number" id="engGreenFrom" min="0" max="6000" step="100" style="width:80px"> – <input type="number" id="engGreenTo" min="0" max="6000" step="100" style="width:80px"></span></div>
@@ -70,7 +104,7 @@
 <h2>General</h2>
 <div class="row"><label>Acknowledge stops blinking for (min)</label><input type="number" id="ackMinutes" min="1" max="120" step="1"></div>
 <div class="row"><label>Data stale after (s)</label><input type="number" id="staleSec" min="5" max="300" step="1"></div>
-<div class="row"><label>Time zone</label><input type="text" id="tz"></div>
+<div class="row"><label>Time zone<small>Set automatically from the GPS position (incl. summer/winter time)</small></label><span id="tzAuto" style="color:#aaa">--</span></div>
 
 <div class="bar">
   <button id="save">Save</button>
@@ -80,9 +114,9 @@
 <div id="out"></div>
 </main>
 <script>
-var NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec'];
-var BOOL = ['night','soundOn','baroAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback'];
-var STR = ['soundNight','fuelInstance','fuelCurve','windSource','battInstance','waterInstance','tz'];
+var NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','aisCruiseNm','aisOffshoreNm','aisTcpaMin','sailCloseFrom','sailCloseTo','sosPob','bwWarnPct','bwHighPct','fuelWarnPct','fuelLowPct','engTempWarnC','engTempAlarmC','engTempHystC','rigWarnT','rigAlarmT','rigHystT','rigScaleT','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec'];
+var BOOL = ['night','soundOn','baroAlarmOn','rigAlarmOn','bwSwap','engTempAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback'];
+var STR = ['homeLeft', 'sailStyle','sosDesc','soundNight','fuelInstance','fuelCurve','windSource','battInstance','waterInstance'];
 function $(id){return document.getElementById(id);}
 function req(method, url, body, cb){
   var x = new XMLHttpRequest(); x.open(method, url); x.setRequestHeader('Content-Type','application/json');
@@ -110,6 +144,7 @@ function load(){
       o.textContent=t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');
       fs.appendChild(o);
     });
+    $('tzAuto').textContent = d.config.tzAuto || 'UTC (no position yet)';
     var c=d.config;
     NUM.concat(STR).forEach(function(k){ $(k).value=c[k]; });
     BOOL.forEach(function(k){ $(k).checked=!!c[k]; });

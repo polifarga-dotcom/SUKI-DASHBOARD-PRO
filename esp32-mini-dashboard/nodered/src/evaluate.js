@@ -8,14 +8,23 @@ const DEF = {
     windAlarmOn: true, windAlarmKn: 25, windHystKn: 2, windSource: 'auto', windAvgSec: 10, windWinMin: 2,
     battAlarmOn: true, battLowSoc: 30, battHystSoc: 3, battLowVolt: 0, battInstance: 'auto',
     waterAlarmOn: true, waterLowPct: 15, waterHystPct: 3, waterInstance: 'auto',
+    homeLeft: 'supply', sailStyle: 'tacho', sailCloseFrom: 30, sailCloseTo: 50,
+    aisMode: 'cruising', aisCruiseNm: 0.5, aisOffshoreNm: 2, aisTcpaMin: 20, aisRangeNm: 2,
+    sosPob: 2, sosDesc: 'sailing trimaran, 14 metres',
+    bwSwap: false, bwWarnPct: 75, bwHighPct: 90, fuelWarnPct: 20, fuelLowPct: 10,
+    rigAlarmOn: true, rigWarnT: 3.2, rigAlarmT: 4.2, rigHystT: 0.1, rigScaleT: 5,
+    engTempAlarmOn: true, engTempWarnC: 90, engTempAlarmC: 95, engTempHystC: 2,
     engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true,
     fuelCurve: '800:0.8,1000:1.2,1500:2.2,2000:3.8,2500:6.2,3000:9.5',
     baroAlarmOn: true, baroLowHpa: 995, baroHystHpa: 1, baroWinMin: 2,
     anchorAlarmOn: true, anchorLocalFallback: true,
-    ackMinutes: 5, staleSec: 30, tz: 'Europe/Rome', testUntil: 0, night: false,
+    ackMinutes: 5, staleSec: 30, testUntil: 0, night: false,
     soundOn: true, soundNight: 'short',
 };
 const cfg = Object.assign({}, DEF, flow.get('cfg') || {});
+// Zeitzone automatisch aus der GPS-Position (Open-Meteo, IANA-Name → Sommer-/Winterzeit automatisch);
+// zuletzt bekannte Zone ist in config.json gesichert (tzAuto), ohne Daten gilt UTC
+const tz = flow.get('tz_auto') || cfg.tzAuto || 'UTC';
 const now = Date.now();
 const MS2KN = 1.943844;
 
@@ -317,16 +326,53 @@ if (wxc && wxc.data && wxc.data.daily && wxc.data.current) {
     };
     const ic = WMO(c.weather_code);
     const today = day(0);
+    // Tagesverlauf: 4 Abschnitte ab dem aktuellen (MORNING 06–12, MIDDAY 12–18, EVENING 18–22, NIGHT 22–06),
+    // aus den Stundenwerten; der laufende Abschnitt zählt erst ab der aktuellen Stunde
+    const parts = [];
+    const hh = wxc.data.hourly;
+    if (hh && Array.isArray(hh.time)) {
+        const loc = new Date(now).toLocaleString('sv-SE', { timeZone: tz });   // "2026-10-07 10:23:00"
+        const h = +loc.substr(11, 2), i0 = hh.time.indexOf(loc.substr(0, 10) + 'T' + loc.substr(11, 2) + ':00');
+        const PD = [['MORNING', 6, 6], ['MIDDAY', 12, 6], ['EVENING', 18, 4], ['NIGHT', 22, 8]];
+        let pi = h >= 6 && h < 12 ? 0 : h >= 12 && h < 18 ? 1 : h >= 18 && h < 22 ? 2 : 3;
+        let st = i0 - ((h - PD[pi][1] + 24) % 24);   // Index des Abschnittsbeginns
+        const today0 = loc.substr(0, 10);
+        for (let k = 0; i0 >= 0 && k < 4; k++) {
+            const [lbl, sh, len] = PD[pi];
+            const a = k === 0 ? i0 : st, b = Math.min(st + len, hh.time.length);
+            let tmax = -99, tmin = 99, code = 0, ws = 0, wg = 0, pp = 0, ps = 0, u = 0, v = 0, dayN = 0, n = 0;
+            for (let i = a; i < b; i++) {
+                if (!isNum(hh.temperature_2m[i])) continue;
+                n++;
+                tmax = Math.max(tmax, hh.temperature_2m[i]); tmin = Math.min(tmin, hh.temperature_2m[i]);
+                code = Math.max(code, hh.weather_code[i] || 0);
+                ws = Math.max(ws, hh.wind_speed_10m[i] || 0); wg = Math.max(wg, hh.wind_gusts_10m[i] || 0);
+                pp = Math.max(pp, hh.precipitation_probability[i] || 0); ps += hh.precipitation[i] || 0;
+                const wr = (hh.wind_direction_10m[i] || 0) * Math.PI / 180, sp = hh.wind_speed_10m[i] || 0;
+                u += Math.sin(wr) * sp; v += Math.cos(wr) * sp;
+                if (hh.is_day[i]) dayN++;
+            }
+            if (n) {
+                const date = hh.time[st].substr(0, 10), wic = WMO(code);
+                parts.push({ lbl, hrs: (k === 0 ? 'now' : String(sh).padStart(2, '0')) + '–' + String((sh + len) % 24).padStart(2, '0'),
+                    dl: k === 0 || date === today0 ? '' : DOW[new Date(date + 'T12:00:00Z').getUTCDay()],
+                    ic: wic[0], txt: wic[1], night: dayN * 2 < n, max: r0(tmax), min: r0(tmin),
+                    ws: r0(ws), wg: r0(wg), wd: dir8((Math.atan2(u, v) * 180 / Math.PI + 360) % 360), pp: r0(pp), ps: r1(ps) });
+            }
+            st += len; pi = (pi + 1) % 4;
+        }
+    }
     const mp = moon[d.time[0]] ? moon[d.time[0]].phase : null;
     weather = {
         ok: true,
-        upd: new Date(wxc.t).toLocaleTimeString('en-GB', { timeZone: cfg.tz, hour: '2-digit', minute: '2-digit' }),
+        upd: new Date(wxc.t).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }),
         old: now - wxc.t > 3 * 3600000,   // Vorhersage älter als 3 h (kein Internet)
         cur: { t: r0(c.temperature_2m), ic: ic[0], txt: ic[1], night: c.is_day === 0,
             ws: r0(c.wind_speed_10m), wg: r0(c.wind_gusts_10m), wd: dir8(c.wind_direction_10m) },
         today: today,
         mp: isNum(mp) ? Math.round(mp) : null, mpn: moonName(mp),
         days: [1, 2, 3].filter((i) => i < d.time.length).map(day),
+        parts: parts,
     };
 }
 
@@ -405,7 +451,9 @@ const engine = {
 const skD = flow.get('sk_depth');
 const dLeaf = skD && skD.data && (leaf(skD.data.belowSurface) || leaf(skD.data.belowTransducer));
 const depthM = dLeaf && isNum(dLeaf.value) && ageS(dLeaf.timestamp) < cfg.staleSec ? dLeaf.value : null;
-const hdgLeaf = skN && skN.data && (leaf(skN.data.headingTrue) || leaf(skN.data.headingMagnetic));
+// Kurs: rechtweisend bevorzugt, aber nur wenn frisch — sonst missweisend (SignalK liefert headingTrue teils selten)
+const hdgFresh = (k) => { const l = skN && skN.data && leaf(skN.data[k]); return l && isNum(l.value) && ageS(l.timestamp) < cfg.staleSec ? l : null; };
+const hdgLeaf = hdgFresh('headingTrue') || hdgFresh('headingMagnetic');
 const hdgDeg = hdgLeaf && isNum(hdgLeaf.value) && ageS(hdgLeaf.timestamp) < cfg.staleSec ? ((hdgLeaf.value * 180 / Math.PI) % 360 + 360) % 360 : null;
 const toR = Math.PI / 180;
 function bearingTo(la1, lo1, la2, lo2) {
@@ -445,6 +493,208 @@ if (ancMap.lat != null && ancMap.blat != null) {
 }
 anchor.map = ancMap;
 
+// ── Segeln: Wind (B&G-Stil) + Rigg-Loadsensoren (Cyclops, rigging.*.tension in N) ──
+const N_PER_T = 9806.65;
+const skR = flow.get('sk_rig');
+const rTree = (skR && skR.data && typeof skR.data === 'object' && ageS(skR.t) < cfg.staleSec) ? skR.data : {};
+// Der Cyclops-Gateway benennt die Pfade nach dem Sensornamen (rigging.<name>.tension) —
+// Namen wie port/bb/backbord bzw. starboard/stbd/sb/steuerbord werden automatisch zugeordnet.
+const rigKeys = Object.keys(rTree).filter((k) => rTree[k] && rTree[k].tension);
+const rigKey = (side) => {
+    const re = side === 'port' ? /(^|_)(port|bb|backbord|p|left)(_|$)|port|backbord/i
+        : /(^|_)(starboard|stbd|stb|sb|steuerbord|s|right)(_|$)|starboard|steuerbord/i;
+    return rigKeys.find((k) => k === side) || rigKeys.find((k) => re.test(k)) || null;
+};
+flow.set('rig_keys', rigKeys);
+const rigSide = (side) => {
+    const k = rigKey(side);
+    const l = k && leaf(rTree[k].tension);
+    return l && isNum(l.value) && ageS(l.timestamp) < cfg.staleSec ? l.value / N_PER_T : null;
+};
+const rig = { port: null, sb: null, pst: 'na', sst: 'na', warn: cfg.rigWarnT, alarm: cfg.rigAlarmT, scale: cfg.rigScaleT };
+[['port', 'pst', 'rigPortHigh', 'PORT'], ['starboard', 'sst', 'rigSbHigh', 'STBD']].forEach(([side, stKey, ctxKey, label]) => {
+    const t = rigSide(side);
+    const key = side === 'port' ? 'port' : 'sb';
+    if (t == null) { context.set(ctxKey, false); return; }
+    rig[key] = Math.round(t * 100) / 100;
+    // Alarm erst über rigAlarmT, endet unter rigAlarmT − Hysterese; orange = Warnbereich ohne Blinken
+    let high = context.get(ctxKey) || false;
+    if (!high && t > cfg.rigAlarmT) high = true;
+    else if (high && t < cfg.rigAlarmT - cfg.rigHystT) high = false;
+    context.set(ctxKey, high);
+    rig[stKey] = high ? 'alarm' : t > cfg.rigWarnT ? 'warn' : 'ok';
+    if (high && cfg.rigAlarmOn) alarms.push({ key: 'rig_' + key, text: `RIG ${label} ${rig[key].toFixed(2)} t > ${cfg.rigAlarmT} t` });
+});
+const wAng = leaf(wTree.angleApparent), tAng = leaf(wTree.angleTrueWater) || leaf(wTree.angleTrueGround);
+const fresh = (l) => l && isNum(l.value) && ageS(l.timestamp) < cfg.staleSec;
+const signedDeg = (rad) => { let d = rad * 180 / Math.PI; d = ((d + 180) % 360 + 360) % 360 - 180; return Math.round(d); };
+const stwL = skN && skN.data && leaf(skN.data.speedThroughWater);
+// AWS-Verlauf (eigener Verlauf, unabhängig von der Windquelle auf Screen 1)
+let awsHist = flow.get('aws_hist') || [];
+if (fresh(aws)) {
+    const t = new Date(aws.timestamp).getTime();
+    if (!awsHist.length || awsHist[awsHist.length - 1][0] !== t) awsHist.push([t, aws.value * MS2KN]);
+}
+awsHist = awsHist.filter((h) => now - h[0] < 6 * 3600000);
+flow.set('aws_hist', awsHist);
+const awWin = cfg.windWinMin * 60000, awStart = now - awWin;
+const awSum = new Array(60).fill(0), awCnt = new Array(60).fill(0);
+for (const h of awsHist) {
+    if (h[0] < awStart) continue;
+    const i = Math.min(59, Math.floor((h[0] - awStart) / awWin * 60));
+    awSum[i] += h[1]; awCnt[i]++;
+}
+const aws10 = awsHist.filter((h) => now - h[0] < 600000).map((h) => h[1]);
+const sail = {
+    awsHist: awSum.map((v, i) => (awCnt[i] ? Math.round(v / awCnt[i] * 10) / 10 : null)),
+    awsMax: aws10.length ? r1(Math.max.apply(null, aws10)) : null, win: cfg.windWinMin, style: cfg.sailStyle, cf: cfg.sailCloseFrom, ct: cfg.sailCloseTo,
+    aws: fresh(aws) ? r1(aws.value * MS2KN) : null, awa: fresh(wAng) ? signedDeg(wAng.value) : null,
+    tws: null, twa: null, twd: null, twCalc: false,
+    stw: fresh(stwL) ? r1(stwL.value * MS2KN) : null, sog: sog != null ? r1(sog) : null,
+    hdg: hdgDeg != null ? Math.round(hdgDeg) : null,
+    rig: rig,
+};
+
+// Wahrer Wind: B&G-Werte bevorzugt, sonst selbst aus AWS/AWA + Fahrt durchs Wasser (Fallback SOG) berechnen
+if (fresh(tws) && fresh(tAng)) {
+    sail.tws = r1(tws.value * MS2KN); sail.twa = signedDeg(tAng.value);
+} else if (fresh(aws) && fresh(wAng)) {
+    const bs = fresh(stwL) ? stwL.value : (sogLeaf && isNum(sogLeaf.value) && ageS(sogLeaf.timestamp) < cfg.staleSec ? sogLeaf.value : 0);
+    const u = aws.value * Math.cos(wAng.value) - bs, v = aws.value * Math.sin(wAng.value);
+    sail.tws = r1(Math.sqrt(u * u + v * v) * MS2KN);
+    sail.twa = signedDeg(Math.atan2(v, u));
+    sail.twCalc = true;
+}
+// TWD (aus welcher Kompassrichtung der Wind weht): B&G directionTrue, sonst Kurs + TWA
+const twdL = leaf(wTree.directionTrue);
+if (fresh(twdL)) sail.twd = Math.round(((twdL.value * 180 / Math.PI) % 360 + 360) % 360);
+else if (sail.twa != null && hdgDeg != null) sail.twd = Math.round(((hdgDeg + sail.twa) % 360 + 360) % 360);
+
+// ── Tank-Screen: Water, Diesel, Black Main, Black Guest ──────────────────
+const bwTree = (skT && skT.data && skT.data.blackWater && typeof skT.data.blackWater === 'object') ? skT.data.blackWater : {};
+const bw = Object.keys(bwTree).filter((k) => bwTree[k] && typeof bwTree[k] === 'object').map((k) => {
+    const lvl = leaf(bwTree[k].currentLevel), cap = leaf(bwTree[k].capacity);
+    return { id: k, lvl: lvl && isNum(lvl.value) && ageS(lvl.timestamp) < cfg.staleSec ? lvl.value : null,
+        capL: cap && isNum(cap.value) ? cap.value * 1000 : null };
+}).sort((a, b) => (parseFloat(a.id) || 0) - (parseFloat(b.id) || 0));
+if (cfg.bwSwap) bw.reverse();     // kleinste Instanz = Main (wie Pro App), per Setting tauschbar
+const tankObj = (name, kind, pct, capL, st) => ({
+    name, kind, pct: pct != null ? Math.round(pct) : null,
+    l: pct != null && capL != null ? Math.round(capL * pct / 100) : null, cap: capL != null ? Math.round(capL) : null, st,
+});
+const bwSt = (p) => (p == null ? 'na' : p >= cfg.bwHighPct ? 'high' : p >= cfg.bwWarnPct ? 'warn' : 'ok');
+const fuelPct = ft && ft.lvl != null ? ft.lvl * 100 : null;
+const tanksScreen = [
+    tankObj('WATER', 'water', water.pct, water.cap, water.st === 'alarm' ? 'high' : water.pct == null ? 'na' : 'ok'),
+    tankObj('DIESEL', 'fuel', fuelPct, ft && ft.capL, fuelPct == null ? 'na' : fuelPct < cfg.fuelLowPct ? 'high' : fuelPct < cfg.fuelWarnPct ? 'warn' : 'ok'),
+    tankObj('BLACK MAIN', 'black', bw[0] && bw[0].lvl != null ? bw[0].lvl * 100 : null, bw[0] && bw[0].capL, bwSt(bw[0] && bw[0].lvl != null ? bw[0].lvl * 100 : null)),
+    tankObj('BLACK GUEST', 'black', bw[1] && bw[1].lvl != null ? bw[1].lvl * 100 : null, bw[1] && bw[1].capL, bwSt(bw[1] && bw[1].lvl != null ? bw[1].lvl * 100 : null)),
+];
+
+// ── SOS-Screen: VHF-Notruftexte (MAYDAY / PAN PAN) mit Live-Position ──────
+const idv = (k) => { const v = flow.get('sk_' + k); return v ? v.data : null; };
+const NATO = { A: 'ALFA', B: 'BRAVO', C: 'CHARLIE', D: 'DELTA', E: 'ECHO', F: 'FOXTROT', G: 'GOLF', H: 'HOTEL', I: 'INDIA',
+    J: 'JULIETT', K: 'KILO', L: 'LIMA', M: 'MIKE', N: 'NOVEMBER', O: 'OSCAR', P: 'PAPA', Q: 'QUEBEC', R: 'ROMEO', S: 'SIERRA',
+    T: 'TANGO', U: 'UNIFORM', V: 'VICTOR', W: 'WHISKEY', X: 'X-RAY', Y: 'YANKEE', Z: 'ZULU',
+    0: 'ZERO', 1: 'ONE', 2: 'TWO', 3: 'THREE', 4: 'FOUR', 5: 'FIVE', 6: 'SIX', 7: 'SEVEN', 8: 'EIGHT', 9: 'NINE' };
+const vName = typeof idv('id_name') === 'string' ? idv('id_name').toUpperCase() : 'SUKI';
+const vMmsi = typeof idv('id_mmsi') === 'string' ? idv('id_mmsi') : null;
+const vCs = idv('id_comm') && typeof idv('id_comm').callsignVhf === 'string' ? idv('id_comm').callsignVhf.toUpperCase() : null;
+// Position zum Vorlesen: Grad, Minuten, Sekunden + Himmelsrichtung ausgeschrieben
+const spoken = (v, isLat) => {
+    const a = Math.abs(v);
+    let d = Math.floor(a), m = Math.floor((a - d) * 60), sec = Math.round(((a - d) * 60 - m) * 60);
+    if (sec === 60) { sec = 0; m++; } if (m === 60) { m = 0; d++; }
+    return d + ' DEGREES ' + m + ' MINUTES ' + sec + ' SECONDS ' + (isLat ? (v >= 0 ? 'NORTH' : 'SOUTH') : (v >= 0 ? 'EAST' : 'WEST'));
+};
+const sos = {
+    name: vName, cs: vCs, mmsi: vMmsi,
+    mmsiFmt: vMmsi ? vMmsi.replace(/(\d{3})(?=\d)/g, '$1 ') : null,
+    csPhon: vCs ? vCs.split('').map((c) => NATO[c] || c).join(' ') : null,
+    lat: posOk ? spoken(pos.value.latitude, true) : null, lon: posOk ? spoken(pos.value.longitude, false) : null,
+    utc: 'TIME ' + new Date(now).toISOString().substr(11, 5) + ' UTC',
+    pob: cfg.sosPob, desc: String(cfg.sosDesc || '').toUpperCase(),
+};
+
+// Motortemperatur-Alarm (nur mit Live-Daten, also bei laufendem Motor): Volvo Penta D2-60 —
+// Thermostat öffnet 75 °C, voll offen 87 °C → Warnung ab 90 °C, Alarm ab 95 °C (einstellbar)
+engine.twarn = cfg.engTempWarnC; engine.talarm = cfg.engTempAlarmC; engine.tst = 'na';
+if (tempK != null) {
+    const tc = tempK - 273.15;
+    let hot = context.get('engHot') || false;
+    if (!hot && tc >= cfg.engTempAlarmC) hot = true;
+    else if (hot && tc < cfg.engTempAlarmC - cfg.engTempHystC) hot = false;
+    context.set('engHot', hot);
+    engine.tst = hot && cfg.engTempAlarmOn ? 'alarm' : tc >= cfg.engTempWarnC ? 'warn' : 'ok';
+    if (engine.tst === 'alarm') alarms.push({ key: 'engtemp', text: `ENGINE TEMP ${Math.round(tc)} C >= ${cfg.engTempAlarmC} C` });
+} else context.set('engHot', false);
+
+// Ecken am Drehzahlmesser: SOG, AWS, AWA, Wassertemperatur
+const skWt = flow.get('sk_water');
+const wtL = skWt && skWt.data && leaf(skWt.data.temperature);
+engine.sog = sog != null ? r1(sog) : null;
+engine.aws = sail.aws;
+engine.awa = sail.awa;
+engine.wtemp = wtL && isNum(wtL.value) && ageS(wtL.timestamp) < 120 ? r1(wtL.value - 273.15) : null;
+
+// ── AIS: Radar, CPA/TCPA, Annäherungsalarm ────────────────────────────────
+// Modi: anchor = kein Alarm, cruising = CPA < aisCruiseNm, offshore = CPA < aisOffshoreNm (jeweils TCPA < aisTcpaMin)
+const NM = 1852;
+const aisTab = flow.get('ais') || {};
+const ownCogL = skN && skN.data && leaf(skN.data.courseOverGroundTrue);
+const ownCog = ownCogL && isNum(ownCogL.value) && ageS(ownCogL.timestamp) < 60 ? ownCogL.value : 0;
+const ownSog = sogLeaf && isNum(sogLeaf.value) && ageS(sogLeaf.timestamp) < cfg.staleSec ? sogLeaf.value : 0;
+const aisThrNm = cfg.aisMode === 'offshore' ? cfg.aisOffshoreNm : cfg.aisMode === 'cruising' ? cfg.aisCruiseNm : null;
+const ais = { mode: cfg.aisMode, thr: aisThrNm, cn: cfg.aisCruiseNm, on: cfg.aisOffshoreNm, own: !!posOk, targets: [], n: 0, alarms: 0 };
+if (posOk) {
+    const la0 = pos.value.latitude, lo0 = pos.value.longitude, mLon = 111320 * Math.cos(la0 * toR);
+    const vo = [Math.sin(ownCog) * ownSog, Math.cos(ownCog) * ownSog];   // eigene Geschwindigkeit (Ost, Nord) m/s
+    const list = [];
+    for (const k of Object.keys(aisTab)) {
+        const t = aisTab[k];
+        if (!isNum(t.lat) || !isNum(t.lon)) continue;
+        const age = (now - (t.tPos || 0)) / 1000;
+        if (age > 1200) { delete aisTab[k]; continue; }                 // 20 min ohne Position → entfernen
+        const e = (t.lon - lo0) * mLon, n = (t.lat - la0) * 111320;
+        const dist = Math.sqrt(e * e + n * n);
+        if (dist > 24 * NM) continue;
+        const ts = isNum(t.sog) ? t.sog : 0, tc = isNum(t.cog) ? t.cog : 0;
+        const rv = [Math.sin(tc) * ts - vo[0], Math.cos(tc) * ts - vo[1]];   // relative Geschwindigkeit
+        const v2 = rv[0] * rv[0] + rv[1] * rv[1];
+        let tcpa = v2 > 1e-4 ? -(e * rv[0] + n * rv[1]) / v2 : 0;      // s
+        const cpa = tcpa > 0 ? Math.hypot(e + rv[0] * tcpa, n + rv[1] * tcpa) : dist;
+        if (tcpa < 0) tcpa = 0;
+        const stale = age > 600;
+        let st = 'ok';
+        if (aisThrNm != null && !stale) {
+            const thrM = aisThrNm * NM, tWin = cfg.aisTcpaMin * 60;
+            if (cpa < thrM && tcpa > 0 && tcpa < tWin) st = 'alarm';
+            else if (cpa < thrM * 2 && tcpa > 0 && tcpa < tWin * 2) st = 'warn';
+        }
+        list.push({ m: String(t.mmsi || ''), nm: t.name || '', e: Math.round(e), n: Math.round(n),
+            cog: Math.round(tc * 180 / Math.PI), sog: r1(ts * MS2KN), hdg: isNum(t.hdg) ? Math.round(t.hdg * 180 / Math.PI) : null,
+            d: Math.round(dist / NM * 100) / 100, b: Math.round(((Math.atan2(e, n) / toR) + 360) % 360),
+            cpa: Math.round(cpa / NM * 100) / 100, tcpa: tcpa > 0 ? Math.round(tcpa / 6) / 10 : null,
+            st, stale, age: Math.round(age), cs: t.cs || '', ty: t.type || '', len: isNum(t.len) ? Math.round(t.len) : null,
+            dest: t.dest || '', nav: typeof t.state === 'string' ? t.state : '' });
+    }
+    flow.set('ais', aisTab);
+    // gefährlichste zuerst, dann nach Distanz; max. 30 Ziele ans Display
+    const rank = { alarm: 0, warn: 1, ok: 2 };
+    list.sort((a, b) => rank[a.st] - rank[b.st] || a.d - b.d);
+    ais.n = list.length;
+    ais.targets = list.slice(0, 30);
+    for (const t of list) {
+        if (t.st !== 'alarm') continue;
+        ais.alarms++;
+        alarms.push({ key: 'ais_' + t.m, text: `AIS ${t.nm || t.m} CPA ${t.cpa.toFixed(2)} NM in ${t.tcpa != null ? Math.round(t.tcpa) : 0} min` });
+    }
+    ais.ownCog = Math.round(ownCog * 180 / Math.PI); ais.ownSog = r1(ownSog * MS2KN);
+}
+// Heading-up: Bildschirm nach eigenem Heading drehen; ohne Heading COG (nur in Fahrt), sonst Nord oben
+ais.up = hdgDeg != null ? Math.round(hdgDeg) : ownSog * MS2KN > 1 ? Math.round(ownCog * 180 / Math.PI) : null;
+ais.upSrc = hdgDeg != null ? 'HDG' : ais.up != null ? 'COG' : 'N';
+
 // ── Test-Alarm ────────────────────────────────────────────────────────────
 if (cfg.testUntil && now < cfg.testUntil) alarms.push({ key: 'test', text: 'TEST ALARM' });
 
@@ -456,7 +706,8 @@ const blink = alarms.some((a) => !acked || ack.keys.indexOf(a.key) < 0);
 const state = {
     v: 1,
     ts: Math.round(now / 1000),
-    time: new Date(now).toLocaleTimeString('en-GB', { timeZone: cfg.tz, hour: '2-digit', minute: '2-digit' }),
+    time: new Date(now).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }),
+    tz: tz,
     utc: new Date(now).toISOString().slice(11, 16),
     status: alarms.length ? 'alarm' : (warns.length ? 'warn' : 'ok'),
     blink: blink,
@@ -467,8 +718,13 @@ const state = {
     msg: alarms.length ? alarms.map((a) => a.text).join('  |  ') : warns.join('  |  '),
     batt: batt,
     energy: energy,
+    home: cfg.homeLeft,   // Screen 1 links: 'supply' = Batterie + alle Tanks in einer Box, 'split' = Battery + Water
     weather: weather,
     engine: engine,
+    tanks: tanksScreen,
+    sos: sos,
+    ais: ais,
+    sail: sail,
     water: water,
     wind: wind,
     baro: baro,

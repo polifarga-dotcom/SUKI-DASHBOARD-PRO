@@ -11,7 +11,7 @@
   #scr.red{background:#d00000}
   .hdr{position:absolute;left:16px;right:16px;top:10px;height:50px;display:flex;align-items:center;justify-content:space-between}
   .boat{font-size:30px;font-weight:bold;letter-spacing:2px}
-  .time{font-size:30px;color:#bbb}
+  .time{font-size:30px;color:#bbb;position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap}  /* fest mittig wie am Display */
   .red .time{color:#fff}
   .utc{font-size:18px;color:#777;margin-left:12px}
   .red .utc{color:#fff}
@@ -25,6 +25,22 @@
   .tile.alarm{border:5px solid #ff2020}
   .red .tile{border-color:#fff}
   .tile.half{height:154px}
+  /* Screen 1 links, Variante „supply“: Batterie + alle Tanks in einer Box */
+  .sup .sb{position:absolute;left:16px;top:34px;font-size:52px;font-weight:bold;line-height:1}
+  .sup .sb small{font-size:22px;font-weight:normal;margin-left:3px}
+  .sup .sva{position:absolute;right:16px;top:40px;text-align:right;font-size:18px;color:#ddd;line-height:24px}
+  .sup .sva span{color:#999}
+  .sup .sbar{position:absolute;left:16px;right:16px;height:10px;border-radius:5px;background:#222;overflow:hidden}
+  .sup .sbar i{display:block;height:100%;border-radius:5px}
+  .sup .ssep{position:absolute;left:16px;right:16px;top:124px;height:1px;background:#2a2a2a}
+  .sup .sr{position:absolute;left:16px;right:16px;display:flex;justify-content:space-between;align-items:baseline;white-space:nowrap}
+  .sup .sr .n{font-size:13px;color:#999;letter-spacing:1px}
+  .sup .sr .v{font-size:13px;color:#999} .sup .sr .v b{font-size:18px;color:#fff;margin-left:6px}
+  .sup .sbar.tb{height:8px}
+  .sup .sbar .water{background:linear-gradient(90deg,#1e6fd0,#5cb8ff)} .sup .sbar .fuel{background:linear-gradient(90deg,#e0a000,#ffd54a)} .sup .sbar .black{background:linear-gradient(90deg,#5d4037,#a1887f)}
+  .night .sup .sbar{background:#200000} .night .sup .sbar i{background:#b00000 !important} .night .sup .ssep{background:#300000}
+  .night .sup .sr .n,.night .sup .sr .v,.night .sup .sva span{color:#800000} .night .sup .sr .v b,.night .sup .sva{color:#c00000}
+  .red .sup .sr .n,.red .sup .sr .v,.red .sup .sr .v b,.red .sup .sva,.red .sup .sva span{color:#fff !important} .red .sup .sbar i{background:#fff !important} .red .sup .ssep{background:#fff}
   .tile.h2{top:238px}
   .httl{position:absolute;top:11px;left:16px;font-size:17px;color:#999;letter-spacing:1px}
   .hthr{position:absolute;top:12px;right:16px;font-size:15px;color:#777}
@@ -69,6 +85,8 @@
   .msg{font-size:24px;font-weight:bold}
   .hint{font-size:18px;color:#aaa;margin-top:4px}
   .red .hint{color:#fff}
+  #sosbtn{position:absolute;left:128px;top:2px;width:46px;height:46px;border-radius:50%;border:2px solid #444;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;box-sizing:border-box}
+  .night #sosbtn{border-color:#600000} .night #sosbtn svg circle{stroke:#900000} .night #sosbtn svg circle+circle{stroke:#300000}
   #gbtn{position:absolute;left:72px;top:2px;width:46px;height:46px;border-radius:50%;border:2px solid #444;color:#888;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
   .night #gbtn{border-color:#600000;color:#900000}
   .red #gbtn{border-color:#fff;color:#fff}
@@ -119,26 +137,39 @@
   @keyframes af{0%{opacity:0}15%{opacity:1}85%{opacity:1}100%{opacity:0}}
   /* ── Screen 3: Wetter ── */
   .wb{position:absolute;box-sizing:border-box;border:2px solid #333;border-radius:14px}
-  .wd{width:248px;height:118px}
+  .wd{width:248px;height:66px}
   .wb > div{position:absolute;white-space:nowrap}
   .wicon svg{width:100%;height:100%}
-  .wttl{font-size:16px;color:#999;letter-spacing:2px}
-  .wbig{font-size:72px;font-weight:bold;line-height:1}
-  .wmm{font-size:20px;color:#bbb}
-  .wl1{font-size:20px;color:#ddd}
-  .wsep{left:470px;top:20px;bottom:20px;width:1px;background:#2a2a2a}
-  .wrow{left:494px;height:34px;display:flex;align-items:center;gap:14px;font-size:22px;color:#eee}
-  .wrow small{font-size:16px;color:#999;margin-left:8px}
-  .wsi{width:28px;height:28px;display:inline-flex}
-  .wsi svg{width:28px;height:28px}
-  .wupd{left:22px;top:166px;width:132px;text-align:center;font-size:12px;color:#555}
+  .wttl{font-size:14px;color:#999;letter-spacing:2px}
+  .wbig{font-size:56px;font-weight:bold;line-height:1}
+  .wmm{font-size:17px;color:#bbb}
+  .wl1{font-size:17px;color:#ddd}
+  .wsep{left:430px;top:12px;bottom:12px;width:1px;background:#2a2a2a}
+  .wrow{left:450px;height:28px;display:flex;align-items:center;gap:12px;font-size:19px;color:#eee}
+  .wrow small{font-size:14px;color:#999;margin-left:6px}
+  .wsi{width:22px;height:22px;display:inline-flex}
+  .wsi svg{width:22px;height:22px}
+  .wupd{left:8px;top:104px;width:108px;text-align:center;font-size:11px;color:#555}
   .wupd.old{color:#ffa000}
-  .wd .dt{left:18px;top:14px;font-size:15px;color:#999;letter-spacing:2px}
-  .wd .di{left:12px;top:42px;width:56px;height:56px}
-  .wd .dl{left:80px;display:flex;align-items:center;gap:7px;font-size:16px;color:#bbb}
-  .wd .dl b{font-size:24px;color:#fff;font-weight:bold}
-  .wd .dg{color:#777} .night .wd .dg{color:#700000} .red .wd .dg{color:#fff}
-  .wd .dl .wsi,.wd .dl .wsi svg{width:18px;height:18px}
+  /* Tagesverlauf (4 Abschnitte) */
+  .wp{width:185px;height:112px}
+  .wp.now{border-color:#5a5a5a}
+  .wp .pt{left:12px;top:9px;font-size:13px;color:#ccc;letter-spacing:2px;font-weight:bold}
+  .wp .ph{right:12px;top:10px;font-size:12px;color:#888}
+  .wp .pi{left:8px;top:34px;width:48px;height:48px}
+  .wp .pl{left:60px;display:flex;align-items:center;gap:4px;font-size:13px;color:#bbb}
+  .wp .pl b{font-size:22px;color:#fff;font-weight:bold}
+  .wp .pl .wsi,.wp .pl .wsi svg{width:16px;height:16px}
+  .wp .px{left:12px;bottom:7px;font-size:12px;color:#888;max-width:162px;overflow:hidden;text-overflow:ellipsis}
+  .wp .px .wsi,.wp .px .wsi svg{width:12px;height:12px;vertical-align:-1px}
+  .wd .dt{left:56px;top:9px;font-size:12px;color:#999;letter-spacing:1px}
+  .wd .di{left:8px;top:11px;width:42px;height:42px}
+  .wd .dr{right:10px;top:5px;font-size:14px;color:#bbb} .wd .dr b{font-size:19px;color:#fff;font-weight:bold;margin-right:4px}
+  .wd .dl{left:56px;top:37px;display:flex;align-items:center;gap:4px;font-size:13px;color:#bbb}
+  .wd .dl2{right:12px;top:36px;display:flex;align-items:center;gap:4px;font-size:14px;color:#bbb}
+  .wd .dg,.wp .dg{color:#777} .night .wd .dg,.night .wp .dg{color:#700000} .red .wd .dg,.red .wp .dg{color:#fff}
+  .wd .wsi,.wd .wsi svg{width:16px;height:16px}
+  .night .wp .pt,.night .wp .pl b,.night .wd .dr b{color:#c00000} .night .wp .ph,.night .wp .px,.night .wp .pl,.night .wd .dr,.night .wd .dl2{color:#900000} .night .wp.now{border-color:#700000}
   .wx-wind{fill:none;stroke:#9fb4c8;stroke-width:2.2;stroke-linecap:round}
   .wx-sun{fill:#ffc400} .wx-ray{stroke:#ffc400;stroke-width:3.5;stroke-linecap:round}
   .wx-cl{fill:#c8cdd2} .wx-cl2{fill:#8a9096}
@@ -155,6 +186,9 @@
   .night .wx-cl{fill:#700000} .night .wx-cl2{fill:#500000} .night .wx-fog{stroke:#700000} .night .wx-mdark{fill:#200000}
   .red .wb{border-color:#fff} .red .wb div,.red .wb small,.red .wb b{color:#fff !important}
   /* ── Screen 4: Motor ── */
+  .et.warn{border-color:#ffa000} .et.warn .ev2{color:#ffa000}
+  .et.alarm{border:4px solid #ff3030;animation:tblink 1s steps(1) infinite} .et.alarm .ev2{color:#ff3030}
+  @keyframes tblink{50%{background:#d00000}} .et.alarm .ev2{animation:tblinkt 1s steps(1) infinite} @keyframes tblinkt{50%{color:#fff}}
   .et{width:189px;height:100px}
   .ev2{position:absolute;left:16px;top:34px;font-size:34px;font-weight:bold;white-space:nowrap}
   .ev2 small{font-size:17px;font-weight:normal;color:#999;margin-left:5px}
@@ -163,7 +197,10 @@
   .ebar i{display:block;height:100%;border-radius:4px;background:#ffc400}
   .efl{position:absolute;right:16px;top:46px;font-size:18px;color:#bbb;white-space:nowrap}
   .night .efl{color:#800000} .red .efl{color:#fff} .red .ebar i{background:#fff}
-  .t-face{fill:url(#tface)} .t-bezel{fill:none;stroke:#3a3a3a;stroke-width:2}
+  .t-face{fill:url(#tface)} .wt-face{fill:url(#wface2)} .wt-vals{stroke:#00c853} .wt-ndl-s{fill:#00e060} .wt-hub-s{stroke:#00e060} .wt-bub{fill:#0a0a0a;stroke:#ff3b30;stroke-width:2} .wt-bub.s{stroke:#00e060} .night .wt-bub{fill:#050000;stroke:#c00000} .red .wt-bub{fill:none;stroke:#fff}
+  .wt-awa{fill:#fff;font-size:15px;font-weight:bold;font-style:italic;text-anchor:middle} .night .wt-awa{fill:#a00000} .red .wt-awa{fill:#fff}
+  .night .wt-vals{stroke:#900000} .night .wt-ndl-s{fill:#e00000} .night .wt-hub-s{stroke:#e00000} .night #wface2 stop{stop-color:#000 !important}
+  .red .wt-vals{stroke:#fff} .red .wt-ndl-s{fill:#fff} .red #wface2 stop{stop-color:transparent !important} .t-bezel{fill:none;stroke:#3a3a3a;stroke-width:2}
   .t-tick{stroke:#666;stroke-width:1.5} .t-maj{stroke:#eee;stroke-width:4} .t-num{fill:#ddd;font-size:20px;font-weight:bold;font-style:italic;font-family:inherit;text-anchor:middle;dominant-baseline:middle}
   .t-track{stroke:#1c1c1c} .t-val{stroke:#4fc3f7} .t-valr{stroke:#ff3b30} .t-zg{stroke:#00c853} .t-zr{stroke:#e00000}
   .t-ndl{fill:#ff3b30} .t-hub{fill:#222;stroke:#ff3b30;stroke-width:3}
@@ -177,6 +214,97 @@
   .night .ebar i{background:#a00000 !important}
   .red .ev2,.red .es2,.red .ev2 small{color:#fff} .red .t-tick,.red .t-maj,.red .t-val,.red .t-valr,.red .t-zg,.red .t-zr,.red .t-bezel{stroke:#fff} .red .t-track{stroke:none} .red .t-ndl{fill:#fff} .red .t-hub{stroke:#fff;fill:none} .red .t-pill{fill:none;stroke:#fff} .red .t-logo{fill:#fff} .red #tface stop{stop-color:transparent !important}
   .red .t-num,.red .t-rpm,.red .t-unit{fill:#fff}
+  /* ── AIS-Screen ── */
+  #aisr{position:absolute;inset:0;width:100%;height:100%;background:#050b12}
+  .aismodes{position:absolute;left:0;right:0;top:0;height:40px;display:flex;gap:6px}
+  .aismodes button{flex:1;border-radius:9px;border:2px solid #444;background:#111;color:#aaa;font:bold 12px "DejaVu Sans",sans-serif;letter-spacing:0;white-space:nowrap;cursor:pointer;padding:0}
+  .aismodes button.on{border-color:#00d000;color:#00e060} .aismodes button.on.offshore{border-color:#4fc3f7;color:#4fc3f7} .aismodes button.on.anchor{border-color:#999;color:#fff}
+  .aisinfo{position:absolute;left:0;right:0;top:48px;bottom:0;border:2px solid #333;border-radius:12px;padding:8px 12px;box-sizing:border-box;overflow:hidden;font-size:14px;color:#ccc}
+  .aisinfo h3{margin:0 0 4px;font-size:19px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .aisinfo .kv{display:flex;justify-content:space-between;line-height:19px;white-space:nowrap}
+  .aisinfo.ack{bottom:58px} .aisinfo.ack .kv{line-height:17px;font-size:13px} .aisinfo.ack h3{font-size:17px;margin-bottom:2px}
+  .aisinfo .kv b{color:#fff} .aisinfo .kv.al b{color:#ff3030}
+  .aisinfo .row{display:flex;justify-content:space-between;line-height:21px;white-space:nowrap;cursor:pointer}
+  .aisinfo .row span:first-child{overflow:hidden;text-overflow:ellipsis;max-width:120px}
+  .aisinfo .row.alarm{color:#ff3030} .aisinfo .row.warn{color:#ffa000}
+  .aisinfo .hd{font-size:11px;color:#777;letter-spacing:2px;margin-bottom:3px}
+  .aisack{position:absolute;left:0;right:0;bottom:0;height:50px;border-radius:10px;border:2px solid #ff3030;background:#d00000;color:#fff;font:bold 16px "DejaVu Sans",sans-serif;letter-spacing:2px;cursor:pointer}
+  .ais-t{stroke:#000;stroke-width:1} .ais-ok{fill:#00d000} .ais-warn{fill:#ffa000} .ais-alarm{fill:#ff3030} .ais-stale{fill:#555}
+  .ais-vec{stroke-width:1.5;opacity:.8} .ais-sel{fill:none;stroke:#fff;stroke-width:2} .ais-ownvec{stroke:#fff;stroke-dasharray:6 4} .night .ais-ownvec{stroke:#c00000} .ais-own{fill:#fff;stroke:#000} .ais-thr{fill:rgba(255,48,48,.06);stroke:#ff3030;stroke-width:1.5;stroke-dasharray:6 5}
+  .ais-lbl{fill:#bbb;font-size:10px} .ais-nlbl{fill:#ccc;font:bold 12px sans-serif;text-anchor:middle;paint-order:stroke;stroke:#050b12;stroke-width:4px} .ais-up{fill:#aaa;font:bold 11px sans-serif;text-anchor:end;letter-spacing:1px}
+  .night .ais-nlbl{fill:#c00000;stroke:#000} .night .ais-up{fill:#900000}
+  .night #aisr{background:#000} .night .ais-ok,.night .ais-warn{fill:#a00000} .night .ais-alarm{fill:#ff2020} .night .ais-stale{fill:#300000} .night .ais-own{fill:#c00000}
+  .night .ais-thr{stroke:#c00000;fill:rgba(160,0,0,.08)} .night .ais-lbl{fill:#700000} .night .ais-sel{stroke:#c00000}
+  .night .aismodes button{background:#0a0000;border-color:#400000;color:#800000} .night .aismodes button.on{border-color:#c00000;color:#c00000}
+  .night .aisinfo{border-color:#400000;color:#900000} .night .aisinfo h3,.night .aisinfo .kv b{color:#c00000} .night .aisinfo .hd{color:#600000}
+  .red .aisinfo,.red .aisinfo h3,.red .aisinfo .kv b,.red .aisinfo .row{color:#fff} .red .aisinfo{border-color:#fff}
+  /* ── SOS-Screen: VHF-Notruf zum Ablesen ── */
+  .sosb{position:absolute;top:72px;height:44px;width:384px;border-radius:10px;border:3px solid #555;background:#111;color:#ddd;font:bold 24px "DejaVu Sans",sans-serif;letter-spacing:4px;cursor:pointer;padding:0}
+  #sb-m{left:12px} #sb-p{left:404px}
+  #sb-m.on{background:#d00000;border-color:#ff3030;color:#fff} #sb-p.on{background:#ffa000;border-color:#ffc040;color:#000}
+  .sostabs{position:absolute;left:12px;right:12px;top:120px;height:26px;display:flex;gap:8px}
+  .sostabs button{flex:1;border-radius:7px;border:2px solid #333;background:#0c0c0c;color:#888;font:bold 14px "DejaVu Sans",sans-serif;letter-spacing:2px;cursor:pointer;padding:0}
+  .sostabs button.on{border-color:#ffd54a;color:#ffd54a}
+  .sosbox{position:absolute;left:12px;right:12px;top:150px;height:242px;border:2px solid #333;border-radius:12px;padding:6px 18px;box-sizing:border-box;overflow:hidden;cursor:pointer}
+  .sosbox div{font-size:32px;font-weight:bold;line-height:40px;color:#fff;white-space:nowrap}
+  .sosbox div.sm{font-size:24px;line-height:30px}
+  .sosbox div.ph{font-size:16px;font-weight:normal;color:#9ab;line-height:18px;margin:-3px 0 2px;letter-spacing:1px}
+  .sosbox div.hint{font-size:15px;font-weight:normal;color:#ffd54a;line-height:20px}
+  .sosbox div.pos{color:#ffd54a;font-size:30px;line-height:40px} .sosbox span.fill{color:#ffa000}
+  .night .sosb{background:#0a0000;border-color:#500000;color:#900000} .night #sb-m.on,.night #sb-p.on{background:#700000;border-color:#c00000;color:#000}
+  .night .sosbox div.hint,.night .sosbox div.pos{color:#d00000} .night .sostabs button{background:#050000;border-color:#300000;color:#700000} .night .sostabs button.on{border-color:#c00000;color:#c00000} .night .sosbox{border-color:#400000} .night .sosbox div{color:#c00000} .night .sosbox div.ph{color:#700000} .night .sosbox span.fill{color:#ff3030}
+  .red .sosbox div,.red .sosbox span.fill,.red .sostabs button{color:#fff !important} .red .sosbox{border-color:#fff}
+  /* ── Tank-Screen ── */
+  .tk{top:72px;width:191px;height:320px}
+  .tk.warn{border-color:#ffa000} .tk.high{border:4px solid #ff3030}
+  .tk .tn{position:absolute;left:0;right:0;top:14px;text-align:center;font-size:16px;color:#999;letter-spacing:2px}
+  .tk .tp{position:absolute;left:0;right:0;top:40px;text-align:center;font-size:44px;font-weight:bold}
+  .tk .tp small{font-size:20px;font-weight:normal;color:#999;margin-left:3px}
+  .tk .tv{position:absolute;left:50px;right:50px;top:100px;height:172px;border:3px solid #444;border-radius:14px;overflow:hidden;background:#0c0c0c}
+  .tk .tf{position:absolute;left:0;right:0;bottom:0}
+  .tk .tm{position:absolute;left:0;right:0;border-top:1px dashed rgba(255,255,255,.18)}
+  .tk .tl{position:absolute;left:0;right:0;top:284px;text-align:center;font-size:17px;color:#bbb}
+  .tf.water{background:linear-gradient(#5cb8ff,#1e6fd0)} .tf.fuel{background:linear-gradient(#ffd54a,#e0a000)} .tf.black{background:linear-gradient(#a1887f,#5d4037)}
+  .night .tk .tn,.night .tk .tp small,.night .tk .tl{color:#800000} .night .tk .tp{color:#c00000} .night .tk .tv{border-color:#400000;background:#050000}
+  .night .tf.water,.night .tf.fuel,.night .tf.black{background:#700000} .night .tk .tm{border-color:rgba(160,0,0,.4)}
+  .red .tk .tn,.red .tk .tp,.red .tk .tp small,.red .tk .tl{color:#fff} .red .tk .tv{border-color:#fff;background:transparent} .red .tf{background:#fff !important}
+  /* ── Segel-Screen: B&G-Windanzeige + Rigg-Load ── */
+  .rt{width:189px;height:104px}
+  .rt.warn{border-color:#ffa000}
+  .rt .rl{position:absolute;left:14px;top:9px;font-size:14px;color:#999;letter-spacing:2px}
+  .rt .rst{position:absolute;right:14px;top:9px;font-size:13px;font-weight:bold;letter-spacing:2px}
+  .rt .rv{position:absolute;left:14px;top:28px;font-size:34px;font-weight:bold;white-space:nowrap}
+  .rt .rv small{font-size:16px;font-weight:normal;color:#999;margin-left:4px}
+  .rt .rb{position:absolute;left:14px;right:14px;top:70px;height:12px;border-radius:4px;overflow:hidden;background:#151515}
+  .rt .rb i{position:absolute;top:0;bottom:0}
+  .rt .rs{position:absolute;left:14px;right:14px;top:84px;height:14px;font-size:11px;color:#777}
+  .rt .rs span{position:absolute;transform:translateX(-50%)}
+  .z-g{background:rgba(0,200,80,.25)} .z-o{background:rgba(255,160,0,.28)} .z-r{background:rgba(255,40,40,.3)}
+  .night .z-g{background:#160000} .night .z-o{background:#280000} .night .z-r{background:#420000}
+  .sc{position:absolute;z-index:2;display:flex;flex-direction:column}
+  .sc i{font-style:normal;font-size:12px;color:#888;letter-spacing:2px}
+  .sc b{font-size:24px;color:#fff;white-space:nowrap}
+  .sc b small{font-size:13px;color:#999;font-weight:normal;margin-left:3px}
+  .sc.tl{left:26px;top:84px} .sc.bl{left:26px;top:338px} .sc.tr{left:290px;top:84px;align-items:flex-end;width:84px} .sc.br{left:290px;top:338px;align-items:flex-end;width:84px}
+  .sc i em{font-style:normal;color:#ffa000;margin-left:4px;letter-spacing:0} .night .sc i em{color:#800000}
+  .awv{position:absolute;left:16px;top:44px;font-size:72px;font-weight:bold;line-height:1;z-index:1}
+  .awv small{font-size:26px;font-weight:normal;color:#999;margin-left:6px}
+  .aws2{position:absolute;left:16px;top:124px;font-size:16px;color:#bbb;z-index:1}
+  .night .sc i,.night .aws2{color:#800000} .night .sc b,.night .awv{color:#c00000} .night .sc b small,.night .awv small{color:#800000}
+  .night .rt .rl{color:#900000} .red .sc i,.red .sc b,.red .awv,.red .aws2{color:#fff}
+  .w-face{fill:url(#wface)} .w-bez{fill:none;stroke:#3a3a3a;stroke-width:2}
+  .w-tick{stroke:#666;stroke-width:1.5} .w-maj{stroke:#eee;stroke-width:3} .w-num{fill:#ccc;font-size:17px;font-weight:bold;text-anchor:middle;dominant-baseline:middle}
+  .w-port{stroke:#e00000} .w-stbd{stroke:#00c853} .w-boat{fill:#1c1c1c;stroke:#666;stroke-width:1.5}
+  .w-ndl-p{fill:#ff3b30} .w-ndl-s{fill:#00e060} .w-hub{fill:#222;stroke:#bbb;stroke-width:2}
+  .w-tw{fill:none;stroke:#4fc3f7;stroke-width:2.5} .w-twl{fill:#4fc3f7;font-size:12px;font-weight:bold;text-anchor:middle}
+  .w-lbl{fill:#888;font-size:13px;letter-spacing:3px;text-anchor:middle} .w-val{fill:#fff;font-size:40px;font-weight:bold;text-anchor:middle}
+  .w-awa{fill:#ddd;font-size:20px;font-weight:bold;text-anchor:middle}
+  .night .w-tick{stroke:#500000} .night .w-maj{stroke:#a00000} .night .w-num,.night .w-awa{fill:#900000} .night .w-port{stroke:#c00000} .night .w-stbd{stroke:#600000}
+  .night .w-boat{fill:#100000;stroke:#500000} .night .w-ndl-p,.night .w-ndl-s{fill:#e00000} .night .w-hub{fill:#100000;stroke:#900000}
+  .night .w-tw{stroke:#900000} .night .w-twl{fill:#900000} .night .w-lbl{fill:#700000} .night .w-val{fill:#c00000} .night .w-bez{stroke:#300000} .night #wface stop{stop-color:#000 !important}
+  .red .w-tick,.red .w-maj,.red .w-port,.red .w-stbd,.red .w-tw,.red .w-bez,.red .w-boat{stroke:#fff} .red .w-num,.red .w-awa,.red .w-val,.red .w-lbl,.red .w-twl,.red .w-ndl-p,.red .w-ndl-s{fill:#fff}
+  .red .w-boat,.red .w-hub{fill:none} .red #wface stop{stop-color:transparent !important} .red .rt .rv,.red .rt .rs,.red .rt .rst,.red .rt .rl{color:#fff}
+  .night .rt .rv small,.night .rt .rs{color:#800000} .night .rt .rb{background:#100000}
   /* ── Screen 5: Anker (wie Anchor-Seite der Pro App) ── */
   .amap{position:absolute;left:12px;top:72px;width:476px;height:320px;border:2px solid #333;border-radius:14px;overflow:hidden;box-sizing:border-box}
   #amap{position:absolute;inset:0;width:100%;height:100%;background:#050b12}
@@ -237,6 +365,7 @@
   <div class="hdr">
     <div></div>
     <button id="nbtn" aria-label="Night mode"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="currentColor"/></svg></button>
+    <button id="sosbtn" aria-label="Emergency VHF"><svg viewBox="0 0 24 24" width="26" height="26"><circle cx="12" cy="12" r="8" fill="none" stroke="#fff" stroke-width="5"/><circle cx="12" cy="12" r="8" fill="none" stroke="#ff3030" stroke-width="5" stroke-dasharray="6.28 6.28" transform="rotate(-22.5 12 12)"/></svg></button>
     <a id="gbtn" href="/esp-dash/settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="24" height="24"><g fill="currentColor"><rect x="10.5" y="1.5" width="3" height="5" rx="1"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(45 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(90 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(135 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(180 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(225 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(270 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(315 12 12)"/></g><circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="3"/></svg></a>
     <div class="time"><span id="time">--:--</span><span class="utc" id="utc"></span></div>
     <div class="stat"><span id="stxt">...</span><div class="dot" id="dot"></div></div>
@@ -255,6 +384,8 @@
     <div class="hbar"><i id="ffill" style="width:0"></i></div>
     <div class="hsub" id="fl">-- l</div>
   </div>
+
+  <div class="tile t1 sup" id="tsup" style="display:none"></div>
 
   <div class="tile t2" id="tw">
     <svg class="bchart" viewBox="0 0 248 320" preserveAspectRatio="none"><path class="ca" id="warea"/><path class="cl" id="wline"/></svg>
@@ -313,35 +444,85 @@
   </div>
 
   <div class="page" id="p3" style="display:none">
-    <div class="wb" style="left:12px;top:72px;width:776px;height:190px">
-      <div class="wicon" id="w-icon" style="left:22px;top:22px;width:132px;height:132px"></div>
-      <div class="wttl" style="left:180px;top:20px" id="w-day">TODAY</div>
-      <div class="wbig" style="left:178px;top:48px"><span id="w-temp">--</span></div>
-      <div class="wmm" style="left:180px;top:126px" id="w-mm"></div>
-      <div class="wl1" style="left:180px;top:152px" id="w-txt"></div>
+    <div class="wb" style="left:12px;top:72px;width:776px;height:126px">
+      <div class="wicon" id="w-icon" style="left:16px;top:10px;width:92px;height:92px"></div>
+      <div class="wttl" style="left:126px;top:12px" id="w-day">TODAY</div>
+      <div class="wbig" style="left:124px;top:34px"><span id="w-temp">--</span></div>
+      <div class="wl1" style="left:126px;top:94px"><span id="w-mm"></span> · <span id="w-txt"></span></div>
       <div class="wsep"></div>
-      <div class="wrow" style="top:20px"><span class="wsi" id="wi-wind"></span><span id="w-wind"></span></div>
-      <div class="wrow" style="top:58px"><span class="wsi" id="wi-rain"></span><span id="w-rain"></span></div>
-      <div class="wrow" style="top:96px"><span class="wsi" id="wi-sun"></span><span id="w-sun"></span></div>
-      <div class="wrow" style="top:134px"><span class="wsi" id="wi-moon"></span><span id="w-moon"></span></div>
+      <div class="wrow" style="top:6px"><span class="wsi" id="wi-wind"></span><span id="w-wind"></span></div>
+      <div class="wrow" style="top:34px"><span class="wsi" id="wi-rain"></span><span id="w-rain"></span></div>
+      <div class="wrow" style="top:62px"><span class="wsi" id="wi-sun"></span><span id="w-sun"></span></div>
+      <div class="wrow" style="top:90px"><span class="wsi" id="wi-moon"></span><span id="w-moon"></span></div>
       <div class="wupd" id="w-upd"></div>
     </div>
-    <div class="wb wd" id="wd0" style="left:12px;top:274px"></div>
-    <div class="wb wd" id="wd1" style="left:276px;top:274px"></div>
-    <div class="wb wd" id="wd2" style="left:540px;top:274px"></div>
+    <div class="wb wp" id="wp0" style="left:12px;top:206px"></div>
+    <div class="wb wp" id="wp1" style="left:209px;top:206px"></div>
+    <div class="wb wp" id="wp2" style="left:406px;top:206px"></div>
+    <div class="wb wp" id="wp3" style="left:603px;top:206px"></div>
+    <div class="wb wd" id="wd0" style="left:12px;top:326px"></div>
+    <div class="wb wd" id="wd1" style="left:276px;top:326px"></div>
+    <div class="wb wd" id="wd2" style="left:540px;top:326px"></div>
   </div>
 
   <div class="page" id="p4" style="display:none">
     <div class="tile" style="left:12px;top:72px;width:376px;height:320px">
       <svg id="tacho" viewBox="0 0 376 320" style="position:absolute;inset:0;width:100%;height:100%"></svg>
     </div>
-    <div class="tile et" style="left:400px;top:72px"><div class="httl">TEMP</div><div class="ev2" id="e-temp">--</div><div class="es2" id="e-temp2"></div></div>
+    <div class="sc tl"><i>SOG</i><b id="ec-sog">--</b></div>
+    <div class="sc tr"><i>AWS</i><b id="ec-aws">--</b></div>
+    <div class="sc bl"><i>WATER</i><b id="ec-wt">--</b></div>
+    <div class="sc br"><i>AWA</i><b id="ec-awa">--</b></div>
+    <div class="tile et" id="et-temp" style="left:400px;top:72px"><div class="httl">TEMP</div><div class="hthr" id="e-tthr"></div><div class="ev2" id="e-temp">--</div><div class="es2" id="e-temp2"></div></div>
     <div class="tile et" style="left:599px;top:72px"><div class="httl">HOURS</div><div class="ev2" id="e-hrs">--</div><div class="es2">engine hours</div></div>
     <div class="tile et" style="left:400px;top:182px"><div class="httl">FUEL RATE</div><div class="ev2" id="e-lph">--</div><div class="es2" id="e-lph2"></div></div>
     <div class="tile et" style="left:599px;top:182px"><div class="httl">DIESEL</div><div class="ev2" id="e-fuel" style="top:30px">--</div>
       <div class="efl" id="e-fuel2"></div><div class="ebar"><i id="e-fbar"></i></div></div>
     <div class="tile et" style="left:400px;top:292px;width:388px"><div class="httl">RANGE AT CURRENT RPM</div>
       <div class="ev2" id="e-rh" style="left:16px">--</div><div class="ev2" id="e-rnm" style="left:200px"></div><div class="es2" id="e-r2"></div></div>
+  </div>
+
+  <div class="page" id="pT" style="display:none">
+    <div class="tile tk" id="tk0" style="left:12px"></div>
+    <div class="tile tk" id="tk1" style="left:207px"></div>
+    <div class="tile tk" id="tk2" style="left:402px"></div>
+    <div class="tile tk" id="tk3" style="left:597px"></div>
+  </div>
+
+  <div class="page" id="pA" style="display:none">
+    <div class="amap"><svg id="aisr" viewBox="0 0 476 320"></svg>
+      <div class="mbtns"><button id="ar-in">+</button><button id="ar-out">−</button></div>
+      <div class="mnote" id="ais-note"></div>
+    </div>
+    <div class="apanel">
+      <div class="aismodes"><button data-m="anchor">ANCHOR</button><button data-m="cruising">CRUISE</button><button data-m="offshore">OFFSHORE</button></div>
+      <div class="aisinfo" id="ais-info"></div>
+      <button class="aisack" id="ais-ack" style="display:none">ACKNOWLEDGE ALARM</button>
+    </div>
+  </div>
+
+  <div class="page" id="pS" style="display:none">
+    <button class="sosb" id="sb-m">MAYDAY</button><button class="sosb" id="sb-p">PAN PAN</button>
+    <div class="sostabs"><button data-st="0">1 · CALL ▸</button><button data-st="1">2 · POSITION ▸</button><button data-st="2">3 · SITUATION</button></div>
+    <div class="sosbox" id="sos-text"></div>
+  </div>
+
+  <div class="page" id="p6" style="display:none">
+    <div class="tile" style="left:12px;top:72px;width:376px;height:320px">
+      <svg id="wdial" viewBox="0 0 376 320" style="position:absolute;inset:0;width:100%;height:100%"></svg>
+    </div>
+    <div class="sc tl"><i>SOG</i><b id="s-sog">--</b></div>
+    <div class="sc tr"><i id="s-twal">TWA</i><b id="s-twa">--</b></div>
+    <div class="sc br"><i id="s-twsl">TWS</i><b id="s-tws">--</b></div>
+    <div class="sc bl"><i>TWD</i><b id="s-twd">--</b></div>
+    <div class="tile" id="aw-t" style="left:400px;top:72px;width:388px;height:208px">
+      <svg class="bchart" viewBox="0 0 388 208" preserveAspectRatio="none"><path class="ca" id="awarea"/><path class="cl" id="awline"/></svg>
+      <div class="httl">AWS</div><div class="hthr" id="aw-win"></div>
+      <div class="awv" id="aw-v">--<small>kn</small></div>
+      <div class="aws2" id="aw-s"></div>
+    </div>
+    <div class="tile rt" id="rt-p" style="left:400px;top:288px"></div>
+    <div class="tile rt" id="rt-s" style="left:599px;top:288px"></div>
   </div>
 
   <div class="page" id="p5" style="display:none">
@@ -364,7 +545,7 @@
     </div>
   </div>
 
-  <div class="dots"><i id="d1" class="on"></i><i id="d2"></i><i id="d3"></i><i id="d4"></i><i id="d5"></i></div>
+  <div class="dots"><i id="d1" class="on"></i><i id="d2"></i><i id="d3"></i><i id="d4"></i><i id="d5"></i><i id="d6"></i><i id="d7"></i><i id="d8"></i><i id="d9"></i></div>
   <div class="ftr"><div class="msg" id="msg"></div><div class="hint" id="hint"></div></div>
 </div></div>
 
@@ -390,14 +571,43 @@ function poll() {
 function cls(st) { return st === 'alarm' ? 'alarm-c' : st === 'ok' ? 'ok-c' : st === 'off' ? '' : 'warn-c'; }
 function fmt(v, d) { return v == null ? '--' : (d ? v.toFixed(d) : String(v)); }
 
+// Screen 1 links, Variante „supply“: eine Box mit Batterie (groß) und allen Tanks als Balken
+function renderSupply(s, b, f) {
+  var sup = !s || s.home !== 'split';
+  $('tsup').style.display = sup ? '' : 'none';
+  $('tb').style.display = $('tf').style.display = sup ? 'none' : '';
+  if (!sup) return;
+  var tanks = (s && s.tanks) || [], al = b.st === 'alarm' || f.st === 'alarm' || tanks.some(function (t) { return t.st === 'high'; });
+  $('tsup').className = 'tile t1 sup' + (al ? ' alarm' : '');
+  var bp = b.soc == null ? 0 : Math.max(0, Math.min(100, b.soc));
+  var h = '<div class="httl">BATTERY</div><div class="hthr">' + (b.thr != null ? '< ' + b.thr + ' %' : '') + '</div>' +
+    '<div class="sb ' + cls(b.st) + '">' + fmt(b.soc) + '<small>%</small></div>' +
+    '<div class="sva">' + fmt(b.v, 2) + ' <span>V</span><br>' + (b.a != null && b.a > 0 ? '+' : '') + fmt(b.a, 1) + ' <span>A</span></div>' +
+    '<div class="sbar" style="top:98px"><i style="width:' + bp + '%;background:' + (b.st === 'alarm' ? '#ff3030' : b.st === 'ok' ? '#00d000' : '#ffa000') + '"></i></div>' +
+    '<div class="ssep"></div>';
+  for (var i = 0; i < 4; i++) {
+    var t = tanks[i] || { name: ['WATER', 'DIESEL', 'BLACK MAIN', 'BLACK GUEST'][i], kind: 'water', st: 'na' };
+    var tst = t.kind === 'water' ? f.st : t.st;   // Frischwasser nutzt den echten Wasser-Alarm
+    var col = tst === 'alarm' || tst === 'high' ? '#ff3030' : tst === 'warn' ? '#ffa000' : '';
+    var p = t.pct == null ? 0 : Math.max(0, Math.min(100, t.pct)), y = 136 + i * 46;
+    h += '<div class="sr" style="top:' + y + 'px"><span class="n">' + t.name + '</span><span class="v">' +
+      (t.l != null ? t.l + ' / ' + t.cap + ' l' : '') + '<b style="color:' + col + '">' + (t.pct == null ? '--' : t.pct) + ' %</b></span></div>' +
+      '<div class="sbar tb" style="top:' + (y + 24) + 'px"><i class="' + t.kind + '" style="width:' + p + '%' + (col ? ';background:' + col : '') + '"></i></div>';
+  }
+  if ($('tsup').innerHTML !== h) $('tsup').innerHTML = h;
+}
+
 function render() {
   var offline = Date.now() - lastOk > 10000;
   var s = offline ? null : S;
   var status = s ? s.status : 'warn';
   var blink = s && s.blink;
+  // quittiert: rot → orange, bis der Zustand weg ist (ein neuer Alarm blinkt wieder rot)
+  var ackd = !!(s && status === 'alarm' && s.acked && !blink);
+  if (ackd) status = 'warn';
   $('scr').className = (s && s.night ? 'night ' : '') + (blink && phase ? 'red' : '');
   $('dot').className = 'dot ' + status;
-  $('stxt').textContent = !s ? 'OFFLINE' : status === 'ok' ? 'ALL OK' : status === 'alarm' ? 'ALARM' : 'WARNING';
+  $('stxt').textContent = !s ? 'OFFLINE' : ackd ? 'ACKNOWLEDGED' : status === 'ok' ? 'ALL OK' : status === 'alarm' ? 'ALARM' : 'WARNING';
   $('time').textContent = s ? s.time : '--:--';
   $('utc').textContent = s && s.utc ? 'UTC ' + s.utc : '';
 
@@ -417,6 +627,7 @@ function render() {
   $('ffill').style.width = (f.pct == null ? 0 : Math.max(0, Math.min(100, f.pct))) + '%';
   $('ffill').style.background = f.st === 'alarm' ? '#ff3030' : '#2a9df4';
   $('fl').textContent = f.l != null ? f.l + ' l of ' + f.cap + ' l' : '-- l';
+  renderSupply(s, b, f);
   $('fthr').textContent = f.thr != null ? '< ' + f.thr + ' %' : '';
 
   var w = s ? s.wind : { st: 'na' };
@@ -450,9 +661,14 @@ function render() {
   renderWeather(s ? s.weather : null);
   renderEngine(s ? s.engine : null);
   renderAnchorPage(s);
+  renderSail(s ? s.sail : null);
+  renderTanks(s ? s.tanks : null);
+  renderSos(s ? s.sos : null);
+  renderAis(s ? s.ais : null, s);
+  fitBigValues();
 
   $('msg').textContent = !s ? 'No connection to Node-RED' : s.msg;
-  $('msg').className = 'msg ' + (s ? cls(s.status === 'alarm' ? 'alarm' : 'warn') : 'warn-c');
+  $('msg').className = 'msg ' + (s ? cls(s.status === 'alarm' && !ackd ? 'alarm' : 'warn') : 'warn-c');
   $('hint').textContent = blink ? 'Tap to acknowledge' : (s && s.acked ? 'Acknowledged' : '');
 }
 
@@ -532,27 +748,39 @@ function renderWeather(w) {
   $('w-icon').innerHTML = wxIcon(c.ic, c.night);
   $('w-day').textContent = 'TODAY · ' + t.dow.toUpperCase() + ' ' + t.date;
   $('w-temp').textContent = deg(c.t);
-  $('w-mm').textContent = '↑ ' + deg(t.max) + '   ↓ ' + deg(t.min);
+  $('w-mm').textContent = '↑ ' + deg(t.max) + '  ↓ ' + deg(t.min);
   $('w-txt').textContent = c.txt;
   $('wi-wind').innerHTML = WIND; $('w-wind').innerHTML = c.ws + ' kn ' + c.wd + '<small>gust ' + c.wg + ' · max ' + t.ws + '</small>';
   $('wi-rain').innerHTML = RAIN; $('w-rain').innerHTML = t.pp + ' %<small>' + t.ps + ' mm</small>';
   $('wi-sun').innerHTML = SUN_SM; $('w-sun').textContent = '↑ ' + t.sr + '   ↓ ' + t.ss;
   $('wi-moon').innerHTML = moonPhaseSvg(w.mp); $('w-moon').innerHTML = '↑ ' + t.mr + '   ↓ ' + t.ms;
   $('w-upd').textContent = 'updated ' + w.upd; $('w-upd').className = 'wupd' + (w.old ? ' old' : '');
+  for (var j = 0; j < 4; j++) {   // Tagesverlauf
+    var pp = (w.parts || [])[j], pe = $('wp' + j);
+    if (!pp) { pe.innerHTML = ''; pe.className = 'wb wp'; continue; }
+    pe.className = 'wb wp' + (j === 0 ? ' now' : '');
+    var h = '<div class="pt">' + pp.lbl + '</div><div class="ph">' + (pp.dl ? pp.dl + ' ' : '') + pp.hrs + '</div>' +
+      '<div class="pi">' + wxIcon(pp.ic, pp.night) + '</div>' +
+      '<div class="pl" style="top:32px"><b>' + deg(pp.max) + '</b>' + (pp.min !== pp.max ? deg(pp.min) : '') + '</div>' +
+      '<div class="pl" style="top:60px"><span class="wsi">' + WIND + '</span>' + pp.ws + ' kn ' + pp.wd + ' <span class="dg">G' + pp.wg + '</span></div>' +
+      '<div class="px"><span class="wsi">' + RAIN + '</span> ' + pp.pp + ' %' + (pp.ps ? ' · ' + pp.ps + ' mm' : '') + ' · ' + pp.txt + '</div>';
+    if (pe.innerHTML !== h) pe.innerHTML = h;
+  }
   for (var i = 0; i < 3; i++) {
     var d = w.days[i], el = $('wd' + i);
     if (!d) { el.innerHTML = ''; continue; }
-    el.innerHTML = '<div class="dt">' + d.dow.toUpperCase() + ' ' + d.date + '</div>' +
-      '<div class="di">' + wxIcon(d.ic, false) + '</div>' +
-      '<div class="dl" style="top:36px"><b>' + deg(d.max) + '</b>' + deg(d.min) + '</div>' +
-      '<div class="dl" style="top:66px"><span class="wsi">' + WIND + '</span>' + d.ws + ' kn ' + d.wd + ' <span class="dg">G' + d.wg + '</span></div>' +
-      '<div class="dl" style="top:90px"><span class="wsi">' + RAIN + '</span>' + d.pp + ' %</div>';
+    el.innerHTML = '<div class="di">' + wxIcon(d.ic, false) + '</div>' +
+      '<div class="dt">' + d.dow.toUpperCase() + ' ' + d.date + '</div>' +
+      '<div class="dr"><b>' + deg(d.max) + '</b>' + deg(d.min) + '</div>' +
+      '<div class="dl"><span class="wsi">' + WIND + '</span>' + d.ws + ' kn ' + d.wd + ' <span class="dg">G' + d.wg + '</span><span class="wsi" style="margin-left:5px">' + RAIN + '</span>' + d.pp + ' %</div>';
   }
 }
 
 // ── Drehzahlmesser: 240°-Bogen, 0 … engMaxRpm, roter Bereich ab engRedRpm ──
 // Volvo Penta Schriftzug (Wikimedia Commons, gemeinfrei, Marke von AB Volvo Penta) — viewBox 850.39×177.29
 var VP_LOGO = "<path d=\"M76.08 11.04 L88.4 11.04 L67.81 49.14 L46.93 11.04 L61.91 11.04 L61.9 1.54 L0 1.54 L0 11.05 L14.16 11.05 L42.94 63.28 L76.34 63.28 L104.57 11.04 L118.74 11.04 L118.75 1.54 L76.08 1.54 Z\"/><path d=\"M625.13 11.04 L637.45 11.04 L616.85 49.14 L595.98 11.04 L610.95 11.04 L610.95 1.54 L549.05 1.54 L549.05 11.05 L563.21 11.05 L591.99 63.28 L625.39 63.28 L653.61 11.04 L667.79 11.04 L667.79 1.54 L625.13 1.54 Z\"/><path d=\"M411.11 177.29 L411.11 167.71 L397.17 167.71 L397.17 139.26 L440.12 177.29 L463.9 177.29 L463.9 125.02 L478.01 125.02 L478.01 115.55 L435.39 115.55 L435.39 125.02 L449.45 125.02 L449.45 146.23 L413.94 115.55 L368.67 115.55 L368.67 125.02 L382.71 125.02 L382.71 167.71 L368.67 167.71 L368.67 177.29 Z\"/><path d=\"m394.79 53.7h-14.4v9.59l85.67-0.01v-28.58h-9.41c0 4.61-1.95 10.04-6.01 13.9-1.4 1.3-2.95 2.5-4.71 3.36-2.28 1.14-4.43 1.73-9.51 1.73-3.42 0-10.72 0.01-13.16 0.01v-42.65h14.21v-9.51h-57.06v9.51h14.38v42.65z\"/><path d=\"m242.41 55.1c-10.5 0-15.29-11.48-15.3-22.97 0-11.9 5.51-22.39 15.32-22.39 9.8 0 15.15 10.49 15.15 22.39 0 11.23-4.43 22.97-15.23 22.97h0.06zm0.06 9.83c29.39 0 43.87-14.51 43.87-32.67-0.01-17.95-15.38-32.26-44.04-32.26-28.65 0-43.88 14.31-43.88 32.25 0 18.17 14.66 32.68 44.05 32.68z\"/><path d=\"m791.79 55.1c-10.52 0-15.3-11.48-15.3-22.97 0-11.9 5.51-22.39 15.32-22.39s15.16 10.49 15.16 22.39c0 11.23-4.42 22.97-15.25 22.97h0.07zm0.05 9.83c29.36 0 43.87-14.51 43.87-32.67 0-17.94-15.4-32.25-44.03-32.25-28.68-0.01-43.88 14.3-43.88 32.24 0 18.17 14.64 32.68 44.04 32.68z\"/><path d=\"m284.84 139.26v-23.71h-85.36v9.47h13.82v42.69h-13.82v9.57h85.36v-28.3h-9.44v2.27c0 9.15-6.23 16.41-14.27 16.41h-19.35v-18.69h19.35v-9.09h-19.35v-14.88h19.9c6.86 0 12.39 5.1 13.72 14.24h9.44z\"/><path d=\"m629.02 125.02c7.97 0 14.41 6.28 14.41 14.24h9.45v-23.71h-85.83v23.71h9.44c0-7.96 6.47-14.19 14.44-14.24h4.79v42.69h-13.88v9.58h56.26v-9.58h-13.9v-42.69h4.82z\"/><path d=\"m59.08 144.2v-19.18h8.43c3.89 0 7.38 1.39 9.55 3.64 1.51 1.51 2.45 3.69 2.45 6.08 0 2.55-1.08 4.81-2.73 6.36-2.17 2.01-5.53 3.1-9.27 3.1h-8.43zm49.08-9.36c0-4.74-1.89-9.03-4.9-12.07-4.31-4.44-11.2-7.23-18.94-7.23h-67.88v9.47h14.15v42.69h-14.15v9.58h57.08v-9.58h-14.44v-14.11h25.24c7.43 0 14.06-2.15 18.39-6.16 3.29-3.04 5.45-7.55 5.45-12.59z\"/><path d=\"m745.92 167.71h-14.18v9.58c1.69 0.01 40.29 0.01 42.65 0.01 0.01-2.19 0-9.58 0-9.58l-12.3 0.03c0.28-0.55 2.28-4.25 4.95-9.16h31.43l5.03 9.13h-14.9v9.58h61.79v-9.58h-14.11l-28.77-52.16h-33.33l-28.26 52.15zm36.75-37.98 10.46 19.06h-20.78l10.32-19.06z\"/>";
+// Neel-Logo ohne Schriftzug „TRIMARANS“ (neel-trimarans.com, Marke von NEEL Trimarans) — Breite 660, Höhe 143.5
+var NEEL_LOGO = "<polygon points=\"115 0 115 99.6 28.9 0 0.2 0 0.2 143.4 28.9 143.4 28.9 43.9 115 143.4 115 143.4 115 143.4 143.6 143.4 143.6 0 115 0\"/><polygon points=\"545.3 114.8 545.3 0 516.6 0 516.6 143.5 660.1 143.5 660.1 114.8 545.3 114.8\"/><rect x=\"172.3\" width=\"143.5\" height=\"28.69\"/><rect x=\"172.3\" y=\"57.4\" width=\"143.5\" height=\"28.69\"/><rect x=\"172.3\" y=\"114.8\" width=\"143.5\" height=\"28.69\"/><rect x=\"344.5\" width=\"143.5\" height=\"28.69\"/><rect x=\"344.5\" y=\"57.4\" width=\"143.5\" height=\"28.69\"/><rect x=\"344.5\" y=\"114.8\" width=\"143.5\" height=\"28.69\"/>";
 var DEMO_RPM = (function () { var m = location.search.match(/demoRpm=(\d+)/); return m ? +m[1] : null; })();
 function polar(cx, cy, r, a) { var t = a * Math.PI / 180; return [cx + r * Math.cos(t), cy + r * Math.sin(t)]; }
 function arcPath(cx, cy, r, a0, a1) {
@@ -593,8 +821,16 @@ function renderEngine(e) {
     e = Object.assign({}, e, { on: true, rpm: DEMO_RPM, lph: 4.6, est: true, tempLive: true, temp: 78, sog: 6.4 });
     if (e.fuelL != null) { e.rangeH = Math.round(e.fuelL / e.lph * 10) / 10; e.rangeNm = Math.round(e.rangeH * e.sog); }
   }
+  var dt = location.search.match(/demoTemp=(\d+)/);   // nur Vorschau: Motortemperatur simulieren
+  if (dt) { var tv = +dt[1]; e = Object.assign({}, e, { temp: tv, tempLive: true, tst: tv >= (e.talarm || 95) ? 'alarm' : tv >= (e.twarn || 90) ? 'warn' : 'ok' }); }
   renderTacho(e.on ? e.rpm : (e.rpm === 0 ? 0 : null), e.max || 3000, e.red || 2700, e.g0 != null ? e.g0 : 1800, e.g1 != null ? e.g1 : 2200);
+  $('ec-sog').innerHTML = e.sog != null ? e.sog.toFixed(1) + '<small>kn</small>' : '--';
+  $('ec-aws').innerHTML = e.aws != null ? e.aws.toFixed(1) + '<small>kn</small>' : '--';
+  $('ec-awa').innerHTML = e.awa != null ? Math.abs(e.awa) + '°<small>' + (e.awa < 0 ? 'P' : e.awa > 0 ? 'S' : '') + '</small>' : '--';
+  $('ec-wt').innerHTML = e.wtemp != null ? e.wtemp.toFixed(1) + '<small>°C</small>' : '--';
   $('e-temp').innerHTML = e.temp != null ? e.temp + '<small>°C</small>' : '--';
+  $('et-temp').className = 'tile et' + (e.tst === 'alarm' ? ' alarm' : e.tst === 'warn' ? ' warn' : '');
+  $('e-tthr').textContent = e.talarm != null ? 'max ' + e.talarm + ' °C' : '';
   $('e-temp2').textContent = e.tempLive ? 'coolant' : (e.temp != null ? 'last known' : '');
   $('e-hrs').innerHTML = e.hrs != null ? e.hrs.toFixed(1) + '<small>h</small>' : '--';
   $('e-lph').innerHTML = e.lph != null ? e.lph.toFixed(1) + '<small>l/h</small>' : '--';
@@ -687,7 +923,7 @@ function renderAnchorPage(s) {
   }).join('');
   if ($('abtns').innerHTML !== h) $('abtns').innerHTML = h;
   // Radar
-  if (page !== 5) return;
+  if (page !== PG_ANCHOR) return;
   var col = al ? '#ff3030' : act ? '#00d000' : '#ffa000';
   if (document.querySelector('.night')) col = al ? '#ff2020' : '#a00000';
   var mLat = 111320, anc = null, boat = null;
@@ -733,6 +969,278 @@ document.addEventListener('click', function (e) {
   else if (act === 'up') aPost({ action: 'up' }, 'Anchor up');
   else if (act === 'mute') aPost({ action: 'mute' }, 'Telegram muted');
 }, true);
+
+// ── Segel-Screen ──────────────────────────────────────────────────────────
+var DEMO_RIG = (function () { var m = location.search.match(/demoRig=([\d.]+),([\d.]+)/); return m ? [+m[1], +m[2]] : null; })();
+function renderWindDial(awa, sog, twa, cf, ct) {
+  cf = cf != null ? cf : 30; ct = ct != null ? ct : 50;
+  var cx = 188, cy = 160, R = 140, g = '<defs><radialGradient id="wface" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="#1b1b1b"/><stop offset="1" stop-color="#050505"/></radialGradient></defs>';
+  var A = function (d) { return d - 90; };   // 0° = Bug (oben)
+  g += '<circle class="w-face" cx="' + cx + '" cy="' + cy + '" r="' + (R + 4) + '"/><circle class="w-bez" cx="' + cx + '" cy="' + cy + '" r="' + (R + 4) + '"/>';
+  // Am-Wind-Sektoren wie B&G: Backbord rot, Steuerbord grün (20–60°)
+  g += '<path class="w-port" d="' + arcPath(cx, cy, R - 6, A(-ct), A(-cf)) + '" fill="none" stroke-width="10"/>';
+  g += '<path class="w-stbd" d="' + arcPath(cx, cy, R - 6, A(cf), A(ct)) + '" fill="none" stroke-width="10"/>';
+  for (var d = -170; d <= 180; d += 10) {
+    var maj = d % 30 === 0, p0 = polar(cx, cy, R - (maj ? 26 : 18), A(d)), p1 = polar(cx, cy, R - 12, A(d));
+    g += '<line class="' + (maj ? 'w-maj' : 'w-tick') + '" x1="' + p0[0].toFixed(1) + '" y1="' + p0[1].toFixed(1) + '" x2="' + p1[0].toFixed(1) + '" y2="' + p1[1].toFixed(1) + '"/>';
+    if (maj && Math.abs(d) <= 120 && d !== 0) { var pn = polar(cx, cy, R - 42, A(d)); g += '<text class="w-num" x="' + pn[0].toFixed(1) + '" y="' + pn[1].toFixed(1) + '">' + Math.abs(d) + '</text>'; }
+  }
+  // Boot in der Mitte
+  g += '<path class="w-boat" d="M' + cx + ' ' + (cy - 36) + ' C' + (cx + 13) + ' ' + (cy - 20) + ' ' + (cx + 14) + ' ' + (cy + 8) + ' ' + (cx + 10) + ' ' + (cy + 30) +
+       ' L' + (cx - 10) + ' ' + (cy + 30) + ' C' + (cx - 14) + ' ' + (cy + 8) + ' ' + (cx - 13) + ' ' + (cy - 20) + ' ' + cx + ' ' + (cy - 36) + ' Z"/>';
+  // wahrer Wind: hohles Dreieck außen
+  if (twa != null) {
+    var tp = polar(cx, cy, R - 30, A(twa)), tl = polar(cx, cy, R - 4, A(twa - 5)), tr = polar(cx, cy, R - 4, A(twa + 5)), tt = polar(cx, cy, R - 46, A(twa));
+    g += '<polygon class="w-tw" points="' + [tp, tl, tr].map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ') + '"/>';
+    g += '<text class="w-twl" x="' + tt[0].toFixed(1) + '" y="' + (tt[1] + 4).toFixed(1) + '">T</text>';
+  }
+  // scheinbarer Wind: Zeiger, Farbe nach Seite
+  if (awa != null) {
+    var tip = polar(cx, cy, R - 8, A(awa)), l = polar(cx, cy, 8, A(awa) - 90), rr = polar(cx, cy, 8, A(awa) + 90), tail = polar(cx, cy, 26, A(awa) + 180);
+    g += '<polygon class="' + (awa < 0 ? 'w-ndl-p' : 'w-ndl-s') + '" points="' + [tip, l, tail, rr].map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ') + '"/>';
+  }
+  g += '<circle class="w-hub" cx="' + cx + '" cy="' + cy + '" r="9"/>';
+
+  g += '<text class="w-awa" x="' + cx + '" y="' + (cy - 50) + '">' + (awa == null ? '--' : Math.abs(awa) + '°' + (awa < 0 ? ' P' : awa > 0 ? ' S' : '')) + '</text>';
+  $('wdial').innerHTML = g;
+}
+// ── Windanzeige im Stil des Drehzahlmessers (gleiche Klassen/Schriften wie renderTacho) ──
+function renderWindDialTacho(awa, twa, cf, ct) {
+  cf = cf != null ? cf : 30; ct = ct != null ? ct : 50;
+  var cx = 188, cy = 160, R = 140, A = function (d) { return d - 90; };
+  var pts = function (arr) { return arr.map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' '); };
+  var g = '<defs><radialGradient id="wface2" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="#1b1b1b"/><stop offset="1" stop-color="#050505"/></radialGradient></defs>';
+  g += '<circle class="t-face wt-face" cx="' + cx + '" cy="' + cy + '" r="' + (R + 4) + '"/><circle class="t-bezel" cx="' + cx + '" cy="' + cy + '" r="' + (R + 4) + '"/>';
+  // Außenband wie die Drehzahl-Zonen: Am-Wind-Sektoren Backbord rot, Steuerbord grün
+  g += '<path class="t-zr" d="' + arcPath(cx, cy, R - 4, A(-ct), A(-cf)) + '" fill="none" stroke-width="8"/>';
+  g += '<path class="t-zg" d="' + arcPath(cx, cy, R - 4, A(cf), A(ct)) + '" fill="none" stroke-width="8"/>';
+  // Innen: Bogen vom Bug bis zum scheinbaren Wind (wie der Drehzahl-Fortschritt), Farbe nach Seite
+  g += '<path class="t-track" d="' + arcPath(cx, cy, R - 20, A(-180), A(180)) + '" fill="none" stroke-width="14"/>';
+  if (awa != null && awa !== 0) {
+    var a0 = awa < 0 ? A(awa) : A(0), a1 = awa < 0 ? A(0) : A(awa);
+    g += '<path class="' + (awa < 0 ? 't-valr' : 'wt-vals') + '" d="' + arcPath(cx, cy, R - 20, a0, a1) + '" fill="none" stroke-width="14"/>';
+  }
+  for (var d = -170; d <= 180; d += 10) {
+    var maj = d % 30 === 0, a = A(d), p0 = polar(cx, cy, R - (maj ? 46 : 34), a), p1 = polar(cx, cy, R - 30, a);
+    g += '<line class="' + (maj ? 't-maj' : 't-tick') + '" x1="' + p0[0].toFixed(1) + '" y1="' + p0[1].toFixed(1) + '" x2="' + p1[0].toFixed(1) + '" y2="' + p1[1].toFixed(1) + '"/>';
+    // Skalenzahl ausblenden, solange die Winkel-Blase an ihr vorbeizieht
+    var near = awa != null && Math.abs(((d - awa) % 360 + 540) % 360 - 180) < 22;
+    if (maj && d !== 0 && Math.abs(d) <= 120 && !near) { var pn = polar(cx, cy, R - 60, a); g += '<text class="t-num" x="' + pn[0].toFixed(1) + '" y="' + pn[1].toFixed(1) + '">' + Math.abs(d) + '</text>'; }
+  }
+  var lk = 90 / 660;    // NEEL ohne Schriftzug: 90 × 20 px
+  g += '<g class="t-logo" transform="translate(' + (cx - 45) + ' ' + (cy + 48) + ') scale(' + lk.toFixed(4) + ')">' + NEEL_LOGO + '</g>';
+  if (twa != null) {
+    var tp = polar(cx, cy, R - 26, A(twa)), tl = polar(cx, cy, R + 2, A(twa - 5)), tr = polar(cx, cy, R + 2, A(twa + 5));
+    g += '<polygon class="w-tw" points="' + pts([tp, tl, tr]) + '"/>';
+  }
+  if (awa != null) {   // Zeiger: wie beim Drehzahlmesser, Farbe nach Seite
+    var na = A(awa), tip = polar(cx, cy, R - 26, na), l = polar(cx, cy, 7, na - 90), rr = polar(cx, cy, 7, na + 90), tail = polar(cx, cy, 22, na + 180);
+    g += '<polygon class="' + (awa < 0 ? 't-ndl' : 'wt-ndl-s') + '" points="' + pts([tip, l, tail, rr]) + '"/>';
+  }
+  g += '<circle class="t-hub' + (awa > 0 ? ' wt-hub-s' : '') + '" cx="' + cx + '" cy="' + cy + '" r="10"/>';
+  // Windwinkel als Wertblase an der Zeigerspitze — wandert mit, wird nie vom Zeiger verdeckt
+  if (awa != null) {
+    var bp = polar(cx, cy, R - 26, A(awa)), lbl = Math.abs(awa) + '°' + (awa < 0 ? ' P' : awa > 0 ? ' S' : '');
+    g += '<rect class="wt-bub' + (awa > 0 ? ' s' : '') + '" x="' + (bp[0] - 30).toFixed(1) + '" y="' + (bp[1] - 12).toFixed(1) + '" width="60" height="24" rx="12"/>';
+    g += '<text class="wt-awa" x="' + bp[0].toFixed(1) + '" y="' + (bp[1] + 5.5).toFixed(1) + '">' + lbl + '</text>';
+  }
+  $('wdial').innerHTML = g;
+}
+
+function rigTile(id, label, t, st, rg) {
+  var sc = rg.scale || 5, pct = function (v) { return Math.max(0, Math.min(100, v / sc * 100)); };
+  var col = st === 'alarm' ? '#ff3030' : st === 'warn' ? '#ffa000' : st === 'ok' ? '#00d000' : '#555';
+  if (document.querySelector('.night')) col = st === 'alarm' ? '#ff2020' : st === 'na' ? '#400000' : '#a00000';
+  $(id).className = 'tile rt' + (st === 'alarm' ? ' alarm' : st === 'warn' ? ' warn' : '');
+  $(id).innerHTML = '<div class="rl">' + label + '</div>' +
+    '<div class="rst" style="color:' + col + '">' + (st === 'alarm' ? 'ALARM' : st === 'warn' ? 'HIGH' : st === 'ok' ? 'OK' : '') + '</div>' +
+    '<div class="rv" style="color:' + (t == null ? '' : col) + '">' + (t == null ? '--' : t.toFixed(2)) + '<small>t</small></div>' +
+    '<div class="rb"><i style="left:0;width:' + pct(rg.warn) + '%" class="z-g"></i>' +
+      '<i style="left:' + pct(rg.warn) + '%;width:' + (pct(rg.alarm) - pct(rg.warn)) + '%" class="z-o"></i>' +
+      '<i style="left:' + pct(rg.alarm) + '%;right:0" class="z-r"></i>' +
+      (t != null ? '<i style="left:0;width:' + pct(t) + '%;background:' + col + '"></i>' : '') + '</div>' +
+    '<div class="rs"><span style="left:' + pct(rg.warn) + '%">' + rg.warn + '</span><span style="left:' + pct(rg.alarm) + '%">' + rg.alarm + '</span></div>';
+}
+function renderSail(sl) {
+  sl = sl || { rig: {} };
+  var rg = Object.assign({ warn: 3.2, alarm: 4.2, scale: 5 }, sl.rig || {});
+  if (DEMO_RIG) {    // nur Vorschau im Browser
+    var stf = function (t) { return t > rg.alarm ? 'alarm' : t > rg.warn ? 'warn' : 'ok'; };
+    rg = Object.assign({}, rg, { port: DEMO_RIG[0], sb: DEMO_RIG[1], pst: stf(DEMO_RIG[0]), sst: stf(DEMO_RIG[1]) });
+    sl = Object.assign({}, sl, { awa: sl.awa != null && Math.abs(sl.awa) > 5 ? sl.awa : 38, aws: sl.aws != null && sl.aws > 3 ? sl.aws : 16.4, twa: 52, tws: 12.1, twd: 247, twCalc: false, stw: 6.8, sog: 7.1 });
+  }
+  if (sl.style === 'classic') renderWindDial(sl.awa, sl.sog, sl.twa, sl.cf, sl.ct); else renderWindDialTacho(sl.awa, sl.twa, sl.cf, sl.ct);
+  var calc = sl.twCalc ? '<em>calc</em>' : '';
+  $('s-sog').innerHTML = sl.sog != null ? sl.sog.toFixed(1) + '<small>kn</small>' : '--';
+  $('s-twal').innerHTML = 'TWA' + calc; $('s-twsl').innerHTML = 'TWS' + calc;
+  $('s-twa').innerHTML = sl.twa != null ? Math.abs(sl.twa) + '°<small>' + (sl.twa < 0 ? 'P' : 'S') + '</small>' : '--';
+  $('s-tws').innerHTML = sl.tws != null ? sl.tws.toFixed(1) + '<small>kn</small>' : '--';
+  $('s-twd').innerHTML = sl.twd != null ? sl.twd + '°<small>' + card(sl.twd) + '</small>' : '--';
+  $('aw-v').innerHTML = (sl.aws != null ? sl.aws.toFixed(1) : '--') + '<small>kn</small>';
+  $('aw-win').textContent = sl.win ? winLabel(sl.win) : '';
+  $('aw-s').textContent = "Max 10' " + (sl.awsMax != null ? sl.awsMax.toFixed(1) : '--') + ' kn  ·  STW ' + (sl.stw != null ? sl.stw.toFixed(1) : '--') + ' kn';
+  drawChart('awarea', 'awline', sl.awsHist || [], 388, 208, 100, 204, true);
+  rigTile('rt-p', 'PORT LOAD', rg.port, rg.pst || 'na', rg);
+  rigTile('rt-s', 'STBD LOAD', rg.sb, rg.sst || 'na', rg);
+}
+
+// ── Tank-Screen ──
+function renderTanks(list) {
+  list = list || [];
+  for (var i = 0; i < 4; i++) {
+    var t = list[i] || { name: ['WATER', 'DIESEL', 'BLACK MAIN', 'BLACK GUEST'][i], kind: 'water', st: 'na' };
+    var col = t.st === 'high' ? '#ff3030' : t.st === 'warn' ? '#ffa000' : '';
+    if (document.querySelector('.night')) col = t.st === 'high' ? '#ff2020' : '';
+    var p = t.pct == null ? 0 : Math.max(0, Math.min(100, t.pct));
+    $('tk' + i).className = 'tile tk' + (t.st === 'high' ? ' high' : t.st === 'warn' ? ' warn' : '');
+    $('tk' + i).innerHTML = '<div class="tn">' + t.name + '</div>' +
+      '<div class="tp" style="color:' + col + '">' + (t.pct == null ? '--' : t.pct) + '<small>%</small></div>' +
+      '<div class="tv"><div class="tf ' + t.kind + '" style="height:' + p + '%"></div>' +
+        '<div class="tm" style="bottom:25%"></div><div class="tm" style="bottom:50%"></div><div class="tm" style="bottom:75%"></div></div>' +
+      '<div class="tl">' + (t.l != null ? t.l + ' / ' + t.cap + ' l' : (t.cap != null ? '-- / ' + t.cap + ' l' : '--')) + '</div>';
+  }
+}
+
+// ── SOS-Screen: in drei Schritten, große Schrift ──
+var sosMode = 'mayday', sosStep = 0;
+function renderSos(o) {
+  o = o || {};
+  var N = o.name || 'SUKI', cs = o.cs || '[CALL SIGN]', mm = o.mmsiFmt || '[MMSI]';
+  var F = function (t) { return '<span class="fill">[' + t + ']</span>'; };
+  var big = function (t) { return { t: t }; }, sm = function (t) { return { t: t, c: 'sm' }; };
+  var pos = o.lat ? [{ t: o.lat, c: 'pos' }, { t: o.lon, c: 'pos' }, { t: o.utc || '', c: 'sm' }] : [big(F('READ POSITION FROM PLOTTER'))];
+  var M = sosMode === 'mayday', steps;
+  if (M) steps = [
+    [{ t: '1 · Lift red DISTRESS cover, hold 5 s  ·  2 · Channel 16, high power  ·  3 · Read slowly:', c: 'hint' },
+      big('MAYDAY · MAYDAY · MAYDAY'), big('THIS IS ' + N + ' · ' + N + ' · ' + N), big('CALL SIGN ' + cs), { t: o.csPhon || '', c: 'ph' }, big('MMSI ' + mm)],
+    [big('MAYDAY ' + N), big('MY POSITION')].concat(pos),
+    [big(F('SINKING / FIRE / MAN OVERBOARD')), big('I REQUIRE IMMEDIATE ASSISTANCE'), big(o.pob + ' PERSONS ON BOARD'), sm(o.desc || ''), big('OVER')]];
+  else steps = [
+    [{ t: '1 · Channel 16, high power  ·  2 · Read slowly  ·  3 · Wait for reply', c: 'hint' },
+      big('PAN PAN · PAN PAN · PAN PAN'), sm('ALL STATIONS · ALL STATIONS · ALL STATIONS'), big('THIS IS ' + N + ' · ' + N + ' · ' + N), big('CALL SIGN ' + cs), { t: o.csPhon || '', c: 'ph' }, sm('MMSI ' + mm)],
+    [big('MY POSITION')].concat(pos),
+    [big(F('ENGINE FAILURE / INJURED CREW')), big('I REQUIRE ' + F('TOW / MEDICAL')), big(o.pob + ' PERSONS ON BOARD'), sm(o.desc || ''), big('OVER')]];
+  $('sos-text').innerHTML = steps[sosStep].map(function (l) { return '<div class="' + (l.c || '') + '">' + l.t + '</div>'; }).join('');
+  // zu lange Zeilen automatisch verkleinern
+  [].forEach.call($('sos-text').children, function (el) {
+    var fs = parseFloat(getComputedStyle(el).fontSize);
+    while (el.scrollWidth > el.parentNode.clientWidth - 36 && fs > 16) { fs -= 1; el.style.fontSize = fs + 'px'; }
+  });
+  $('sb-m').className = 'sosb' + (M ? ' on' : '');
+  $('sb-p').className = 'sosb' + (!M ? ' on' : '');
+  [].forEach.call(document.querySelectorAll('.sostabs button'), function (bt) { bt.className = +bt.dataset.st === sosStep ? 'on' : ''; });
+}
+$('sb-m').addEventListener('click', function (e) { e.stopPropagation(); sosMode = 'mayday'; sosStep = 0; renderSos(S && S.sos); });
+$('sb-p').addEventListener('click', function (e) { e.stopPropagation(); sosMode = 'panpan'; sosStep = 0; renderSos(S && S.sos); });
+[].forEach.call(document.querySelectorAll('.sostabs button'), function (bt) {
+  bt.addEventListener('click', function (e) { e.stopPropagation(); sosStep = +bt.dataset.st; renderSos(S && S.sos); });
+});
+$('sos-text').addEventListener('click', function (e) { if (swiped) return; e.stopPropagation(); sosStep = (sosStep + 1) % 3; renderSos(S && S.sos); });
+$('sosbtn').addEventListener('click', function (e) { e.stopPropagation(); sosStep = 0; showPage(PG_SOS); });
+
+// ── Große Werte automatisch an ihre Kachel anpassen (z. B. zweistelliger Wind "12.3 kn") ──
+function fitBigValues() {
+  var sel = '.big, .hbig, .ev2, .awv, .wbig, .tk .tp, .rt .rv, .ev';
+  [].forEach.call(document.querySelectorAll(sel), function (el) {
+    if (!el.offsetParent) return;
+    el.style.fontSize = '';
+    var box = el.closest('.tile, .eb, .wb'); if (!box) return;
+    var br = box.getBoundingClientRect(), k = $('scr').getBoundingClientRect().width / 800;
+    var fs = parseFloat(getComputedStyle(el).fontSize), guard = 0;
+    var tooWide = function () {
+      var rg = document.createRange(); rg.selectNodeContents(el); var tr = rg.getBoundingClientRect();
+      return tr.right > br.right - 10 * k || tr.left < br.left + 6 * k;
+    };
+    while (tooWide() && fs > 14 && guard++ < 60) { fs -= 2; el.style.fontSize = fs + 'px'; }
+  });
+}
+
+// ── AIS-Screen ────────────────────────────────────────────────────────────
+var aisRanges = [0.25, 0.5, 1, 2, 4, 8, 12, 24], aisRange = 2, aisSel = null, aisPts = [];
+function renderAis(a, st) {
+  if (!a) return;
+  var W = 476, H = 320, cx = W / 2, cy = H / 2, ppm = (H / 2 - 14) / (aisRange * 1852), g = '';
+  // Ringe bei ½ und voller Reichweite
+  [0.5, 1].forEach(function (f) {
+    var rr = (H / 2 - 14) * f;
+    g += '<circle class="r-ring" cx="' + cx + '" cy="' + cy + '" r="' + rr + '"/>';
+    g += '<text class="r-lbl" x="' + (cx + 4) + '" y="' + (cy - rr - 3) + '">' + (aisRange * f) + ' NM</text>';
+  });
+  if (a.thr != null) g += '<circle class="ais-thr" cx="' + cx + '" cy="' + cy + '" r="' + Math.min(W, a.thr * 1852 * ppm) + '"/>';
+  aisPts = [];
+  // Heading-up: alle Positionen/Richtungen um −up drehen (up = eigenes Heading, null = Nord oben)
+  var up = a.up != null ? a.up : 0, ur = up * Math.PI / 180, cu = Math.cos(ur), su = Math.sin(ur);
+  (a.targets || []).forEach(function (t) {
+    var x = cx + (t.e * cu - t.n * su) * ppm, y = cy - (t.e * su + t.n * cu) * ppm;
+    if (x < -10 || x > W + 10 || y < -10 || y > H + 10) return;
+    var cls = 'ais-t ' + (t.stale ? 'ais-stale' : 'ais-' + t.st), rot = (t.hdg != null ? t.hdg : t.cog) - up;
+    if (t.sog > 0.5) {
+      var vl = t.sog * 0.5144 * 1800 * ppm, vr = (t.cog - up) * Math.PI / 180;   // Kurslinie: Weg der nächsten 30 min
+      g += '<line class="ais-vec" x1="' + x.toFixed(1) + '" y1="' + y.toFixed(1) + '" x2="' + (x + Math.sin(vr) * vl).toFixed(1) + '" y2="' + (y - Math.cos(vr) * vl).toFixed(1) + '" stroke="' + (t.st === 'alarm' ? '#ff3030' : t.st === 'warn' ? '#ffa000' : '#00d000') + '"/>';
+      g += '<path class="' + cls + '" transform="translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ') rotate(' + rot + ')" d="M0 -9 L6 7 L0 4 L-6 7 Z"/>';
+    } else g += '<circle class="' + cls + '" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="4"/>';
+    if (aisSel === t.m) g += '<circle class="ais-sel" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="13"/>';
+    if (t.st !== 'ok' || aisSel === t.m) g += '<text class="ais-lbl" x="' + (x + 10).toFixed(1) + '" y="' + (y - 8).toFixed(1) + '">' + (t.nm || t.m).slice(0, 14) + '</text>';
+    aisPts.push({ m: t.m, x: x, y: y });
+  });
+  var oc = (a.ownCog || 0), oh = a.up != null ? 0 : oc;   // eigenes Boot zeigt bei Heading-up immer nach oben
+  if (a.ownSog > 0.5) {   // eigene Kurslinie (COG, kann bei Strömung/Abdrift vom Heading abweichen), 30 min
+    var ol = a.ownSog * 0.5144 * 1800 * ppm, orr = (oc - up) * Math.PI / 180;
+    g += '<line class="ais-vec ais-ownvec" x1="' + cx + '" y1="' + cy + '" x2="' + (cx + Math.sin(orr) * ol).toFixed(1) + '" y2="' + (cy - Math.cos(orr) * ol).toFixed(1) + '"/>';
+  }
+  g += '<path class="ais-own" transform="translate(' + cx + ' ' + cy + ') rotate(' + oh + ')" d="M0 -11 L7 8 L0 4 L-7 8 Z"/>';
+  g += '<g transform="translate(22 26)"><path class="r-nar" transform="rotate(' + (-up) + ')" d="M0 -12 L5 3 L0 0 L-5 3 Z"/><text class="r-n" y="24">N</text></g>';
+  // Nord-Markierung am äußeren Ring + Ausrichtung oben mittig
+  var nr = H / 2 - 14, nx = cx - Math.sin(ur) * nr, ny = cy - Math.cos(ur) * nr;
+  g += '<text class="ais-nlbl" x="' + nx.toFixed(1) + '" y="' + (ny + 4).toFixed(1) + '">N</text>';
+  g += '<text class="ais-up" x="' + (W - 64) + '" y="' + (H - 12) + '">' + (a.up != null ? a.upSrc + ' UP ' + String(up).padStart(3, '0') + '°' : 'NORTH UP') + '</text>';
+  $('aisr').innerHTML = g;
+  $('ais-note').textContent = a.own ? a.n + ' targets · range ' + aisRange + ' NM' + (a.alarms ? ' · ' + a.alarms + ' alarm' : '') : 'No own position';
+  [].forEach.call(document.querySelectorAll('.aismodes button'), function (b) {
+    b.textContent = { anchor: 'ANCHOR', cruising: 'CRUISE ' + a.cn, offshore: 'OFFSHORE ' + a.on }[b.dataset.m];
+    b.className = (b.dataset.m === a.mode ? 'on ' : '') + b.dataset.m;
+  });
+  // rechte Seite: ausgewähltes Ziel oder Liste der nächsten/gefährlichsten
+  var sel = aisSel && (a.targets || []).find(function (t) { return t.m === aisSel; }), h = '';
+  if (sel) {
+    var kv = function (k, v, al) { return '<div class="kv' + (al ? ' al' : '') + '"><span>' + k + '</span><b>' + (v == null || v === '' ? '--' : v) + '</b></div>'; };
+    h = '<h3>' + (sel.nm || 'MMSI ' + sel.m) + '</h3>' + kv('MMSI', sel.m) + kv('Call sign', sel.cs) + kv('Type', sel.ty) + kv('Length', sel.len != null ? sel.len + ' m' : '') +
+      kv('Status', sel.nav) + kv('Destination', sel.dest) + kv('SOG / COG', sel.sog + ' kn / ' + sel.cog + '°') + kv('Dist / Brg', sel.d.toFixed(2) + ' NM / ' + sel.b + '°') +
+      kv('CPA', sel.cpa.toFixed(2) + ' NM' + (sel.tcpa != null ? ' in ' + Math.round(sel.tcpa) + ' min' : ''), sel.st === 'alarm') + kv('Last report', sel.age + ' s ago');
+  } else {
+    h = '<div class="hd">CLOSEST · TAP FOR DETAILS</div>' + (a.targets || []).slice(0, 9).map(function (t) {
+      return '<div class="row ' + t.st + '" data-m="' + t.m + '"><span>' + (t.nm || t.m) + '</span><span>' + t.d.toFixed(2) + ' NM' + (t.tcpa != null ? ' · CPA ' + t.cpa.toFixed(2) : '') + '</span></div>';
+    }).join('');
+  }
+  if ($('ais-info').innerHTML !== h) $('ais-info').innerHTML = h;
+  var showAck = !!(st && st.blink && (st.alarmKeys || []).some(function (k) { return k.indexOf('ais_') === 0; }));
+  $('ais-ack').style.display = showAck ? '' : 'none';
+  $('ais-info').className = 'aisinfo' + (showAck ? ' ack' : '');
+}
+$('aisr').addEventListener('click', function (e) {
+  e.stopPropagation(); if (swiped) return;
+  var r = this.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * 476, y = (e.clientY - r.top) / r.height * 320, best = null, bd = 22;
+  aisPts.forEach(function (p) { var d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = p.m; } });
+  aisSel = best; renderAis(S && S.ais, S);
+});
+$('ais-info').addEventListener('click', function (e) {
+  e.stopPropagation();
+  var row = e.target.closest('.row'); if (row) aisSel = row.dataset.m; else if (aisSel) aisSel = null;
+  renderAis(S && S.ais, S);
+});
+[].forEach.call(document.querySelectorAll('.aismodes button'), function (b) {
+  b.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var x = new XMLHttpRequest(); x.open('POST', '/esp-dash/api/config'); x.setRequestHeader('Content-Type', 'application/json');
+    x.onload = function () { setTimeout(poll, 1100); }; x.send(JSON.stringify({ aisMode: b.dataset.m }));
+  });
+});
+$('ais-ack').addEventListener('click', function (e) {
+  e.stopPropagation();
+  var x = new XMLHttpRequest(); x.open('POST', '/esp-dash/api/ack'); x.setRequestHeader('Content-Type', 'application/json'); x.onload = poll; x.send('{}');
+});
+$('ar-in').addEventListener('click', function (e) { e.stopPropagation(); var i = aisRanges.indexOf(aisRange); aisRange = aisRanges[Math.max(0, i - 1)]; renderAis(S && S.ais, S); });
+$('ar-out').addEventListener('click', function (e) { e.stopPropagation(); var i = aisRanges.indexOf(aisRange); aisRange = aisRanges[Math.min(aisRanges.length - 1, i + 1)]; renderAis(S && S.ais, S); });
 
 function winLabel(m) { return m >= 60 ? (m / 60) + ' h' : m + ' min'; }
 
@@ -783,31 +1291,30 @@ function renderEnergy(e) {
 
 // ── Screens: wischen, Pfeiltasten oder Punkte; neuer Alarm → zurück zu Screen 1 ──
 var page = 1, wasBlink = false, swX = null, swiped = false;
+// Reihenfolge der Screens: Übersicht, Energy Flow, Tanks, Wetter, Motor, Segeln, Anker, AIS, SOS (VHF-Notruf)
+var PAGES = ['p1', 'p2', 'pT', 'p3', 'p4', 'p6', 'pA', 'p5', 'pS'], NP = PAGES.length, PG_SAIL = 6, PG_AIS = 7, PG_ANCHOR = 8, PG_SOS = 9;
 function showPage(n) {
   page = n;
-  $('p1').style.display = n === 1 ? '' : 'none';
-  $('p2').style.display = n === 2 ? '' : 'none';
-  $('p3').style.display = n === 3 ? '' : 'none';
-  $('p4').style.display = n === 4 ? '' : 'none';
-  $('d4').className = n === 4 ? 'on' : '';
-  $('p5').style.display = n === 5 ? '' : 'none';
-  $('d5').className = n === 5 ? 'on' : '';
-  if (n === 5) ancMapShow();
-  $('d1').className = n === 1 ? 'on' : ''; $('d2').className = n === 2 ? 'on' : ''; $('d3').className = n === 3 ? 'on' : '';
+  PAGES.forEach(function (id, i) {
+    $(id).style.display = n === i + 1 ? '' : 'none';
+    $('d' + (i + 1)).className = n === i + 1 ? 'on' : '';
+  });
+  if (n === PG_ANCHOR) ancMapShow();
 }
 $('scr').addEventListener('pointerdown', function (e) { swX = e.clientX; swiped = false; });
 $('scr').addEventListener('pointerup', function (e) {
   if (swX == null) return;
   var dx = e.clientX - swX; swX = null;
-  if (Math.abs(dx) > 60) { swiped = true; showPage(Math.max(1, Math.min(5, page + (dx < 0 ? 1 : -1)))); }
+  if (Math.abs(dx) > 60) { swiped = true; showPage(Math.max(1, Math.min(NP, page + (dx < 0 ? 1 : -1)))); }
 });
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'ArrowRight') showPage(Math.min(5, page + 1)); else if (e.key === 'ArrowLeft') showPage(Math.max(1, page - 1));
+  if (e.key === 'ArrowRight') showPage(Math.min(NP, page + 1)); else if (e.key === 'ArrowLeft') showPage(Math.max(1, page - 1));
 });
-$('d1').parentNode.addEventListener('click', function (e) { e.stopPropagation(); showPage(page % 5 + 1); });
+$('d1').parentNode.addEventListener('click', function (e) { e.stopPropagation(); showPage(page % NP + 1); });
 setInterval(function () {
   var b = !!(S && S.blink);
-  if (b && !wasBlink) showPage(1);
+  var ak = (S && S.alarmKeys) || [], only = function (p) { return ak.length && ak.every(function (k) { return k.indexOf(p) === 0; }); };
+  if (b && !wasBlink && page !== PG_SOS) showPage(only('rig') ? PG_SAIL : only('engtemp') ? 5 : only('ais_') ? PG_AIS : 1);
   wasBlink = b;
 }, 300);
 
