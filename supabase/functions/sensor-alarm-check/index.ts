@@ -186,13 +186,19 @@ async function sendTelegram(
 
   for (const sub of subs) {
     try {
-      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: sub.chat_id, text, parse_mode: 'HTML' }),
       });
+      if (!resp.ok) {
+        const errBody = await resp.text();
+        console.error('[sensor-alarm] Telegram send failed', sub.chat_id, resp.status, errBody);
+      } else {
+        console.log('[sensor-alarm] Telegram sent OK to', sub.chat_id);
+      }
     } catch (e) {
-      console.error('[sensor-alarm] Telegram error', sub.chat_id, e);
+      console.error('[sensor-alarm] Telegram network error', sub.chat_id, e);
     }
   }
 }
@@ -275,7 +281,7 @@ Deno.serve(async (req: Request) => {
       const breaching = isBreaching(value, threshold, dir, hysteresis);
       const cleared   = isCleared(value, threshold, dir, hysteresis);
 
-      const dirLabel = dir === 'above' ? '>' : dir === 'below' ? '<' : '±';
+      const dirLabel = dir === 'above' ? '&gt;' : dir === 'below' ? '&lt;' : '±';
 
       // ── STATE MACHINE ─────────────────────────────────────────────────────
 
