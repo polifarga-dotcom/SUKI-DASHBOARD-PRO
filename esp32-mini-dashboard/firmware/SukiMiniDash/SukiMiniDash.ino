@@ -165,6 +165,7 @@ static volatile bool anchorUpRequested = false;
 #define AUP_Y0 180
 #define AUP_Y1 214
 static bool showSettings = false;
+static bool offMode = false;     // „Off“-Screen: schwarz, nur Uhrzeit schwach; Tipp → Screen 1, Alarm weckt
 static bool sosPanPan = false;   // SOS-Screen: false = MAYDAY, true = PAN PAN
 static uint8_t sosStep = 0;      // 0 = CALL, 1 = POSITION, 2 = SITUATION
 // Anker-Screen: lokale Einstellungen (Vorschau) + ausstehende Aktion an Node-RED
@@ -2113,7 +2114,18 @@ static bool aisTouch(int tx, int ty) {
   return false;
 }
 
+// „Off“-Screen, wenn die anderen Screens nachts zu hell sind: nur Uhrzeit lokal + UTC, sehr dunkel
+static void offPage(const DashState& s, bool online) {
+  fb.fillScreen(C_BLACK);
+  uint16_t c1 = s.night ? lgfx::color565(58, 0, 0) : lgfx::color565(58, 58, 58);
+  uint16_t c2 = s.night ? lgfx::color565(38, 0, 0) : lgfx::color565(38, 38, 38);
+  centerText(online ? s.time : "--:--", 400, 228, &fonts::DejaVu40, c1, C_BLACK);
+  if (online && s.utc[0]) { char b[16]; snprintf(b, sizeof(b), "UTC %s", s.utc); centerText(b, 400, 266, &fonts::DejaVu18, c2, C_BLACK); }
+  fb.pushSprite(0, 0);
+}
+
 static void render(const DashState& s, bool online, bool redPhase) {
+  if (offMode) { offPage(s, online); return; }
   applyPalette(s.night);
   const bool red = s.blink && redPhase && online;
   const uint16_t bg = red ? C_RED_BG : C_BLACK;
@@ -2147,6 +2159,15 @@ static void render(const DashState& s, bool online, bool redPhase) {
     }
     fb.fillCircle(gx, gy, 9, c);
     fb.fillCircle(gx, gy, 4, bg);
+  }
+  // Off-Knopf (Power-Symbol) rechts vom Rettungsring, Touch-Zone x 181..239 → „Off“-Screen
+  {
+    const int ox = 209, oy = 36;
+    uint16_t c = red ? C_ONRED : C_DIM;
+    fb.drawCircle(ox, oy, 23, c); fb.drawCircle(ox, oy, 22, c);
+    uint16_t ic = red ? C_ONRED : C_GREY;
+    thickArc(ox, oy, 9, 310, 590, 3, ic);
+    fb.drawWideLine(ox, oy - 12, ox, oy - 2, 1.4f, ic);
   }
   // SOS-Knopf (Rettungsring) rechts daneben, Touch-Zone x 125..181 → springt auf den Notruf-Screen
   {
@@ -2408,6 +2429,10 @@ void loop() {
     xSemaphoreTake(sMutex, portMAX_DELAY);
     ancAct = S.ancAct;
     xSemaphoreGive(sMutex);
+    if (offMode) {                                   // Off-Screen: jeder Tipp → Startbildschirm
+      offMode = false; page = 1; showSettings = false; dataRev++; t0x = -1; wasDown = down;
+      return;
+    }
     bool onAup = page == 1 && !showSettings && ancAct && abs(dx) <= 120 &&
                  t0x >= AUP_X0 - 6 && t0x <= AUP_X1 + 6 && t0y >= AUP_Y0 - 6 && t0y <= AUP_Y1 + 6;
     if (onAup) {
@@ -2424,6 +2449,8 @@ void loop() {
       dataRev++;
     } else if (page == 6 && !showSettings && t0y >= 72 && t0y <= 392 && aisTouch(t0x, t0y)) {
       dataRev++;
+    } else if (t0x >= 181 && t0x < 239 && t0y < 72 && abs(dx) <= 120) {
+      offMode = true; showSettings = false; dataRev++;            // Power-Knopf → Off-Screen
     } else if (t0x >= 125 && t0x < 181 && t0y < 72) {
       page = 8; sosStep = 0; showSettings = false; dataRev++;    // Rettungsring → Notruf-Screen
     } else if (page == 8 && !showSettings && t0y >= 68 && t0y < 118) {
@@ -2476,6 +2503,7 @@ void loop() {
     xSemaphoreGive(sMutex);
     // neuer Alarm → Übersicht, reine Rigg-Alarme → Segel-Screen, reine AIS-Alarme → AIS-Screen
     // nie vom SOS-Screen wegspringen — wer gerade einen Notruf abliest, darf nicht unterbrochen werden
+    if (b && offMode) { offMode = false; dataRev++; if (page == 8) page = 1; }   // Alarm weckt das Display (auch ein schon laufender)
     if (b && !wasBlink && page != 8) { int tgt = aisOnly ? 6 : rigOnly ? 5 : engOnly ? 4 : 1; if (page != tgt || showSettings) { page = tgt; showSettings = false; dataRev++; } }
     if (showSettings && now - settingsOpenedMs > 60000) { showSettings = false; dataRev++; }
     wasBlink = b;

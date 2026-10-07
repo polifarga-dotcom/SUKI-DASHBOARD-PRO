@@ -80,6 +80,12 @@ SOG/COG, Distanz/Peilung, CPA und Alter der Meldung. Ziele ohne Meldung > 10 min
 
 Screen 8 ist der SOS-Screen (Rettungsring-Knopf oben links).
 
+## Off-Screen
+
+Power-Knopf oben links (rechts vom Rettungsring): Bildschirm schwarz, nur Uhrzeit lokal + UTC sehr dunkel
+(nachts dunkelrot) — für die Nacht, wenn die anderen Screens zu hell sind. Tipp irgendwo → Startbildschirm.
+Jeder blinkende (nicht quittierte) Alarm beendet den Off-Screen sofort. Kein Wischen im Off-Screen.
+
 ## Alarmlogik
 
 - **Wind**: Mittelwert über `windAvgSec` (Standard 10 s), Quelle TWS, sonst AWS. Alarm ab `windAlarmKn`,

@@ -94,6 +94,14 @@
   .msg{font-size:24px;font-weight:bold}
   .hint{font-size:18px;color:#aaa;margin-top:4px}
   .red .hint{color:#fff}
+  #offbtn{position:absolute;left:186px;top:2px;width:46px;height:46px;border-radius:50%;border:2px solid #444;background:transparent;color:#999;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;box-sizing:border-box}
+  .night #offbtn{border-color:#600000;color:#900000} .red #offbtn{border-color:#fff;color:#fff}
+  /* „Off“-Screen: fast aus, nur Uhrzeit schwach lesbar; Tipp irgendwo → Startbildschirm */
+  #offscr{position:absolute;inset:0;background:#000;z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;cursor:pointer}
+  #offscr.on{display:flex}
+  #offscr .ot{font-size:48px;color:#3a3a3a;font-variant-numeric:tabular-nums;letter-spacing:1px}
+  #offscr .ou{font-size:16px;color:#262626;margin-top:6px;letter-spacing:1px}
+  .night #offscr .ot{color:#3a0000} .night #offscr .ou{color:#260000}
   #sosbtn{position:absolute;left:128px;top:2px;width:46px;height:46px;border-radius:50%;border:2px solid #444;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;box-sizing:border-box}
   .night #sosbtn{border-color:#600000} .night #sosbtn svg circle{stroke:#900000} .night #sosbtn svg circle+circle{stroke:#300000}
   #gbtn{position:absolute;left:72px;top:2px;width:46px;height:46px;border-radius:50%;border:2px solid #444;color:#888;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
@@ -373,10 +381,12 @@
 </head>
 <body>
 <div id="wrap"><div id="scr">
+  <div id="offscr"><div class="ot" id="off-t">--:--</div><div class="ou" id="off-u"></div></div>
   <div class="hdr">
     <div></div>
     <button id="nbtn" aria-label="Night mode"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="currentColor"/></svg></button>
     <button id="sosbtn" aria-label="Emergency VHF"><svg viewBox="0 0 24 24" width="26" height="26"><circle cx="12" cy="12" r="8" fill="none" stroke="#fff" stroke-width="5"/><circle cx="12" cy="12" r="8" fill="none" stroke="#ff3030" stroke-width="5" stroke-dasharray="6.28 6.28" transform="rotate(-22.5 12 12)"/></svg></button>
+    <button id="offbtn" aria-label="Display off"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7.05 6.6a7.5 7.5 0 1 0 9.9 0"/><line x1="12" y1="2.8" x2="12" y2="11"/></svg></button>
     <a id="gbtn" href="/esp-dash/settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="24" height="24"><g fill="currentColor"><rect x="10.5" y="1.5" width="3" height="5" rx="1"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(45 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(90 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(135 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(180 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(225 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(270 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(315 12 12)"/></g><circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="3"/></svg></a>
     <div class="time"><span id="time">--:--</span><span class="utc" id="utc"></span></div>
     <div class="stat"><span id="stxt">...</span><div class="dot" id="dot"></div></div>
@@ -623,6 +633,7 @@ function render() {
   $('dot').className = 'dot ' + status;
   $('stxt').textContent = !s ? 'OFFLINE' : ackd ? 'ACKNOWLEDGED' : status === 'ok' ? 'ALL OK' : status === 'alarm' ? 'ALARM' : 'WARNING';
   $('time').textContent = s ? s.time : '--:--';
+  $('off-t').textContent = s ? s.time : '--:--'; $('off-u').textContent = s && s.utc ? 'UTC ' + s.utc : '';
   $('utc').textContent = s && s.utc ? 'UTC ' + s.utc : '';
 
   var b = s ? s.batt : { st: 'na' };
@@ -1121,6 +1132,9 @@ $('sb-p').addEventListener('click', function (e) { e.stopPropagation(); sosMode 
   bt.addEventListener('click', function (e) { e.stopPropagation(); sosStep = +bt.dataset.st; renderSos(S && S.sos); });
 });
 $('sos-text').addEventListener('click', function (e) { if (swiped) return; e.stopPropagation(); sosStep = (sosStep + 1) % 3; renderSos(S && S.sos); });
+var offMode = false;
+$('offbtn').addEventListener('click', function (e) { e.stopPropagation(); offMode = true; $('offscr').className = 'on'; });
+$('offscr').addEventListener('click', function (e) { e.stopPropagation(); offMode = false; $('offscr').className = ''; showPage(1); });
 $('sosbtn').addEventListener('click', function (e) { e.stopPropagation(); sosStep = 0; showPage(PG_SOS); });
 
 // ── Große Werte automatisch an ihre Kachel anpassen (z. B. zweistelliger Wind "12.3 kn") ──
@@ -1304,6 +1318,7 @@ $('scr').addEventListener('pointerdown', function (e) { swX = e.clientX; swiped 
 $('scr').addEventListener('pointerup', function (e) {
   if (swX == null) return;
   var dx = e.clientX - swX; swX = null;
+  if (offMode) return;   // im Off-Screen kein Wischen, nur Tipp → Startbildschirm
   if (Math.abs(dx) > 60) { swiped = true; showPage(Math.max(1, Math.min(NP, page + (dx < 0 ? 1 : -1)))); }
 });
 document.addEventListener('keydown', function (e) {
@@ -1313,6 +1328,7 @@ $('d1').parentNode.addEventListener('click', function (e) { e.stopPropagation();
 setInterval(function () {
   var b = !!(S && S.blink);
   var ak = (S && S.alarmKeys) || [], only = function (p) { return ak.length && ak.every(function (k) { return k.indexOf(p) === 0; }); };
+  if (b && offMode) { offMode = false; $('offscr').className = ''; wasBlink = false; page = 0; }   // Alarm weckt das Display (auch ein schon laufender)
   if (b && !wasBlink && page !== PG_SOS) showPage(only('rig') ? PG_SAIL : only('engtemp') ? PG_ENGINE : only('ais_') ? PG_AIS : 1);
   wasBlink = b;
 }, 300);
@@ -1329,6 +1345,7 @@ $('nbtn').addEventListener('click', function (e) {
 
 $('scr').addEventListener('click', function () {
   if (swiped) { swiped = false; return; }
+  if (offMode) return;
   if (!S || !S.blink) return;
   var x = new XMLHttpRequest();
   x.open('POST', '/esp-dash/api/ack');
