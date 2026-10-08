@@ -83,7 +83,11 @@
   .big small{font-size:34px;font-weight:normal;margin-left:4px}
   .big.word{font-size:52px;top:92px}
   .sub{position:absolute;left:0;right:0;text-align:center;font-size:22px;color:#bbb}
-  .s1{top:196px}.s2{top:232px}.s3{top:268px;font-size:18px;color:#777}
+  .s1{top:186px}.s2{top:216px}.s3{top:246px;font-size:18px;color:#777}
+  /* Wassertemperatur unten in der Wind-Box (wie die Sonne oben rechts) */
+  .wtmp{position:absolute;left:0;right:0;top:276px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:24px;font-weight:bold;color:#4fc3f7;z-index:1}
+  .wtmp svg{width:28px;height:28px} .wtmp small{font-size:15px;font-weight:normal;margin-left:2px}
+  .night .wtmp{color:#a00000} .red .wtmp{color:#fff}
   .bar{position:absolute;left:24px;right:24px;top:180px;height:10px;border-radius:5px;background:#222;display:none}
   .bar i{display:block;height:100%;border-radius:5px;background:#00d000}
   .water-c{color:#2a9df4}
@@ -403,6 +407,7 @@
     <div class="big" id="wkn">--<small>kn</small></div>
     <div class="sub s1" id="wsrc">--</div>
     <div class="sub s2" id="wmax">Max 10' -- kn</div>
+    <div class="wtmp" id="wtmp" style="display:none"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M13 4a3 3 0 0 1 6 0v11a5.5 5.5 0 1 1-6 0z" stroke-width="2.2"/><circle cx="16" cy="19.5" r="2.8" fill="currentColor" stroke="none"/><line x1="16" y1="8" x2="16" y2="18" stroke-width="2.4"/><path d="M2 29.5q3.5-3 7 0t7 0t7 0t7 0" stroke-width="2"/></svg><span id="wtmpv"></span></div>
     <div class="sub s3" id="wthr">Alarm at -- kn</div>
   </div>
 
@@ -641,6 +646,10 @@ function render() {
   var f = (s && s.water) || { st: 'na' };
   renderSupply(s, b, f);
   renderPvSun(s && s.energy);
+  // Wassertemperatur unten in der Wind-Box — verschwindet ohne Messwert (wie die Sonne)
+  var wt = s && s.engine ? s.engine.wtemp : null;
+  $('wtmp').style.display = wt != null ? '' : 'none';
+  if (wt != null) $('wtmpv').innerHTML = wt.toFixed(1) + '<small>°C</small>';
 
   var w = s ? s.wind : { st: 'na' };
   $('tw').className = 'tile t2' + (w.st === 'alarm' ? ' alarm' : '');

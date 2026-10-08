@@ -477,7 +477,13 @@ add('Config schreiben', 'file', 610, 440, filename=CFG_FILE, filenameType='str',
 # ── 4) State + Quittieren (für ESP32 und Simulator) ──────────────────────────
 http_in('GET state', '/esp-dash/api/state', 'get', 150, 520, 'State')
 fn('State', """\
-msg.payload = flow.get('state') || { v: 1, status: 'warn', blink: false, msg: 'Starting ...',
+const st = flow.get('state');
+// ?ais=0: Display ist nicht auf dem AIS-Screen → Zielliste weglassen (spart ~7,5 KB je Abruf; Alarme bleiben über alarmKeys)
+if (st && msg.req && msg.req.query && msg.req.query.ais === '0' && st.ais) {
+    msg.payload = Object.assign({}, st, { ais: Object.assign({}, st.ais, { targets: [] }) });
+    return msg;
+}
+msg.payload = st || { v: 1, status: 'warn', blink: false, msg: 'Starting ...',
     batt: { st: 'na' }, energy: { ok: false }, weather: { ok: false }, engine: {}, tanks: [], sos: {}, ais: { targets: [] }, sail: { rig: {} }, water: { st: 'na' }, baro: { st: 'na', hist: [] }, wind: { st: 'na', hist: [] }, anchor: { st: 'na' } };
 return msg;""", 360, 520, [['state antwort']])
 http_out('state antwort', 560, 520, {'Cache-Control': 'no-store'})

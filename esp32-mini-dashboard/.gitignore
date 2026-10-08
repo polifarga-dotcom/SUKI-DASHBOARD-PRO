@@ -1,3 +1,4 @@
 firmware/build/
 firmware/SukiMiniDash/build/
 firmware/SukiMiniDash/secrets.h
+firmware/build-usb/

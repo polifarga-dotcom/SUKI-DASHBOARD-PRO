@@ -1,0 +1,4 @@
+dependencies:
+  # Arduino-Kern als ESP-IDF-Komponente — gleiche Version wie im Arduino-Paket (basiert auf ESP-IDF v5.5.5)
+  espressif/arduino-esp32: "3.3.12"
+  idf: ">=5.5"

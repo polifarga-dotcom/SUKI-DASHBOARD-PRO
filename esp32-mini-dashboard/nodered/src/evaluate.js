@@ -365,7 +365,8 @@ if (wxc && wxc.data && wxc.data.daily && wxc.data.current) {
     // aus den Stundenwerten; der laufende Abschnitt zählt erst ab der aktuellen Stunde
     const parts = [];
     const hh = wxc.data.hourly;
-    if (hh && Array.isArray(hh.time)) {
+    // in try/catch: ein Fehler im Tagesverlauf darf nie den ganzen State einfrieren
+    try { if (hh && Array.isArray(hh.time)) {
         const loc = new Date(now).toLocaleString('sv-SE', { timeZone: tz });   // "2026-10-07 10:23:00"
         const h = +loc.substr(11, 2), i0 = hh.time.indexOf(loc.substr(0, 10) + 'T' + loc.substr(11, 2) + ':00');
         const PD = [['MORNING', 6, 6], ['MIDDAY', 12, 6], ['EVENING', 18, 4], ['NIGHT', 22, 8]];
@@ -374,7 +375,7 @@ if (wxc && wxc.data && wxc.data.daily && wxc.data.current) {
         const today0 = loc.substr(0, 10);
         for (let k = 0; i0 >= 0 && k < 4; k++) {
             const [lbl, sh, len] = PD[pi];
-            const a = k === 0 ? i0 : st, b = Math.min(st + len, hh.time.length);
+            const a = k === 0 ? i0 : Math.max(0, st), b = Math.min(st + len, hh.time.length);
             let tmax = -99, tmin = 99, code = 0, ws = 0, wg = 0, pp = 0, ps = 0, u = 0, v = 0, dayN = 0, n = 0;
             for (let i = a; i < b; i++) {
                 if (!isNum(hh.temperature_2m[i])) continue;
@@ -388,7 +389,8 @@ if (wxc && wxc.data && wxc.data.daily && wxc.data.current) {
                 if (hh.is_day[i]) dayN++;
             }
             if (n) {
-                const date = hh.time[st].substr(0, 10), wic = WMO(code);
+                // nach Mitternacht beginnt NIGHT schon gestern 22:00, die Stundenwerte aber erst heute 00:00 → st < 0
+                const date = String(hh.time[Math.max(0, st)] || '').substr(0, 10), wic = WMO(code);
                 parts.push({ lbl, hrs: (k === 0 ? 'now' : String(sh).padStart(2, '0')) + '–' + String((sh + len) % 24).padStart(2, '0'),
                     dl: k === 0 || date === today0 ? '' : DOW[new Date(date + 'T12:00:00Z').getUTCDay()],
                     ic: wic[0], txt: wic[1], night: dayN * 2 < n, max: r0(tmax), min: r0(tmin),
@@ -396,7 +398,7 @@ if (wxc && wxc.data && wxc.data.daily && wxc.data.current) {
             }
             st += len; pi = (pi + 1) % 4;
         }
-    }
+    } } catch (e) { node.warn('Tagesverlauf: ' + e.message); }
     const mp = moon[d.time[0]] ? moon[d.time[0]].phase : null;
     weather = {
         ok: true,

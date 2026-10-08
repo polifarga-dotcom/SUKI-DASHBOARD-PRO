@@ -16,7 +16,14 @@
 #include "display.h"
 #include "logo_vp.h"
 #include "logo_neel.h"
+#include "fonts_bold.h"
 #include "secrets.h"
+#ifndef DASH_URL_WIFI1
+#define DASH_URL_WIFI1 ""
+#endif
+// Node-RED-Adresse je WLAN: in WLAN 1 optional eine eigene (z. B. Test-Proxy zu Hause), sonst DASH_URL.
+// Makro statt Funktion: eine Funktion hier würde die Arduino-Prototypen vor die struct-Deklarationen ziehen.
+#define dashUrl() ((DASH_URL_WIFI1[0] && WiFi.SSID() == WIFI_SSID) ? String(DASH_URL_WIFI1) : String(DASH_URL))
 
 // Alarm-Summer am "Sensor AD"-Stecker (PH2.0: 3V3 / GND / Signal). Über ein MOSFET-Modul
 // wird ein 12-V-Piezo geschaltet. In secrets.h überschreibbar, -1 = kein Summer.
@@ -27,8 +34,10 @@
 #define BUZZER_ACTIVE_HIGH 1
 #endif
 
-static LGFX lcd;
-static LGFX_Sprite fb(&lcd);  // Vollbild-Framebuffer in PSRAM → kein Flackern
+static LGFX_Sprite fb;  // zeichnet in den internen Streifenpuffer (bandBuf), Panel über esp_lcd (display.h)
+// große Werte (Wind, Batterie, Uhr …): geglättete DejaVu Sans Bold statt der dünnen Bitmap-DejaVu (fonts_bold.h)
+static lgfx::VLWfont fB56, fB72;   // 40 px wieder dünn (weniger Flash-Lesezugriffe beim Zeichnen)
+
 
 // ── Farben ──────────────────────────────────────────────────────────────────
 // C_WHITE = Haupttext, C_ONRED = Vordergrund in der roten Blinkphase
@@ -149,8 +158,31 @@ struct DashState {
 };
 static DashState S;
 static AisState AIS, aisR;   // AIS: vom Poll-Task geschrieben / Kopie für das Rendering
+
+// Weiche, dicke Linie, die den aktuellen Clip-Bereich respektiert. LovyanGFX' drawWideLine setzt intern einen
+// eigenen Clip und danach clearClipRect() — beim Streifen-Rendering schrieb danach alles über den Puffer hinaus.
+static void fbWideLine(float ax, float ay, float bx, float by, float r, uint16_t c) {
+  int32_t cx, cy, cw, ch;
+  fb.getClipRect(&cx, &cy, &cw, &ch);
+  if (cw <= 0 || ch <= 0) return;
+  int x0 = max((int)floorf(fminf(ax, bx) - r - 1), (int)cx), x1 = min((int)ceilf(fmaxf(ax, bx) + r + 1), (int)(cx + cw - 1));
+  int y0 = max((int)floorf(fminf(ay, by) - r - 1), (int)cy), y1 = min((int)ceilf(fmaxf(ay, by) + r + 1), (int)(cy + ch - 1));
+  if (x0 > x1 || y0 > y1) return;
+  const float dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, rr = r + 0.5f;
+  for (int y = y0; y <= y1; y++)
+    for (int x = x0; x <= x1; x++) {
+      float t = l2 > 0 ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      float ex = x - (ax + t * dx), ey = y - (ay + t * dy);
+      float a = rr - sqrtf(ex * ex + ey * ey);
+      if (a <= 0.02f) continue;
+      if (a >= 0.98f) fb.drawPixel(x, y, c);
+      else fb.fillRectAlpha(x, y, 1, 1, (uint8_t)(a * 255), c);
+    }
+}
 static SemaphoreHandle_t sMutex;
 static volatile uint32_t lastOkMs = 0;
+#define RX_MAX 16384   // Empfangspuffer für /state im internen RAM
 static volatile uint32_t dataRev = 0;
 static volatile bool ackRequested = false;
 static volatile int8_t nightRequest = -1;  // -1 = nichts, 0/1 = an Node-RED senden
@@ -205,7 +237,7 @@ static void applyPalette(bool night) {
     C_TNDL = c(255, 59, 48);   C_TZG = c(0, 200, 83);      C_TPILL = c(17, 17, 17);   C_FUELBAR = c(255, 196, 0);
     C_WSUN = c(255, 196, 0);   C_WCLOUD = c(200, 205, 210); C_WCLOUD2 = c(138, 144, 150);
     C_WRAIN = c(42, 157, 244); C_WMOON = c(232, 228, 200); C_WMDARK = c(42, 42, 42);
-    C_CHFILL = c(10, 30, 48);  C_CHLINE = c(30, 95, 150);  C_CHFILL_AL = c(48, 8, 8); C_CHLINE_AL = c(150, 40, 40);
+    C_CHFILL = c(5, 14, 24);   C_CHLINE = c(22, 66, 108);   // dunkler als im Browser: das Panel hebt dunkle Töne stark an  C_CHFILL_AL = c(48, 8, 8); C_CHLINE_AL = c(150, 40, 40);
     // Victron-VRM-Blau wie VictronCard.svelte der Pro App
     C_BOX = c(13, 45, 74);     C_BOXON = c(21, 101, 192);  C_BOXBRD = c(30, 68, 102);
     C_BOXBRDC = c(61, 111, 158); C_FLOW = c(100, 170, 255); C_FLOWOFF = c(28, 36, 44);
@@ -236,17 +268,25 @@ static void ch422Write(uint8_t addr, uint8_t val) {
   Wire.endTransmission();
 }
 
+static void backlightOn() { ch422Write(0x38, 0x0E); }   // Backlight + LCD- und Touch-Reset inaktiv, USB_SEL = USB
+
 static void boardInit() {
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 400000);
   // Sequenz aus dem Waveshare-Demo: Ausgänge aktivieren, Touch-Reset mit INT=LOW
   // (→ GT911-Adresse 0x5D), Backlight + LCD-Reset high.
+  // CH422G-Ausgänge: EXIO1 Touch-Reset, EXIO2 Backlight, EXIO3 LCD-Reset, EXIO5 USB_SEL.
+  // USB_SEL bleibt LOW (= USB-Buchse am ESP32, nicht CAN): so bleibt der USB-Port für Log und Flashen nutzbar.
+  // Sauberer Panel-Reset: LCD-Reset kurz LOW, dann HIGH, Backlight erst nach dem ersten fertigen Bild an.
+  // Ohne Reset-Puls startete das Panel manchmal mit verschobenem Spaltenzähler → Pixelfehler vom linken Rand.
   ch422Write(0x24, 0x01);
-  ch422Write(0x38, 0x2C);
-  delay(100);
+  ch422Write(0x38, 0x00);          // alles LOW: LCD-Reset aktiv, Backlight aus, Touch-Reset aktiv
+  delay(30);
+  ch422Write(0x38, 0x08);          // LCD-Reset loslassen (Backlight noch aus)
+  delay(120);
   pinMode(PIN_TOUCH_INT, OUTPUT);
   digitalWrite(PIN_TOUCH_INT, LOW);
   delay(100);
-  ch422Write(0x38, 0x2E);
+  ch422Write(0x38, 0x0A);          // Touch-Reset loslassen (INT=LOW → GT911-Adresse 0x5D)
   delay(200);
   pinMode(PIN_TOUCH_INT, INPUT);
 
@@ -298,9 +338,17 @@ static void updateBuzzer(const char* mode, uint32_t now) {
 }
 
 // ── Netzwerk (eigener Task auf Core 0, blockiert das Rendering nicht) ──────
-static void parseState(const String& body) {
-  JsonDocument doc;
-  if (deserializeJson(doc, body)) return;
+// JSON-Verarbeitung im internen RAM: größere malloc-Blöcke landen sonst im PSRAM, aus dem das Panel sein Bild liest
+struct InternalAllocator : ArduinoJson::Allocator {
+  void* allocate(size_t n) override { return heap_caps_malloc(n, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); }
+  void deallocate(void* p) override { heap_caps_free(p); }
+  void* reallocate(void* p, size_t n) override { return heap_caps_realloc(p, n, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); }
+};
+static InternalAllocator jsonAlloc;
+
+static void parseState(const char* body, size_t len) {
+  JsonDocument doc(&jsonAlloc);
+  if (deserializeJson(doc, body, len)) return;
   DashState n;
   n.valid = true;
   strlcpy(n.status, doc["status"] | "warn", sizeof(n.status));
@@ -587,7 +635,7 @@ static void netTask(void*) {
       HTTPClient http;
       http.setConnectTimeout(1500);
       http.setTimeout(2000);
-      if (http.begin(String(DASH_URL) + "/ack")) {
+      if (http.begin(dashUrl() + "/ack")) {
         http.addHeader("Content-Type", "application/json");
         int code = http.POST("{}");
         Serial.printf("ack -> %d\n", code);
@@ -602,7 +650,7 @@ static void netTask(void*) {
       http.setConnectTimeout(2000);
       http.setTimeout(10000);  // Node-RED → Supabase Edge Function
       int code = -1;
-      if (http.begin(String(DASH_URL) + "/anchor-up")) {
+      if (http.begin(dashUrl() + "/anchor-up")) {
         http.addHeader("Content-Type", "application/json");
         code = http.POST("{}");
         http.end();
@@ -621,7 +669,7 @@ static void netTask(void*) {
       http.setConnectTimeout(2000);
       http.setTimeout(10000);
       int code = -1;
-      if (http.begin(String(DASH_URL) + "/anchor")) {
+      if (http.begin(dashUrl() + "/anchor")) {
         http.addHeader("Content-Type", "application/json");
         code = http.POST(aReqBody);
         http.end();
@@ -639,7 +687,7 @@ static void netTask(void*) {
       HTTPClient http;
       http.setConnectTimeout(1500);
       http.setTimeout(2000);
-      if (http.begin(String(DASH_URL) + "/config")) {
+      if (http.begin(dashUrl() + "/config")) {
         http.addHeader("Content-Type", "application/json");
         char body[40]; snprintf(body, sizeof(body), "{\"aisMode\":\"%s\"}", aisModeReq);
         Serial.printf("aisMode -> %d\n", http.POST(body));
@@ -653,7 +701,7 @@ static void netTask(void*) {
       HTTPClient http;
       http.setConnectTimeout(1500);
       http.setTimeout(2000);
-      if (http.begin(String(DASH_URL) + "/config")) {
+      if (http.begin(dashUrl() + "/config")) {
         http.addHeader("Content-Type", "application/json");
         int code = http.POST(nightRequest ? "{\"night\":true}" : "{\"night\":false}");
         Serial.printf("night -> %d\n", code);
@@ -665,12 +713,30 @@ static void netTask(void*) {
 
     if (millis() - lastPoll >= 1000) {
       lastPoll = millis();
-      HTTPClient http;
-      http.setConnectTimeout(1500);
-      http.setTimeout(2000);
-      if (http.begin(String(DASH_URL) + "/state")) {
+      // eine dauerhafte Verbindung (Keep-Alive) statt jede Sekunde neu verbinden — spart den TCP-Aufbau
+      static HTTPClient http;
+      static bool init = false;
+      if (!init) { http.setReuse(true); http.setConnectTimeout(1500); http.setTimeout(2000); init = true; }
+      static char* rx = (char*)heap_caps_malloc(RX_MAX, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      if (http.begin(dashUrl() + (page == 6 ? "/state" : "/state?ais=0"))) {   // AIS-Zielliste nur auf dem AIS-Screen
         int code = http.GET();
-        if (code == 200) parseState(http.getString());
+        if (code == 200) {
+          int n = http.getSize();
+          WiFiClient* st = http.getStreamPtr();
+          if (rx && n > 0 && n < RX_MAX) {
+            int got = 0;
+            uint32_t t1 = millis();
+            while (got < n && millis() - t1 < 2000) {
+              int a = st->available();
+              if (a > 0) got += st->readBytes(rx + got, min(a, n - got));
+              else vTaskDelay(1);
+            }
+            if (got == n) parseState(rx, n);
+          } else {
+            String b = http.getString();   // ohne Content-Length oder zu groß: Fallback
+            parseState(b.c_str(), b.length());
+          }
+        }
         else Serial.printf("state -> %d\n", code);
         http.end();
       }
@@ -693,7 +759,7 @@ static bool gTransp = false;  // Texte ohne Hintergrund (über Diagrammen)
 
 // Großer Wert + Einheit; passt er nicht in maxW (z. B. zweistelliger Wind "12.3 kn"), eine Schriftgröße kleiner
 static void bigValue(const char* val, const char* unit, int cx, int baseY, uint16_t col, uint16_t bg, int maxW = 224) {
-  static const lgfx::IFont* sizes[] = {&fonts::DejaVu72, &fonts::DejaVu56, &fonts::DejaVu40};
+  static const lgfx::IFont* sizes[] = {&fB72, &fB56, &fonts::DejaVu40};
   fb.setFont(&fonts::DejaVu24);
   int wu = unit && *unit ? fb.textWidth(unit) + 6 : 0;
   const lgfx::IFont* f = sizes[0];
@@ -744,7 +810,7 @@ static void supplyTile(const DashState& s, bool online, bool red, uint16_t bg) {
   // SOC groß links, V / A rechts gestapelt
   if (online && s.battSoc >= 0) snprintf(b, sizeof(b), "%d", s.battSoc); else strcpy(b, "--");
   uint16_t sc = !online ? C_AMBER : stColor(s.battSt, red);
-  fb.setFont(&fonts::DejaVu56); fb.setTextDatum(textdatum_t::baseline_left); fb.setTextColor(sc, bg);
+  fb.setFont(&fB56); fb.setTextDatum(textdatum_t::baseline_left); fb.setTextColor(sc, bg);
   fb.drawString(b, x + 14, y + 84);
   int wv = fb.textWidth(b);
   fb.setFont(&fonts::DejaVu24); fb.drawString("%", x + 18 + wv, y + 84);
@@ -823,8 +889,8 @@ static void eConn(int x0, int y0, int len, bool vertical, bool on, int dir, bool
   if (vertical) fb.fillRect(x0 - 1, y0, 3, len, lc);
   else fb.fillRect(x0, y0 - 1, len, 3, lc);
   if (!on) return;
-  int p = (int)((now % 1100) * (len + 12) / 1100) - 10;  // -10 .. len+2
-  if (p < -2 || p > len - 6) return;                      // nur innerhalb der Linie zeichnen
+  (void)now;
+  int p = len / 2 - 5;   // feste Pfeilposition (Animation entfernt: jedes Bild weniger spart Speicherverkehr)
   uint16_t ac = red ? C_ONRED : C_ARROW;
   if (!vertical) fb.fillTriangle(x0 + p, y0 - 6, x0 + p, y0 + 6, x0 + p + 10, y0, ac);
   else if (dir == 2) fb.fillTriangle(x0 - 6, y0 + p, x0 + 6, y0 + p, x0, y0 + p + 10, ac);
@@ -846,7 +912,7 @@ static void eChart(const int16_t* h, int n, int x, int y, int w, int top, int bo
     int qx = x + 2 + i * (w - 5) / (n - 1), qy = bot - (int)(max(0, (int)h[i]) * sc);
     if (px >= 0) {
       if (!red) for (int xx = px; xx <= qx; xx++) { int yy = py + (qy - py) * (xx - px) / max(1, qx - px); fb.drawFastVLine(xx, yy, bot - yy, fillC); }
-      fb.drawWideLine(px, py, qx, qy, 1, lineC);
+      fbWideLine(px, py, qx, qy, 1, lineC);
     }
     px = qx; py = qy;
   }
@@ -954,7 +1020,7 @@ static void energyPage(const DashState& s, bool online, bool red, uint16_t bg, u
 
 // ── Settings-Seite: QR-Code zur Node-RED-Einstellungsseite ─────────────────
 static void settingsPage(bool red, uint16_t bg) {
-  String url = String(DASH_URL);
+  String url = dashUrl();
   if (url.endsWith("/api")) url = url.substring(0, url.length() - 4);
   url += "/settings";
   centerText("SETTINGS", 400, 96, &fonts::DejaVu24, red ? C_ONRED : C_WHITE, bg);
@@ -987,7 +1053,7 @@ static void histChart(const float* hist, int n, int x0, int cw, int top, int bot
           int yy = py + (qy - py) * (xx - px) / max(1, qx - px);
           fb.drawFastVLine(xx, yy, bot - yy, fillC);
         }
-      fb.drawWideLine(px, py, qx, qy, 1, lineC);
+      fbWideLine(px, py, qx, qy, 1, lineC);
     }
     px = qx; py = qy;
   }
@@ -1004,7 +1070,7 @@ static void wxSun(int cx, int cy, float r, float k, uint16_t c) {
   fb.fillCircle(cx, cy, r, c);
   for (int i = 0; i < 8; i++) {
     float a = i * PI / 4;
-    fb.drawWideLine(cx + cosf(a) * r * 1.45f, cy + sinf(a) * r * 1.45f, cx + cosf(a) * r * 1.95f, cy + sinf(a) * r * 1.95f,
+    fbWideLine(cx + cosf(a) * r * 1.45f, cy + sinf(a) * r * 1.45f, cx + cosf(a) * r * 1.95f, cy + sinf(a) * r * 1.95f,
                     max(1.0f, 1.7f * k), c);
   }
 }
@@ -1030,7 +1096,7 @@ static void wxIcon(const char* ic, bool night, int cx, int cy, int size, bool re
     wxCloud(ox, oy - 8 * k, k, cl);
     if (!strcmp(ic, "rain")) {
       for (int i = 0; i < 3; i++)
-        fb.drawWideLine(ox + (24 + 10 * i) * k, oy + 48 * k, ox + (20 + 10 * i) * k, oy + 58 * k, max(1.0f, 1.7f * k), rain);
+        fbWideLine(ox + (24 + 10 * i) * k, oy + 48 * k, ox + (20 + 10 * i) * k, oy + 58 * k, max(1.0f, 1.7f * k), rain);
     } else if (!strcmp(ic, "storm")) {
       fb.fillTriangle(ox + 34 * k, oy + 42 * k, ox + 24 * k, oy + 54 * k, ox + 32 * k, oy + 54 * k, sun);
       fb.fillTriangle(ox + 32 * k, oy + 49 * k, ox + 28 * k, oy + 63 * k, ox + 42 * k, oy + 49 * k, sun);
@@ -1041,9 +1107,9 @@ static void wxIcon(const char* ic, bool night, int cx, int cy, int size, bool re
       fb.fillCircle(ox + 44 * k, oy + 52 * k, 3 * k, rain);
     }
   } else if (!strcmp(ic, "fog")) {
-    fb.drawWideLine(ox + 12 * k, oy + 24 * k, ox + 52 * k, oy + 24 * k, 2 * k, cl);
-    fb.drawWideLine(ox + 8 * k, oy + 34 * k, ox + 48 * k, oy + 34 * k, 2 * k, cl);
-    fb.drawWideLine(ox + 16 * k, oy + 44 * k, ox + 56 * k, oy + 44 * k, 2 * k, cl);
+    fbWideLine(ox + 12 * k, oy + 24 * k, ox + 52 * k, oy + 24 * k, 2 * k, cl);
+    fbWideLine(ox + 8 * k, oy + 34 * k, ox + 48 * k, oy + 34 * k, 2 * k, cl);
+    fbWideLine(ox + 16 * k, oy + 44 * k, ox + 56 * k, oy + 44 * k, 2 * k, cl);
   } else {
     wxCloud(ox, oy, k, cl);
   }
@@ -1089,11 +1155,11 @@ static void riseSet(int x, int midY, const char* up, const char* dn, const lgfx:
 // Kleine Zeilen-Icons: Wind (drei Linien mit Kringel) und Regentropfen
 static void iconWind(int cx, int cy, int sz, uint16_t c) {
   int h = sz / 2;
-  fb.drawWideLine(cx - h, cy - h / 2, cx + h / 4, cy - h / 2, 1, c);
+  fbWideLine(cx - h, cy - h / 2, cx + h / 4, cy - h / 2, 1, c);
   fb.drawCircle(cx + h / 4, cy - h / 2 - h / 4, h / 4, c);
-  fb.drawWideLine(cx - h, cy, cx + h / 2, cy, 1, c);
+  fbWideLine(cx - h, cy, cx + h / 2, cy, 1, c);
   fb.drawCircle(cx + h / 2, cy + h / 4, h / 4, c);
-  fb.drawWideLine(cx - h, cy + h / 2, cx - h / 4, cy + h / 2, 1, c);
+  fbWideLine(cx - h, cy + h / 2, cx - h / 4, cy + h / 2, 1, c);
 }
 static void iconDrop(int cx, int cy, int sz, uint16_t c) {
   int r = sz / 3;
@@ -1138,7 +1204,7 @@ static void weatherPage(const DashState& s, bool online, bool red, uint16_t bg) 
     snprintf(b, sizeof(b), "TODAY - %s %s", dow, t.date);
     fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(grey, bg);
     fb.drawString(b, 128, 90);
-    drawDeg(126, 156, s.cT, &fonts::DejaVu56, 40, fg, bg);
+    drawDeg(126, 156, s.cT, &fB56, 40, fg, bg);
     fb.fillTriangle(128, 183, 136, 183, 132, 176, grey);
     int xe = drawDeg(140, 185, t.max, &fonts::DejaVu18, 13, grey, bg);
     fb.fillTriangle(xe + 6, 176, xe + 14, 176, xe + 10, 183, grey);
@@ -1224,7 +1290,7 @@ static void thickArc(int cx, int cy, int r, float a0, float a1, int w, uint16_t 
   for (float a = a0 + step; ; a += step) {
     if (a > a1) a = a1;
     float t = a * PI / 180;
-    fb.drawWideLine(cx + cosf(pa) * r, cy + sinf(pa) * r, cx + cosf(t) * r, cy + sinf(t) * r, w / 2.0f, c);
+    fbWideLine(cx + cosf(pa) * r, cy + sinf(pa) * r, cx + cosf(t) * r, cy + sinf(t) * r, w / 2.0f, c);
     pa = t;
     if (a >= a1) break;
   }
@@ -1271,7 +1337,7 @@ static void tacho(const DashState& s, bool online, bool red, uint16_t bg) {
     int x0, y0, x1, y1;
     P(R - (mj ? 46 : 34), ang(v), x0, y0);
     P(R - 30, ang(v), x1, y1);
-    fb.drawWideLine(x0, y0, x1, y1, mj ? 2.0f : 0.7f, red ? C_ONRED : (mj ? C_WHITE : C_DIM));
+    fbWideLine(x0, y0, x1, y1, mj ? 2.0f : 0.7f, red ? C_ONRED : (mj ? C_WHITE : C_DIM));
     if (mj) {
       int nx, ny; P(R - 60, ang(v), nx, ny);
       snprintf(b, sizeof(b), "%d", v / 100);
@@ -1491,7 +1557,7 @@ static void windDial(const DashState& s, bool online, bool red, uint16_t bg) {
     bool mj = d % 30 == 0;
     int x0, y0, x1, y1;
     P(R - (mj ? 26 : 18), A(d), x0, y0); P(R - 12, A(d), x1, y1);
-    fb.drawWideLine(x0, y0, x1, y1, mj ? 1.5f : 0.7f, red ? C_ONRED : (mj ? C_WHITE : C_DIM));
+    fbWideLine(x0, y0, x1, y1, mj ? 1.5f : 0.7f, red ? C_ONRED : (mj ? C_WHITE : C_DIM));
     if (mj && abs(d) <= 120 && d != 0) {
       int nx, ny; P(R - 42, A(d), nx, ny);
       snprintf(b, sizeof(b), "%d", abs(d));
@@ -1558,7 +1624,7 @@ static void windDialTacho(const DashState& s, bool online, bool red, uint16_t bg
     bool mj = d % 30 == 0;
     int x0, y0, x1, y1;
     P(R - (mj ? 46 : 34), A(d), x0, y0); P(R - 30, A(d), x1, y1);
-    fb.drawWideLine(x0, y0, x1, y1, mj ? 2.0f : 0.7f, red ? C_ONRED : (mj ? C_WHITE : C_DIM));
+    fbWideLine(x0, y0, x1, y1, mj ? 2.0f : 0.7f, red ? C_ONRED : (mj ? C_WHITE : C_DIM));
     // Skalenzahl ausblenden, solange die Winkel-Blase an ihr vorbeizieht
     bool near = hasAwa && abs((((d - s.sAwa) % 360) + 540) % 360 - 180) < 22;
     if (mj && d != 0 && abs(d) <= 120 && !near) {
@@ -1668,7 +1734,7 @@ static void sailPage(const DashState& s, bool online, bool red, uint16_t bg) {
     fb.drawString(v, ax + aw - 16, ay + 22);
   }
   if (online && !isnan(s.sAws)) snprintf(v, sizeof(v), "%.1f", s.sAws); else strcpy(v, "--");
-  fb.setFont(&fonts::DejaVu72); fb.setTextDatum(textdatum_t::baseline_left); fb.setTextColor(red ? C_ONRED : C_WHITE);
+  fb.setFont(&fB72); fb.setTextDatum(textdatum_t::baseline_left); fb.setTextColor(red ? C_ONRED : C_WHITE);
   fb.drawString(v, ax + 16, ay + 112);
   int wv = fb.textWidth(v);
   fb.setFont(&fonts::DejaVu24); fb.setTextColor(red ? C_ONRED : C_GREY);
@@ -1706,15 +1772,17 @@ static void dashedLine(int x0, int y0, int x1, int y1, uint16_t c) {
 }
 static void anchorGlyph(int x, int y, uint16_t c) {
   fb.drawCircle(x, y - 8, 3, c);
-  fb.drawWideLine(x, y - 5, x, y + 11, 1, c);
-  fb.drawWideLine(x - 6, y - 1, x + 6, y - 1, 1, c);
+  fbWideLine(x, y - 5, x, y + 11, 1, c);
+  fbWideLine(x - 6, y - 1, x + 6, y - 1, 1, c);
   fb.drawArc(x, y + 4, 10, 9, 20, 160, c);
 }
 static void btn(int x, int y, int w, int h, const char* lbl, uint16_t brd, uint16_t txt, uint16_t fill, bool red, uint16_t bg) {
   if (!red) fb.fillRoundRect(x, y, w, h, 9, fill);
   fb.drawRoundRect(x, y, w, h, 9, red ? C_ONRED : brd);
   fb.drawRoundRect(x + 1, y + 1, w - 2, h - 2, 8, red ? C_ONRED : brd);
-  centerText(lbl, x + w / 2, y + h / 2, &fonts::DejaVu18, red ? C_ONRED : txt, red ? bg : fill);
+  fb.setFont(&fonts::DejaVu18);   // passt die Beschriftung nicht (z. B. „DROP NOW“ im schmalen Knopf) → kleinere Schrift
+  const lgfx::IFont* f = fb.textWidth(lbl) > w - 14 ? (const lgfx::IFont*)&fonts::DejaVu12 : &fonts::DejaVu18;
+  centerText(lbl, x + w / 2, y + h / 2, f, red ? C_ONRED : txt, red ? bg : fill);
 }
 // Aktionsknöpfe je nach Zustand (gleich in Zeichnen und Touch)
 static int anchorButtons(const DashState& s, ABtn* out) {
@@ -1746,7 +1814,7 @@ static void anchorPage(const DashState& s, bool online, bool red, uint16_t bg) {
   // ── Radar
   const int MX = 12, MY = 72, MW = 476, MH = 320, cx = MX + 238, cy = MY + 164;
   for (int i = 0; i < 2; i++) fb.drawRoundRect(MX + i, MY + i, MW - 2 * i, MH - 2 * i, 14 - i, red ? C_ONRED : C_BORDER);
-  fb.setClipRect(MX + 2, MY + 2, MW - 4, MH - 4);
+  fbClip(MX + 2, MY + 2, MW - 4, MH - 4);
   int rad = act ? max(10, s.ancRad) : max(10, aRad);
   float ppm = 118.0f / rad * aZoom;
   static const int steps[] = {5, 10, 20, 25, 50, 100, 200, 500};
@@ -1764,8 +1832,9 @@ static void anchorPage(const DashState& s, bool online, bool red, uint16_t bg) {
   }
   uint16_t col = red ? C_ONRED : (al ? C_RED : act ? C_GREEN : C_AMBER);
   int rpx = rad * ppm;
-  dashedCircle(cx, cy, rpx, col, act ? 1000 : 8, act ? 0 : 6);
-  if (act) { fb.drawCircle(cx, cy, rpx, col); fb.drawCircle(cx, cy, rpx - 1, col); }
+  // aktiv: durchgezogener Kreis (3 px), sonst gestrichelt (Vorschau)
+  if (act) { for (int k = -1; k <= 1; k++) fb.drawCircle(cx, cy, rpx + k, col); }
+  else dashedCircle(cx, cy, rpx, col, 8, 6);
   // Track
   if (act && s.aTrackN > 1) {
     uint16_t tc = red ? C_ONRED : C_TVAL;
@@ -1796,7 +1865,7 @@ static void anchorPage(const DashState& s, bool online, bool red, uint16_t bg) {
   // Zoom-Knöpfe
   const char* zl[] = {"+", "-", ""};
   for (int i = 0; i < 3; i++) {
-    int zx = MX + 456, zy = MY + 28 + i * 48;
+    int zx = MX + 444, zy = MY + 32 + i * 48;   // Abstand zum Rand der Radar-Box
     fb.fillCircle(zx, zy, 20, red ? bg : C_BLACK);
     fb.drawCircle(zx, zy, 20, red ? C_ONRED : C_DIM); fb.drawCircle(zx, zy, 19, red ? C_ONRED : C_DIM);
     if (i < 2) centerText(zl[i], zx, zy, &fonts::DejaVu24, red ? C_ONRED : C_WHITE, red ? bg : C_BLACK);
@@ -1808,7 +1877,7 @@ static void anchorPage(const DashState& s, bool online, bool red, uint16_t bg) {
   else snprintf(b, sizeof(b), "Preview - radius %d m - chain %d m", aRad, aChain);
   fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::bottom_left); fb.setTextColor(red ? C_ONRED : C_GREY);
   fb.drawString(b, MX + 12, MY + MH - 8);
-  fb.clearClipRect();
+  fbUnclip();
 
   // ── Panel rechts
   const int PX = 500;
@@ -1852,6 +1921,7 @@ static void anchorPage(const DashState& s, bool online, bool red, uint16_t bg) {
     fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(red ? C_ONRED : C_GREY, bg);
     fb.drawString(rl[i], PX, y + 17);
     fb.setFont(&fonts::DejaVu24); fb.setTextColor(red ? C_ONRED : C_WHITE, bg);
+    if (fb.textWidth(b) > 112) fb.setFont(&fonts::DejaVu18);   // „331 NW“ darf die −/+-Knöpfe nicht berühren
     fb.drawString(b, PX + 70, y + 17);
     bool dis = !online || aReqBusy || (al && i > 0);
     uint16_t bc = dis ? C_BORDER : C_GREY;
@@ -1877,7 +1947,7 @@ static bool anchorTouch(int tx, int ty) {
   anchorLocalSync(s);
   const int MX = 12, MY = 72, PX = 500;
   for (int i = 0; i < 3; i++) {                       // Zoom
-    int zx = MX + 456, zy = MY + 28 + i * 48;
+    int zx = MX + 444, zy = MY + 32 + i * 48;   // Abstand zum Rand der Radar-Box
     if ((tx - zx) * (tx - zx) + (ty - zy) * (ty - zy) < 26 * 26) {
       aZoom = i == 0 ? min(8.0f, aZoom * 1.5f) : i == 1 ? max(0.15f, aZoom / 1.5f) : 1.0f;
       return true;
@@ -1935,7 +2005,7 @@ static void aisPage(const DashState& s, const AisState& a, bool online, bool red
   const int MX = 12, MY = 72, MW = 476, MH = 320, cx = MX + MW / 2, cy = MY + MH / 2;
   const float rng = aisRanges[aisRangeIdx], ppm = (MH / 2 - 14) / (rng * 1852);
   for (int i = 0; i < 2; i++) fb.drawRoundRect(MX + i, MY + i, MW - 2 * i, MH - 2 * i, 14 - i, red ? C_ONRED : C_BORDER);
-  fb.setClipRect(MX + 2, MY + 2, MW - 4, MH - 4);
+  fbClip(MX + 2, MY + 2, MW - 4, MH - 4);
   uint16_t ringC = red ? C_ONRED : C_BORDER;
   for (int k = 1; k <= 2; k++) {
     int rr = (MH / 2 - 14) * k / 2;
@@ -2002,7 +2072,7 @@ static void aisPage(const DashState& s, const AisState& a, bool online, bool red
   }
   // Reichweite +/-
   for (int i = 0; i < 2; i++) {
-    int zx = MX + 456, zy = MY + 28 + i * 48;
+    int zx = MX + 444, zy = MY + 32 + i * 48;   // Abstand zum Rand der Radar-Box
     fb.fillCircle(zx, zy, 20, red ? bg : C_BLACK);
     fb.drawCircle(zx, zy, 20, red ? C_ONRED : C_DIM); fb.drawCircle(zx, zy, 19, red ? C_ONRED : C_DIM);
     centerText(i ? "-" : "+", zx, zy, &fonts::DejaVu24, red ? C_ONRED : C_WHITE, red ? bg : C_BLACK);
@@ -2013,7 +2083,7 @@ static void aisPage(const DashState& s, const AisState& a, bool online, bool red
   else snprintf(b, sizeof(b), "%d targets - range %g NM", a.n, rng);
   fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::bottom_left); fb.setTextColor(red ? C_ONRED : C_GREY);
   fb.drawString(b, MX + 12, MY + MH - 8);
-  fb.clearClipRect();
+  fbUnclip();
 
   // ── Panel rechts: Modi
   const int PX = 500, PW = 288;
@@ -2027,6 +2097,7 @@ static void aisPage(const DashState& s, const AisState& a, bool online, bool red
     if (red) bc = tc = C_ONRED;
     for (int k = 0; k < 2; k++) fb.drawRoundRect(bx + k, 72 + k, 92 - 2 * k, 40 - 2 * k, 9 - k, bc);
     fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_center); fb.setTextColor(tc, bg);
+    if (fb.textWidth(b) > 82) fb.setFont(&fonts::DejaVu9);   // „OFFSHORE 3“ passt sonst nicht in den Knopf
     fb.drawString(b, bx + 46, 92);
   }
   // Info-Box
@@ -2069,8 +2140,9 @@ static void aisPage(const DashState& s, const AisState& a, bool online, bool red
       int y = IY + 40 + i * 26;
       uint16_t c = red ? C_ONRED : t.st == 2 ? C_RED : t.st == 1 ? C_AMBER : C_WHITE;
       fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(c, bg);
-      drawFit(t.nm[0] ? t.nm : t.m, PX + 12, y, 118);
       if (!isnan(t.tcpa)) snprintf(b, sizeof(b), "%.2f NM - CPA %.2f", t.d, t.cpa); else snprintf(b, sizeof(b), "%.2f NM", t.d);
+      int wv = fb.textWidth(b);   // Name bekommt nur den Platz, den der Wert übrig lässt
+      drawFit(t.nm[0] ? t.nm : t.m, PX + 12, y, PW - 24 - wv - 8);
       fb.setTextDatum(textdatum_t::middle_right);
       fb.drawString(b, PX + PW - 12, y);
     }
@@ -2084,7 +2156,7 @@ static bool aisTouch(int tx, int ty) {
   xSemaphoreTake(sMutex, portMAX_DELAY); bool blink = S.blink; xSemaphoreGive(sMutex);
   const int MX = 12, MY = 72, PX = 500;
   for (int i = 0; i < 2; i++) {   // Reichweite
-    int zx = MX + 456, zy = MY + 28 + i * 48;
+    int zx = MX + 444, zy = MY + 32 + i * 48;   // Abstand zum Rand der Radar-Box
     if ((tx - zx) * (tx - zx) + (ty - zy) * (ty - zy) < 26 * 26) {
       aisRangeIdx = constrain(aisRangeIdx + (i ? 1 : -1), 0, 7);
       return true;
@@ -2118,6 +2190,22 @@ static bool aisTouch(int tx, int ty) {
   return false;
 }
 
+// Streifen-Rendering: gezeichnet wird NICHT direkt im PSRAM (das Panel liest dort gleichzeitig sein Bild →
+// es lief leer und das Bild sprang nach rechts), sondern streifenweise in einen kleinen Puffer im internen RAM.
+// Jeder fertige Streifen wird dann ans Panel kopiert — das Kopieren allein stört nicht (getestet).
+// Trick: fb ist ein „virtueller“ 800×480-Sprite, dessen Puffer so verschoben ist, dass nur die Zeilen des
+// aktuellen Streifens im echten Speicher liegen; der Clip-Bereich verhindert jeden Zugriff daneben.
+#define BAND_H 40
+static uint16_t* bandBuf = nullptr;   // 800 × BAND_H × 2 B = 64 KB internes RAM (12 Durchgänge)
+static int bandY = 0;                 // erste Zeile des aktuellen Streifens
+static uint32_t lastRenderUs = 0;
+static void fbUnclip() { fb.setClipRect(0, bandY, 800, BAND_H); }
+static void fbClip(int x, int y, int w, int h) {   // eigener Clip-Bereich, geschnitten mit dem Streifen
+  int y0 = max(y, bandY), y1 = min(y + h, bandY + BAND_H);
+  if (y1 < y0) y1 = y0;
+  fb.setClipRect(x, y0, w, y1 - y0);
+}
+
 // „Off“-Screen, wenn die anderen Screens nachts zu hell sind: nur Uhrzeit lokal + UTC, sehr dunkel
 static void offPage(const DashState& s, bool online) {
   fb.fillScreen(C_BLACK);
@@ -2125,20 +2213,26 @@ static void offPage(const DashState& s, bool online) {
   uint16_t c2 = s.night ? lgfx::color565(38, 0, 0) : lgfx::color565(38, 38, 38);
   centerText(online ? s.time : "--:--", 400, 228, &fonts::DejaVu40, c1, C_BLACK);
   if (online && s.utc[0]) { char b[16]; snprintf(b, sizeof(b), "UTC %s", s.utc); centerText(b, 400, 266, &fonts::DejaVu18, c2, C_BLACK); }
-  fb.pushSprite(0, 0);
 }
 
-static void render(const DashState& s, bool online, bool redPhase) {
+static void renderScene(const DashState& s, bool online, bool redPhase) {
   if (offMode) { offPage(s, online); return; }
   applyPalette(s.night);
-  const bool red = s.blink && redPhase && online;
-  const uint16_t bg = red ? C_RED_BG : C_BLACK;
+  // Alarm-Blinken: nur die Kopfzeile wird rot und ein roter Rahmen erscheint — nicht mehr der ganze Bildschirm.
+  // Ein vollflächiges Rot/Schwarz änderte 2×/s alle 768 KB und ließ das Panel zucken.
+  const bool blinkOn = s.blink && redPhase && online;
+  const bool red = false;
+  const uint16_t bg = C_BLACK;
   const uint16_t sub = red ? C_ONRED : C_GREY;
   const uint16_t dim = red ? C_ONRED : C_DIM;
   char buf[64];
-  fb.fillScreen(bg);
+  fb.fillScreen(bg);   // nur der aktuelle Streifen (Clip)
 
-  // Kopfzeile
+  // Kopfzeile (nur in den oberen Streifen zeichnen — beim Streifen-Rendering spart das viel Zeit)
+  if (bandY < 76) {
+  const bool red = blinkOn;   // Kopfzeile blinkt rot
+  const uint16_t bg = red ? C_RED_BG : C_BLACK;
+  if (red) fb.fillRect(0, 0, 800, 72, bg);
   fb.setFont(&fonts::DejaVu40);
   fb.setTextDatum(textdatum_t::middle_left);
   fb.setTextColor(C_WHITE, bg);
@@ -2159,7 +2253,7 @@ static void render(const DashState& s, bool online, bool redPhase) {
     fb.drawCircle(gx, gy, 22, c);
     for (int i = 0; i < 8; i++) {
       float a = i * PI / 4;
-      fb.drawWideLine(gx + cosf(a) * 7, gy + sinf(a) * 7, gx + cosf(a) * 12, gy + sinf(a) * 12, 2, c);
+      fbWideLine(gx + cosf(a) * 7, gy + sinf(a) * 7, gx + cosf(a) * 12, gy + sinf(a) * 12, 2, c);
     }
     fb.fillCircle(gx, gy, 9, c);
     fb.fillCircle(gx, gy, 4, bg);
@@ -2171,7 +2265,7 @@ static void render(const DashState& s, bool online, bool redPhase) {
     fb.drawCircle(ox, oy, 23, c); fb.drawCircle(ox, oy, 22, c);
     uint16_t ic = red ? C_ONRED : C_GREY;
     thickArc(ox, oy, 9, 310, 590, 3, ic);
-    fb.drawWideLine(ox, oy - 12, ox, oy - 2, 1.4f, ic);
+    fbWideLine(ox, oy - 12, ox, oy - 2, 1.4f, ic);
   }
   // SOS-Knopf (Rettungsring) rechts daneben, Touch-Zone x 125..181 → springt auf den Notruf-Screen
   {
@@ -2202,6 +2296,8 @@ static void render(const DashState& s, bool online, bool redPhase) {
     }
   }
 
+  }
+
   // quittiert: rot → orange, bis der Zustand weg ist (ein neuer Alarm blinkt wieder rot)
   const bool ackd = online && !strcmp(s.status, "alarm") && s.acked && !s.blink;
   const char* status = !online || ackd ? "warn" : s.status;
@@ -2209,13 +2305,21 @@ static void render(const DashState& s, bool online, bool redPhase) {
                       : ackd ? "ACKNOWLEDGED"
                       : !strcmp(status, "ok") ? "ALL OK"
                       : !strcmp(status, "alarm") ? "ALARM" : "WARNING";
-  uint16_t dotCol = red ? C_ONRED : stColor(status, false);
-  fb.fillCircle(768, 36, 16, dotCol);
-  if (!strcmp(status, "ok")) fb.drawCircle(768, 36, 20, C_GREEN);
-  fb.setFont(&fonts::DejaVu24);
-  fb.setTextDatum(textdatum_t::middle_right);
-  fb.setTextColor(C_WHITE, bg);
-  fb.drawString(label, 738, 37);
+  if (bandY < 76) {
+    const bool red = blinkOn;
+    const uint16_t bg = red ? C_RED_BG : C_BLACK;
+    uint16_t dotCol = red ? C_ONRED : stColor(status, false);
+    fb.fillCircle(768, 36, 16, dotCol);
+    if (!strcmp(status, "ok")) fb.drawCircle(768, 36, 20, C_GREEN);
+    fb.setFont(&fonts::DejaVu24);
+    if (fb.textWidth(label) > 170) fb.setFont(&fonts::DejaVu18);   // „ACKNOWLEDGED“ lief sonst in die UTC-Zeit
+    fb.setTextDatum(textdatum_t::middle_right);
+    fb.setTextColor(C_WHITE, bg);
+    fb.drawString(label, 738, 37);
+  }
+
+  // Inhalt der Screens liegt zwischen y ≈ 60 und 400 (Settings-Seite immer zeichnen)
+  if (showSettings || (bandY + BAND_H > 60 && bandY < 410)) {
 
   if (showSettings) {
     settingsPage(red, bg);
@@ -2236,14 +2340,14 @@ static void render(const DashState& s, bool online, bool redPhase) {
       bool on = pw != NA_I && pw > 5;
       float k = pw == NA_I ? 0 : constrain(pw / 1500.0f, 0.0f, 1.0f);
       uint16_t sc = red ? C_ONRED : on ? C_WSUN : C_DIM;
-      fb.setClipRect(x + 2, 74, 244, 316);
+      fbClip(x + 2, 74, 244, 316);
       if (on && !red) fb.fillCircle(sx, sy, 30 + 8 * k, lgfx::color565(s.night ? 40 : 56, s.night ? 0 : 42, 0));   // Lichtschein
       for (float a = 100; a <= 170.1f; a += 17.5f) {
         float t = a * PI / 180, r1 = 40 + 22 * k;
-        fb.drawWideLine(sx + cosf(t) * 30, sy + sinf(t) * 30, sx + cosf(t) * r1, sy + sinf(t) * r1, 1.5f, sc);
+        fbWideLine(sx + cosf(t) * 30, sy + sinf(t) * 30, sx + cosf(t) * r1, sy + sinf(t) * r1, 1.5f, sc);
       }
       fb.fillCircle(sx, sy, 22, sc);
-      fb.clearClipRect();
+      fbUnclip();
       for (int dy = 0; dy < 14; dy++)   // Ecke außerhalb des abgerundeten Rahmens wieder freiräumen
         for (int dx = 0; dx < 14; dx++)
           if (dx * dx + dy * dy > 13 * 13) fb.drawPixel(x + 234 + dx, 72 + 13 - dy, bg);
@@ -2260,15 +2364,38 @@ static void render(const DashState& s, bool online, bool redPhase) {
     if (online && !isnan(s.windKn)) snprintf(buf, sizeof(buf), "%.1f", s.windKn); else strcpy(buf, "--");
     bigValue(buf, "kn", cx, 210, col, bg);
     if (online && s.windSrc[0]) snprintf(buf, sizeof(buf), "%s (avg)", s.windSrc); else strcpy(buf, "--");
-    centerText(buf, cx, 260, &fonts::DejaVu24, sub, bg);
+    centerText(buf, cx, 252, &fonts::DejaVu24, sub, bg);
     if (online && !isnan(s.windMax)) snprintf(buf, sizeof(buf), "Max 10' %.1f kn", s.windMax); else strcpy(buf, "Max 10' --");
-    centerText(buf, cx, 300, &fonts::DejaVu24, sub, bg);
+    centerText(buf, cx, 284, &fonts::DejaVu24, sub, bg);
     if (s.windThr >= 0) {
-      if (s.windWin >= 60) snprintf(buf, sizeof(buf), "Alarm at %d kn  -  %d h", s.windThr, s.windWin / 60);
-      else if (s.windWin > 0) snprintf(buf, sizeof(buf), "Alarm at %d kn  -  %d min", s.windThr, s.windWin);
+      if (s.windWin >= 60) snprintf(buf, sizeof(buf), "Alarm %d kn - %d h", s.windThr, s.windWin / 60);
+      else if (s.windWin > 0) snprintf(buf, sizeof(buf), "Alarm %d kn - %d min", s.windThr, s.windWin);   // passt in die Kachel
       else snprintf(buf, sizeof(buf), "Alarm at %d kn", s.windThr);
     } else buf[0] = 0;
-    centerText(buf, cx, 350, &fonts::DejaVu18, dim, bg);
+    centerText(buf, cx, 314, &fonts::DejaVu18, dim, bg);
+    // Wassertemperatur unten in der Box (Thermometer über Wellen) — ohne Messwert ausgeblendet, wie die Sonne
+    if (online && !isnan(s.mWtemp)) {
+      const uint16_t wc = red ? C_ONRED : C_TVAL;
+      char wv[12]; snprintf(wv, sizeof(wv), "%.1f", s.mWtemp);
+      fb.setFont(&fonts::DejaVu24); int tw = fb.textWidth(wv);
+      fb.setFont(&fonts::DejaVu12); int uw = fb.textWidth("C") + 7;
+      int x0 = cx - (28 + 8 + tw + uw) / 2, iy = 352;
+      // Thermometer
+      fb.drawRoundRect(x0 + 10, iy - 14, 8, 18, 4, wc);
+      fb.fillCircle(x0 + 14, iy + 6, 5, wc);
+      fb.drawFastVLine(x0 + 14, iy - 9, 12, wc); fb.drawFastVLine(x0 + 13, iy - 9, 12, wc);
+      // Wellen
+      for (int k = 0; k < 4; k++) {
+        float wx = x0 + k * 7;
+        fbWideLine(wx, iy + 15, wx + 3.5f, iy + 12, 1.0f, wc);
+        fbWideLine(wx + 3.5f, iy + 12, wx + 7, iy + 15, 1.0f, wc);
+      }
+      fb.setFont(&fonts::DejaVu24); fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(wc);
+      fb.drawString(wv, x0 + 36, iy);
+      int ux = x0 + 36 + tw + 3;
+      fb.drawCircle(ux + 2, iy - 7, 2, wc);
+      fb.setFont(&fonts::DejaVu12); fb.drawString("C", ux + 6, iy - 3);
+    }
     gTransp = false;
   }
 
@@ -2365,8 +2492,10 @@ static void render(const DashState& s, bool online, bool redPhase) {
   } else {
     sosPage(s, online, red, bg);
   }
+  }
 
-  // Fußzeile: Alarm-/Warntexte
+  // Fußzeile: Alarm-/Warntexte (nur untere Streifen)
+  if (bandY + BAND_H > 400) {
   const char* msg = !online ? (WiFi.status() == WL_CONNECTED ? "No connection to Node-RED" : "Connecting to WiFi ...")
                     : s.msg;
   uint16_t mcol = red ? C_ONRED : (online && !strcmp(s.status, "alarm") && !ackd ? C_RED : C_AMBER);
@@ -2379,8 +2508,32 @@ static void render(const DashState& s, bool online, bool redPhase) {
   // Seiten-Punkte
   for (int i = 0; i < 8; i++)
     fb.fillCircle(351 + i * 14, 470, 4, red ? C_ONRED : (page == i + 1 ? C_GREY : C_BORDER));
+  }
+  if (blinkOn) {   // roter Rahmen um den Inhalt (Kopfzeile ist schon rot)
+    fb.fillRect(0, 72, 8, 408, C_RED_BG); fb.fillRect(792, 72, 8, 408, C_RED_BG); fb.fillRect(0, 474, 800, 6, C_RED_BG);
+  }
+}
 
-  fb.pushSprite(0, 0);
+// ganzes Bild in Streifen zeichnen und jeden fertigen Streifen ans Panel geben
+static void render(const DashState& s, bool online, bool redPhase) {
+  uint32_t t0 = micros();
+  for (bandY = 0; bandY < 480; bandY += BAND_H) {
+    fb.setBuffer(bandBuf - bandY * 800, 800, 480);
+    fbUnclip();
+    renderScene(s, online, redPhase);
+    // Prüfsumme: unveränderte Streifen nicht erneut ins PSRAM kopieren (weniger Speicherverkehr → weniger Zucken)
+    static uint32_t bandSum[480 / BAND_H + 1];
+    static bool bandValid = false;
+    const uint32_t* w = (const uint32_t*)bandBuf;
+    uint32_t h = 2166136261u;
+    for (int i = 0; i < 800 * BAND_H / 2; i++) h = (h ^ w[i]) * 16777619u;
+    int bi = bandY / BAND_H;
+    if (!bandValid || bandSum[bi] != h) rgbPushBand(bandY, BAND_H, bandBuf);
+    bandSum[bi] = h;
+    if (bandY + BAND_H >= 480) bandValid = true;
+  }
+  bandY = 0;
+  lastRenderUs = micros() - t0;
 }
 
 // ── Setup / Loop ────────────────────────────────────────────────────────────
@@ -2391,28 +2544,40 @@ void setup() {
   Serial.begin(115200);
   if (BUZZER_PIN >= 0) { pinMode(BUZZER_PIN, OUTPUT); buzzer(false); }
   boardInit();
-  lcd.init();
-  lcd.fillScreen(TFT_BLACK);
-
-  applyPalette(false);
-
-  fb.setColorDepth(16);
-  fb.setPsram(true);
-  if (!fb.createSprite(800, 480)) {
-    Serial.println("Sprite-Allokation fehlgeschlagen — ist OPI PSRAM aktiviert?");
-    lcd.setTextColor(TFT_RED);
-    lcd.setFont(&fonts::DejaVu24);
-    lcd.drawString("PSRAM missing: select board option 'OPI PSRAM'", 20, 220);
+  if (!rgbInit()) {   // Panel über esp_lcd mit Bounce-Buffer (Core-Aufteilung Panel/Zeichnen machte es schlechter)
+    Serial.println("RGB-Panel-Init fehlgeschlagen");
     for (;;) delay(1000);
   }
 
-  Serial.printf("DashState %u B, AisState %u B\n", (unsigned)sizeof(DashState), (unsigned)sizeof(AisState));   // Stack-Budget im Blick
+  applyPalette(false);
+
+  fB56.loadFont(new lgfx::PointerWrapper(font_bold56, sizeof(font_bold56)));
+  fB72.loadFont(new lgfx::PointerWrapper(font_bold72, sizeof(font_bold72)));
+  fb.setColorDepth(lgfx::rgb565_nonswapped);   // esp_lcd erwartet RGB565 in nativer Bytefolge
+  bandBuf = (uint16_t*)heap_caps_malloc(800 * BAND_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  Serial.printf("internes RAM frei: %u B, größter Block %u B\n", (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+  if (!bandBuf) {
+    Serial.println("Streifenpuffer: kein internes RAM frei");
+    for (;;) delay(1000);
+  }
+
   sMutex = xSemaphoreCreateMutex();
   xTaskCreatePinnedToCore(netTask, "net", 12288, nullptr, 1, nullptr, 0);
 }
 
 void loop() {
   static uint32_t lastRev = 0xFFFFFFFF, lastFrame = 0;
+  {   // kurzes Lebenszeichen auf der USB-Konsole, 1×/min (WLAN, Node-RED, Zeichenzeit, freier interner Speicher)
+    static uint32_t hb = 0;
+    if (millis() - hb > 60000) {
+      hb = millis();
+      Serial.printf("alive %lus ssid=%s ip=%s rssi=%d nodeRed=%s render=%lums heap=%u\n", (unsigned long)(millis() / 1000),
+                    WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), (int)WiFi.RSSI(),
+                    lastOkMs && millis() - lastOkMs < 10000 ? "ok" : "no", (unsigned long)(lastRenderUs / 1000),
+                    (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    }
+  }
   static bool lastPhase = false, lastOnline = false, wasDown = false;
 
   // Touch: Wischen links/rechts = Screen wechseln, Tippen (beim Loslassen ausgewertet):
@@ -2520,8 +2685,29 @@ void loop() {
   }
   if (aConfirm[0] && millis() > aConfirmUntil) { aConfirm[0] = 0; dataRev++; }
   if (aMsg[0] && millis() > aMsgUntil) { aMsg[0] = 0; dataRev++; }
-  bool animate = page == 2 && !showSettings && now - lastFrame >= 90;  // Pfeile im Energy Flow animieren
-  if (animate || nightPreview || dataRev != lastRev || phase != lastPhase || online != lastOnline || now - lastFrame > 5000) {
+  // Jedes Neuzeichnen kopiert 768 KB durch das PSRAM, aus dem auch das Panel liest → kurzes Zucken.
+  // Deshalb nur so oft wie nötig: Energy-Flow-Pfeile 4×/s, Blinktakt (0,5 s) nur, wenn wirklich etwas blinkt.
+  bool animate = false;   // Energy-Flow-Pfeile sind statisch
+  bool blinkNeeded;
+  {
+    xSemaphoreTake(sMutex, portMAX_DELAY);
+    blinkNeeded = S.blink || !strcmp(S.mTst, "alarm");   // ganzer Bildschirm bzw. Motortemperatur-Kachel
+    xSemaphoreGive(sMutex);
+  }
+  bool phaseChanged = phase != lastPhase && blinkNeeded;
+  if (!blinkNeeded) lastPhase = phase;
+  // Off-Screen: nur neu zeichnen, wenn sich die Uhrzeit (Minute) ändert — jedes Neuzeichnen belastet das PSRAM
+  static char lastOffTime[8] = "";
+  static bool wasOff = false, lastOffOnline = false;
+  bool offChanged = false;
+  if (offMode) {
+    char t[8];
+    xSemaphoreTake(sMutex, portMAX_DELAY); strlcpy(t, S.time, sizeof(t)); xSemaphoreGive(sMutex);
+    offChanged = !wasOff || strcmp(t, lastOffTime) || online != lastOffOnline || nightPreview;
+    strlcpy(lastOffTime, t, sizeof(lastOffTime)); lastOffOnline = online; wasOff = true;
+    if (!offChanged) { lastRev = dataRev; lastFrame = now; }
+  } else wasOff = false;
+  if (offMode ? offChanged : (animate || nightPreview || dataRev != lastRev || phaseChanged || online != lastOnline || now - lastFrame > 5000)) {
     xSemaphoreTake(sMutex, portMAX_DELAY);
     DashState s = S;
     { char md[10]; bool keep = aisModePending; strlcpy(md, aisR.mode, sizeof(md)); aisR = AIS; if (keep) strlcpy(aisR.mode, md, sizeof(md)); }
@@ -2529,6 +2715,8 @@ void loop() {
     if (localAckMs && now - localAckMs < 3000) s.blink = false;
     if (localNightMs && now - localNightMs < 3000) s.night = localNightVal;
     render(s, online, phase);
+    static bool blOn = false;
+    if (!blOn) { delay(60); backlightOn(); blOn = true; }   // erst nach dem ersten vollständigen Bild einschalten
     lastRev = dataRev; lastPhase = phase; lastOnline = online; lastFrame = now;
   }
   delay(20);

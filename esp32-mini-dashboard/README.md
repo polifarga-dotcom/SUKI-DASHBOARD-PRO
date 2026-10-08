@@ -135,25 +135,50 @@ cd nodered && python3 build_flow.py --deploy
 Legt den Tab an oder ersetzt ihn (gefunden über den Namen). Andere Tabs bleiben unberührt.
 Den Tab nicht im Editor ändern: Der Quelltext liegt in `src/` und `web/`.
 
-## Firmware flashen
+## Firmware bauen und flashen (ESP-IDF)
 
-Einmalig: WLAN in `firmware/SukiMiniDash/secrets.h` eintragen (Vorlage `secrets.example.h`).
+Gebaut wird mit **ESP-IDF v5.5.5** und dem Arduino-Kern 3.3.12 als Komponente (`firmware-idf/`). Nur so lassen
+sich die zwei Espressif-Einstellungen setzen, die dieses RGB-Display mit WLAN braucht: Programmcode und Konstanten
+laufen aus dem PSRAM (`CONFIG_SPIRAM_XIP_FROM_PSRAM`) und der Display-Interrupt liegt im IRAM
+(`CONFIG_LCD_RGB_ISR_IRAM_SAFE`). Mit dem Arduino-Fertigpaket zuckte das Bild bzw. zeigte Zeilenreste links.
 
-Board am **UART**-USB-C-Port anschließen, dann:
+Quelle bleibt `firmware/SukiMiniDash/SukiMiniDash.ino`; `build.sh` erzeugt daraus mit `arduino-cli --preprocess`
+die C++-Datei für ESP-IDF.
+
+Einmalig:
+- ESP-IDF in `~/esp/esp-idf` (`git clone -b v5.5.5 --recursive https://github.com/espressif/esp-idf.git`, dann `./install.sh esp32s3`)
+- `arduino-cli` mit Kern esp32 3.3.12 und den Bibliotheken LovyanGFX + ArduinoJson (für das Vorverarbeiten)
+- WLAN in `firmware/SukiMiniDash/secrets.h` eintragen (Vorlage `secrets.example.h`)
+
+Board am **USB**-Port (nicht UART) anschließen, dann:
 
 ```bash
-cd firmware
-~/.local/bin/arduino-cli compile -b "esp32:esp32:esp32s3:PSRAM=opi,FlashSize=8M,PartitionScheme=default_8MB" --output-dir build SukiMiniDash
-~/.local/bin/arduino-cli upload -p /dev/cu.wchusbserial* -b "esp32:esp32:esp32s3:PSRAM=opi,FlashSize=8M,PartitionScheme=default_8MB" --input-dir build SukiMiniDash
-~/.local/bin/arduino-cli monitor -p /dev/cu.wchusbserial* -c baudrate=115200
+cd firmware-idf && ./build.sh flash
 ```
 
-Alternativ in der Arduino IDE: Board „ESP32S3 Dev Module“, PSRAM „OPI PSRAM“, Flash „8MB“,
-Partition „8M with spiffs“, Libraries LovyanGFX + ArduinoJson.
+Nach dem Flashen bleibt der Chip oft im Flash-Modus → Kabel kurz ab- und wieder anstecken. Hängt die Firmware in
+einer Neustart-Schleife: BOOT gedrückt halten, Kabel einstecken, loslassen, dann flashen. Log: `./build.sh monitor`.
 
-### Erste Inbetriebnahme: Prüfliste (Hardware-Annahmen noch ungetestet)
+### Darstellung (warum so gebaut)
+
+- Gezeichnet wird in 40-Zeilen-Streifen in einen Puffer im internen RAM (nicht direkt im PSRAM, aus dem das Panel
+  liest); nur geänderte Streifen werden in den Framebuffer kopiert (Prüfsumme).
+- Panel über `esp_lcd` (14 MHz, Bounce-Buffer 10 Zeilen), große Werte mit geglätteter DejaVu Sans Bold
+  (`tools/make_vlw.py` → `fonts_bold.h`).
+- LovyanGFX' `drawWideLine` setzt den Clip-Bereich zurück → eigene `fbWideLine()` verwenden.
+
+### Test zu Hause
+
+Zu Hause erreicht das Display den Pi auf dem Boot nicht (nur der Mac über Tailscale). `tools/dev_proxy.py` auf dem
+Mac reicht ausschließlich `/esp-dash/api/…` und nur an die Display-IP durch; in `secrets.h` zeigt `DASH_URL_WIFI1`
+dafür auf den Mac:
+
+```bash
+python3 tools/dev_proxy.py --allow 192.168.178.164
+```
+
+### Erste Inbetriebnahme: Prüfliste
 
 - Bild bleibt dunkel → Backlight/CH422G-Sequenz in `boardInit()` prüfen (I²C SDA 8 / SCL 9).
-- Bild verschoben, flimmert oder Farben vertauscht → Timings/Pins in `display.h` (`freq_write` ggf. 14 MHz).
-- Serieller Monitor meldet `GT911 touch: NICHT gefunden` → Touch-Reset-Sequenz prüfen. Das Display funktioniert trotzdem, nur Quittieren am Gerät geht dann nicht.
+- Serieller Monitor meldet `GT911 touch: NICHT gefunden` → Touch-Reset-Sequenz prüfen.
 - Variante „7B“ (1024×600) braucht andere Auflösung und Timings.
