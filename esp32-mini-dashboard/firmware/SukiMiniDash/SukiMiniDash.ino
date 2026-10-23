@@ -2621,7 +2621,7 @@ void loop() {
   static bool lastPhase = false, lastOnline = false, wasDown = false;
 
   // Touch: Wischen links/rechts = Screen wechseln, Tippen (beim Loslassen ausgewertet):
-  // Mond-Bereich oben links = Nachtmodus, sonst bei Alarm = Quittieren
+  // Mond-Bereich oben links oder Doppeltipp auf eine freie Stelle = Nachtmodus, sonst bei Alarm = Quittieren
   static int t0x = -1, t0y = -1, tlx = -1;
   static uint32_t lastTouchMs = 0;
   int tx = -1, ty = -1;
@@ -2677,7 +2677,10 @@ void loop() {
       bool blinking = S.blink || S.stormNote, night = S.night;   // auch gelbe Gewitterwarnung quittierbar
       xSemaphoreGive(sMutex);
       if (localNightMs && millis() - localNightMs < 3000) night = localNightVal;
-      if (t0x < 67 && t0y < 72) {
+      static uint32_t lastTapMs = 0;   // Doppeltipp auf eine freie Stelle = Tag/Nacht (wie beim Cabin Watch)
+      bool dbl = lastTapMs && millis() - lastTapMs < 400;
+      lastTapMs = dbl || (t0x < 67 && t0y < 72) ? 0 : millis();
+      if ((t0x < 67 && t0y < 72) || (dbl && !blinking)) {
         localNightVal = !night; localNightMs = millis();
         nightRequest = localNightVal ? 1 : 0;
       } else if (blinking) {
