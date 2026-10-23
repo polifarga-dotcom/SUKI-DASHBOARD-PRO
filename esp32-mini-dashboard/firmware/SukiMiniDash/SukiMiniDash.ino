@@ -9,7 +9,6 @@
 // Libs:  LovyanGFX 1.2.x, ArduinoJson 7.x
 
 #include <WiFi.h>
-#include <WiFiMulti.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
@@ -18,6 +17,7 @@
 #include "logo_neel.h"
 #include "fonts_bold.h"
 #include "secrets.h"
+#include "SukiWifi.h"   // WLAN: 2 Netze, DHCP/feste IP, Abgleich mit Node-RED, Einrichtungs-WLAN
 #ifndef DASH_URL_WIFI1
 #define DASH_URL_WIFI1 ""
 #endif
@@ -615,21 +615,16 @@ static void parseState(const char* body, size_t len) {
 }
 
 static void netTask(void*) {
-  // Mehrere WLANs: WiFiMulti verbindet mit dem stärksten verfügbaren und wechselt bei Ausfall
-  static WiFiMulti multi;
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);
-  multi.addAP(WIFI_SSID, WIFI_PASS);
-#ifdef WIFI_SSID2
-  if (strlen(WIFI_SSID2)) multi.addAP(WIFI_SSID2, WIFI_PASS2);
-#endif
+  // WLAN-Verwaltung (SukiWifi.h): Netze + DHCP/feste IP aus dem NVS, Einstellungen per Node-RED-Settings-Seite
+  sw::begin("mini", "SUKI-MiniDash");
   uint32_t lastPoll = 0;
   for (;;) {
-    if (WiFi.status() != WL_CONNECTED) {
-      if (multi.run(5000) == WL_CONNECTED) Serial.printf("WLAN: %s (%d dBm)\n", WiFi.SSID().c_str(), WiFi.RSSI());
-      vTaskDelay(pdMS_TO_TICKS(500));
+    sw::loop();
+    if (!sw::connected()) {
+      vTaskDelay(pdMS_TO_TICKS(50));
       continue;
     }
+    sw::sync(dashUrl());
 
     if (ackRequested) {
       HTTPClient http;
@@ -1020,6 +1015,17 @@ static void energyPage(const DashState& s, bool online, bool red, uint16_t bg, u
 
 // ── Settings-Seite: QR-Code zur Node-RED-Einstellungsseite ─────────────────
 static void settingsPage(bool red, uint16_t bg) {
+  if (sw::apActive() && !sw::connected()) {   // kein Netz → Einrichtungs-WLAN
+    centerText("WIFI SETUP", 400, 96, &fonts::DejaVu24, red ? C_ONRED : C_WHITE, bg);
+    centerText("1. Scan: join the setup WiFi  2. Enter your network", 400, 128, &fonts::DejaVu18, red ? C_ONRED : C_GREY, bg);
+    const int qs = 200, qx = 400 - qs / 2, qy = 150;
+    fb.fillRect(qx - 10, qy - 10, qs + 20, qs + 20, lgfx::color565(255, 255, 255));
+    fb.qrcode(sw::apQr().c_str(), qx, qy, qs, 4);
+    char b[80];
+    snprintf(b, sizeof(b), "WiFi %s  ·  password %s  ·  http://192.168.4.1", sw::apSsid(), sw::AP_PASS);
+    centerText(b, 400, 380, &fonts::DejaVu18, red ? C_ONRED : C_DIM, bg);
+    return;
+  }
   String url = dashUrl();
   if (url.endsWith("/api")) url = url.substring(0, url.length() - 4);
   url += "/settings";
@@ -1028,7 +1034,8 @@ static void settingsPage(bool red, uint16_t bg) {
   const int qs = 220, qx = 400 - qs / 2, qy = 146;
   fb.fillRect(qx - 10, qy - 10, qs + 20, qs + 20, lgfx::color565(255, 255, 255));  // Ruhezone
   fb.qrcode(url.c_str(), qx, qy, qs, 4);
-  centerText(url.c_str(), 400, 392, &fonts::DejaVu18, red ? C_ONRED : C_DIM, bg);
+  centerText(url.c_str(), 400, 380, &fonts::DejaVu18, red ? C_ONRED : C_DIM, bg);
+  centerText(sw::status(), 400, 402, &fonts::DejaVu18, red ? C_ONRED : C_DIM, bg);   // eigenes WLAN: SSID · IP · dBm
 }
 
 // Verlauf als Hintergrund-Fläche (60 Punkte). Baro: Skala mind. 1 hPa um den Mittelwert.
@@ -2301,7 +2308,7 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
   // quittiert: rot → orange, bis der Zustand weg ist (ein neuer Alarm blinkt wieder rot)
   const bool ackd = online && !strcmp(s.status, "alarm") && s.acked && !s.blink;
   const char* status = !online || ackd ? "warn" : s.status;
-  const char* label = !online ? (WiFi.status() == WL_CONNECTED ? "OFFLINE" : "NO WIFI")
+  const char* label = !online ? (sw::connected() ? "OFFLINE" : sw::apActive() ? "WIFI SETUP" : "NO WIFI")
                       : ackd ? "ACKNOWLEDGED"
                       : !strcmp(status, "ok") ? "ALL OK"
                       : !strcmp(status, "alarm") ? "ALARM" : "WARNING";
@@ -2496,7 +2503,8 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
 
   // Fußzeile: Alarm-/Warntexte (nur untere Streifen)
   if (bandY + BAND_H > 400) {
-  const char* msg = !online ? (WiFi.status() == WL_CONNECTED ? "No connection to Node-RED" : "Connecting to WiFi ...")
+  const char* msg = !online ? (sw::connected() ? "No connection to Node-RED"
+                               : sw::apActive() ? "No WiFi - setup: tap the gear and scan the QR code" : "Connecting to WiFi ...")
                     : s.msg;
   uint16_t mcol = red ? C_ONRED : (online && !strcmp(s.status, "alarm") && !ackd ? C_RED : C_AMBER);
   fb.setFont(&fonts::DejaVu24);
@@ -2674,7 +2682,10 @@ void loop() {
     // nie vom SOS-Screen wegspringen — wer gerade einen Notruf abliest, darf nicht unterbrochen werden
     if (b && offMode) { offMode = false; dataRev++; if (page == 8) page = 1; }   // Alarm weckt das Display (auch ein schon laufender)
     if (b && !wasBlink && page != 8) { int tgt = aisOnly ? 6 : rigOnly ? 5 : engOnly ? 4 : stormOnly ? 3 : 1; if (page != tgt || showSettings) { page = tgt; showSettings = false; dataRev++; } }
-    if (showSettings && now - settingsOpenedMs > 60000) { showSettings = false; dataRev++; }
+    if (showSettings && now - settingsOpenedMs > 60000 && !sw::apActive()) { showSettings = false; dataRev++; }
+    static bool wasAp = false;
+    bool ap = sw::apActive() && !sw::connected();
+    if (ap != wasAp) { wasAp = ap; if (ap) { showSettings = true; offMode = false; } settingsOpenedMs = now; dataRev++; }
     wasBlink = b;
   }
   if ((aupState == AUP_CONFIRM || aupState == AUP_ERR) && millis() > aupUntil) { aupState = AUP_IDLE; dataRev++; }

@@ -10,12 +10,18 @@
   h1{font-size:22px;margin:4px 0 16px} h2{font-size:15px;color:#00d000;letter-spacing:2px;margin:22px 0 8px;text-transform:uppercase}
   .row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #222}
   .row label{flex:1} .row small{display:block;color:#777;font-size:12px;margin-top:2px}
-  input[type=number],input[type=text],select{width:130px;background:#111;color:#fff;border:1px solid #333;border-radius:8px;padding:8px;font-size:16px}
+  input[type=number],input[type=text],input[type=password],select{width:130px;background:#111;color:#fff;border:1px solid #333;border-radius:8px;padding:8px;font-size:16px}
   input[type=checkbox]{width:22px;height:22px;accent-color:#00d000}
   button{background:#00a000;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;font-weight:bold;cursor:pointer}
   button.sec{background:#333} button.warn{background:#b00000}
   .bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px} #out{margin-top:12px;color:#aaa;min-height:20px}
   a{color:#888}
+  .dev{border:1px solid #222;border-radius:10px;padding:4px 12px 14px;margin:10px 0}
+  .dev h3{font-size:16px;margin:12px 0 4px} .wst{font-size:13px;color:#aaa;margin-bottom:6px} .wst b{color:#00d000} .wst .off{color:#ffb300}
+  .net{margin-top:10px} .net h4{font-size:12px;color:#888;letter-spacing:1px;margin:8px 0 4px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px} .grid label{font-size:12px;color:#888;display:block;margin-bottom:3px}
+  .grid input,.grid select{width:100%;box-sizing:border-box} .full{grid-column:1/-1}
+  .wout{color:#aaa;margin-top:8px;min-height:18px}
 </style>
 </head>
 <body><main>
@@ -101,6 +107,11 @@
 <div class="row"><label>Show anchor alarm<small>Status comes from Supabase (anchor-check)</small></label><input type="checkbox" id="anchorAlarmOn"></div>
 <div class="row"><label>Local fallback<small>Drag check against the last known anchor position while the cloud is unreachable</small></label><input type="checkbox" id="anchorLocalFallback"></div>
 
+<h2>WiFi</h2>
+<p style="color:#888;font-size:13px;margin:4px 0">Each display picks up changes within 1 minute. If it cannot connect with the new settings it returns to the previous ones after 2 minutes.
+If no known network is reachable for 1 minute, the display opens its own setup WiFi (password <b>sukisetup</b>) &ndash; scan the QR code on the display, the setup page opens automatically.</p>
+<div id="wifiBox">Loading ...</div>
+
 <h2>General</h2>
 <div class="row"><label>Acknowledge stops blinking for (min)</label><input type="number" id="ackMinutes" min="1" max="120" step="1"></div>
 <div class="row"><label>Data stale after (s)</label><input type="number" id="staleSec" min="5" max="300" step="1"></div>
@@ -158,6 +169,62 @@ $('save').onclick=function(){
 $('test').onclick=function(){ req('POST','/esp-dash/api/config',{testSeconds:30},function(st){ $('out').textContent = st===200?'Test alarm running for 30 s':'Error'; }); };
 $('reload').onclick=load;
 load();
+
+// ── WiFi der Displays ──
+var wifiDevs = [];
+function el(tag, attrs, html){ var e=document.createElement(tag); for(var k in (attrs||{})) e.setAttribute(k, attrs[k]); if(html!=null) e.innerHTML=html; return e; }
+function escH(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function ago(ms){ var s=Math.round(ms/1000); return s<90 ? s+' s ago' : s<5400 ? Math.round(s/60)+' min ago' : Math.round(s/3600)+' h ago'; }
+function wifiStatus(d, now){
+  var st=d.status;
+  var hint = '<br><span class="off">Settings saved here only reach the display once it is online. Without a network, use its setup WiFi (QR code on the display).</span>';
+  if(!st) return '<span class="off">Not seen yet (display offline or old firmware)</span>' + hint;
+  var fresh = now - st.ts < 150000;
+  if (fresh) hint = '';
+  var t = (fresh ? '<b>Online</b>' : '<span class="off">Offline</span>') + ' &middot; ' + escH(st.ssid) + ' &middot; ' + escH(st.ip) + ' (' + (st.mode==='static'?'fixed IP':'DHCP') + ')'
+        + (isFinite(st.rssi) ? ' &middot; ' + st.rssi + ' dBm' : '') + ' &middot; last seen ' + ago(now - st.ts);
+  if (st.rev && d.cfg.rev && st.rev !== d.cfg.rev) t += '<br><span class="off">Display has not picked up the latest settings yet</span>';
+  if (d.cfg.note) t += '<br><span class="off">Display: ' + escH(d.cfg.note) + '</span>';
+  return t + hint;
+}
+function renderWifi(r){
+  var box=$('wifiBox'); box.innerHTML=''; wifiDevs=r.devices;
+  r.devices.forEach(function(d){
+    var c=el('div',{'class':'dev'});
+    c.appendChild(el('h3',null,escH(d.name)));
+    c.appendChild(el('div',{'class':'wst'},wifiStatus(d, r.now)));
+    d.cfg.nets.forEach(function(n,i){
+      var p='w_'+d.id+'_'+i+'_';
+      var w=el('div',{'class':'net'});
+      w.innerHTML='<h4>NETWORK '+(i+1)+(i?' (optional)':'')+'</h4><div class="grid">'
+        +'<div><label>SSID</label><input type="text" id="'+p+'ssid" maxlength="32" value="'+escH(n.ssid)+'"></div>'
+        +'<div><label>Password</label><input type="password" id="'+p+'pass" maxlength="63" placeholder="'+(n.hasPass?'unchanged':'none')+'"></div>'
+        +'<div class="full"><label>IP address</label><select id="'+p+'dhcp"><option value="1">DHCP (automatic)</option><option value="0">Fixed IP</option></select></div>'
+        +'<div class="st'+p+'"><label>IP</label><input type="text" id="'+p+'ip" value="'+escH(n.ip)+'" placeholder="192.168.0.240"></div>'
+        +'<div class="st'+p+'"><label>Gateway</label><input type="text" id="'+p+'gw" value="'+escH(n.gw)+'" placeholder="automatic (x.x.x.1)"></div>'
+        +'<div class="st'+p+'"><label>Subnet mask</label><input type="text" id="'+p+'mask" value="'+escH(n.mask)+'"></div>'
+        +'<div class="st'+p+'"><label>DNS (empty = gateway)</label><input type="text" id="'+p+'dns" value="'+escH(n.dns)+'"></div></div>';
+      c.appendChild(w);
+      var sel=w.querySelector('select'); sel.value=n.dhcp?'1':'0';
+      var sync=function(){ w.querySelectorAll('.st'+p).forEach(function(x){ x.style.display = sel.value==='1'?'none':'block'; }); };
+      sel.onchange=sync; sync();
+    });
+    var bar=el('div',{'class':'bar'}); var btn=el('button',null,'Save WiFi'); bar.appendChild(btn); c.appendChild(bar);
+    var out=el('div',{'class':'wout'}); c.appendChild(out);
+    btn.onclick=function(){
+      var nets=[0,1].map(function(i){ var p='w_'+d.id+'_'+i+'_';
+        return { ssid:$(p+'ssid').value.trim(), pass:$(p+'pass').value, dhcp:$(p+'dhcp').value==='1',
+                 ip:$(p+'ip').value.trim(), gw:$(p+'gw').value.trim(), mask:$(p+'mask').value.trim(), dns:$(p+'dns').value.trim() }; });
+      req('POST','/esp-dash/api/wifi',{dev:d.id,nets:nets},function(st,res){
+        out.textContent = st===200 ? 'Saved \u2713 \u2013 the display picks it up within 1 minute' : ('Error: '+(res&&res.error||st));
+        if(st===200) setTimeout(loadWifi, 800);
+      });
+    };
+    box.appendChild(c);
+  });
+}
+function loadWifi(){ req('GET','/esp-dash/api/wifi',null,function(st,r){ if(st===200&&r) renderWifi(r); else $('wifiBox').textContent='WiFi settings not available'; }); }
+loadWifi();
 </script>
 </body>
 </html>

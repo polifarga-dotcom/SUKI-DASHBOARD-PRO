@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SUKI Cabin Watch</title>
+<style>
+  :root { --bg:#1a1c20; --panel:#24272d; --line:#353a42; --txt:#e6e8eb; --dim:#8b929c; --acc:#4fc3f7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.4 -apple-system, "Helvetica Neue", Arial, sans-serif;
+         display:flex; flex-direction:column; align-items:center; padding:24px 16px; gap:18px; }
+  h1 { font-size:16px; font-weight:600; margin:0; color:var(--dim); letter-spacing:.04em; }
+  .bezel { background:#050505; padding:22px 26px; border-radius:18px; box-shadow:0 10px 40px #000a, inset 0 0 0 2px #2b2b2b; max-width:100%; }
+  canvas { display:block; width:960px; max-width:calc(100vw - 84px); aspect-ratio:3/2; touch-action:none; cursor:pointer; border-radius:2px; }
+  .panel { display:grid; grid-template-columns:auto 1fr; gap:8px 14px; align-items:center; background:var(--panel);
+           border:1px solid var(--line); border-radius:10px; padding:14px 16px; width:min(1012px, 100%); }
+  .panel b { color:var(--dim); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
+  .row { display:flex; flex-wrap:wrap; gap:6px; }
+  button { background:#2f333a; color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:5px 11px; font:inherit; cursor:pointer; }
+  button.on { background:var(--acc); color:#001018; border-color:var(--acc); }
+  #info { color:var(--dim); font-size:12px; }
+</style>
+</head>
+<body>
+<h1>SUKI CABIN WATCH · 480 × 320 · SIMULATOR</h1>
+<div class="bezel"><canvas id="c" width="480" height="320"></canvas></div>
+<div class="panel">
+  <b>Data</b><div class="row" id="src"></div>
+  <b>Screen</b><div class="row" id="pages"></div>
+  <b>Night</b><div class="row" id="night"></div>
+  <b>Sound</b><div class="row"><button id="snd">Enable sound on Mac</button><span id="sndinfo" style="color:var(--dim);align-self:center"></span></div>
+  <b>Status</b><div id="info">–</div>
+</div>
+<script>
+'use strict';
+// ── Device model ───────────────────────────────────────────────────────────
+// The device only needs this slim "cabin" object (~1 KB). toCabin() is the spec for the
+// Node-RED endpoint /esp-dash/api/cabin that the firmware will poll.
+const W = 480, H = 320;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const K = 2 * (window.devicePixelRatio || 1);
+cv.width = W * K; cv.height = H * K; ctx.scale(K, K);
+
+const PAL = {
+  day:   { bg:'#06080b', tile:'#11151a', line:'#232a32', txt:'#eef1f4', dim:'#7f8894', faint:'#353d47',
+           acc:'#4fc3f7', ok:'#00c853', warn:'#ffab00', alarm:'#ff1744', alarmBg:'#4a0012', boat:'#ffffff' },
+  // Night: full-intensity reds; overall brightness comes from the backlight (PWM), not from darker colours
+  night: { bg:'#000000', tile:'#0a0000', line:'#3a0404', txt:'#ff2020', dim:'#a81414', faint:'#4a0606',
+           acc:'#c41818', ok:'#c41818', warn:'#ff2020', alarm:'#ff3030', alarmBg:'#480000', boat:'#ff2020' },
+};
+const ALARM_NAME = { anchor:'ANCHOR DRAG', wind:'WIND', batt:'BATTERY', baro:'PRESSURE', water:'WATER',
+                     engtemp:'ENGINE TEMP', test:'TEST ALARM' };
+
+function toCabin(s) {
+  const a = s.anchor || {}, m = a.map || {}, w = s.wind || {}, t = (s.weather && s.weather.today) || {};
+  const date = new Date(s.ts * 1000).toLocaleDateString('en-GB', { timeZone: s.tz || 'UTC', weekday: 'short', day: '2-digit', month: 'short' });
+  return {
+    ts: s.ts, time: s.time, utc: s.utc, date: date.replace(',', '').toUpperCase(), sr: t.sr || null, ss: t.ss || null,
+    status: s.status, blink: s.blink, acked: s.acked, beep: s.beep, msg: s.msg, keys: s.alarmKeys || [],
+    anc: { st: a.st, act: !!a.act, dist: a.dist, rad: a.rad, depth: m.depth, chain: m.chain, hdg: m.hdg,
+           boff: m.boff || null, track: (m.track || []).slice(-60), alarming: !!m.alarming, cloud: a.cloud },
+    wind: { st: w.st, kn: w.kn, max: w.max, thr: w.thr, src: w.src || 'AWS', win: w.win, hist: (w.hist || []).slice(-60) },
+    batt: { st: (s.batt || {}).st, soc: (s.batt || {}).soc },
+    baro: { st: (s.baro || {}).st, hpa: (s.baro || {}).hpa, d: (s.baro || {}).d },
+  };
+}
+
+// ── Demo scenarios ─────────────────────────────────────────────────────────
+function nowHM(utc) { const d = new Date(); const h = utc ? d.getUTCHours() : d.getHours(), mi = utc ? d.getUTCMinutes() : d.getMinutes();
+  return String(h).padStart(2, '0') + ':' + String(mi).padStart(2, '0'); }
+function swingTrack(dist, n) {   // boat swinging on its chain, north-east of the anchor
+  const out = []; for (let i = 0; i < n; i++) { const a = (35 + 40 * Math.sin(i / 7)) * Math.PI / 180, r = dist * (0.82 + 0.12 * Math.sin(i / 3));
+    out.push([Math.round(Math.sin(a) * r), Math.round(Math.cos(a) * r)]); } return out; }
+function windHist(base, spread) { const h = []; for (let i = 0; i < 60; i++) h.push(Math.max(0, +(base + spread * Math.sin(i / 4) + spread * 0.6 * Math.sin(i * 1.7)).toFixed(1))); return h; }
+function base() {
+  const tr = swingTrack(14, 60);
+  return { ts: Date.now() / 1000, time: nowHM(), utc: nowHM(true),
+    date: new Date().toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }).replace(',', '').toUpperCase(),
+    sr: '07:05', ss: '18:31', status: 'ok', blink: false, acked: false, beep: 'off', msg: '', keys: [],
+    anc: { st: 'ok', act: true, dist: 14, rad: 30, depth: 4.2, chain: 25, hdg: 212, boff: tr[tr.length - 1], track: tr, alarming: false, cloud: true },
+    wind: { st: 'ok', kn: 8.4, max: 12.1, thr: 25, src: 'AWS', win: 10, hist: windHist(8, 2) },
+    batt: { st: 'ok', soc: 82 }, baro: { st: 'ok', hpa: 1012, d: 0.3 } };
+}
+const SCEN = {
+  'Anchor calm': (d) => d,
+  'Gusty': (d) => { d.wind = { ...d.wind, st: 'warn', kn: 21.7, max: 27.4, hist: windHist(19, 5) }; d.status = 'warn'; d.msg = 'Wind gusts'; return d; },
+  'Anchor alarm': (d) => { const tr = swingTrack(14, 50).concat([[16, 18], [19, 22], [22, 25], [25, 28], [27, 31]]);
+    d.anc = { ...d.anc, st: 'alarm', dist: 41, boff: tr[tr.length - 1], track: tr, alarming: true };
+    d.status = 'alarm'; d.blink = true; d.beep = 'full'; d.keys = ['anchor']; d.msg = 'ANCHOR ALARM'; return d; },
+  'Silenced': (d) => { d = SCEN['Anchor alarm'](d); d.blink = false; d.acked = true; d.beep = 'off'; return d; },
+  'Wind alarm': (d) => { d.wind = { ...d.wind, st: 'alarm', kn: 31.6, max: 38.2, hist: windHist(28, 5) };
+    d.status = 'alarm'; d.blink = true; d.beep = 'full'; d.keys = ['wind']; d.msg = 'WIND 31.6 kn >= 25 kn'; return d; },
+  'Two alarms': (d) => { d = SCEN['Anchor alarm'](d); d.wind = { ...d.wind, st: 'alarm', kn: 29.2, max: 36, hist: windHist(26, 5) };
+    d.keys = ['anchor', 'wind']; return d; },
+  'Anchor off': (d) => { d.anc = { st: 'off', act: false, dist: null, rad: 30, depth: 4.2, chain: null, hdg: 212, boff: null, track: [], alarming: false, cloud: true }; return d; },
+  'No data': (d) => { d.stale = true; return d; },
+};
+
+// ── App state ──────────────────────────────────────────────────────────────
+const app = { src: 'Live', live: null, liveAt: 0, liveErr: '', page: 0, nightMode: 'auto',
+  briDay: 80, briNight: 15, vol: 70, nightSound: 'short', localAck: null, upArm: 0, sound: false, tapFlash: 0 };
+const PAGES = ['Home', 'Anchor', 'Settings'];
+
+function data() {
+  if (app.src !== 'Live') return SCEN[app.src](base());
+  if (!app.live) return Object.assign(base(), { stale: true, anc: { st: 'off', act: false, track: [] } });
+  const d = toCabin(app.live);
+  if (Date.now() - app.liveAt > 15000) d.stale = true;
+  return d;
+}
+function isNight(d) {
+  if (app.nightMode !== 'auto') return app.nightMode === 'on';
+  const t = d.time || nowHM(), sr = d.sr || '07:00', ss = d.ss || '19:00';
+  return t < sr || t >= ss;
+}
+function effective(d) {   // local "silence" on the device mirrors the Node-RED ack until the alarm set changes
+  if (app.localAck && d.blink && app.localAck === d.keys.join(',')) { d.blink = false; d.acked = true; d.beep = 'off'; }
+  if (!d.blink) app.localAck = app.localAck && d.keys.join(',') === app.localAck ? app.localAck : null;
+  return d;
+}
+
+// ── Drawing primitives (all map 1:1 to LovyanGFX calls) ────────────────────
+const FONT = '"DejaVu Sans", "Helvetica Neue", Arial, sans-serif';
+let p = PAL.day;
+function font(px, w) { ctx.font = (w || 700) + ' ' + px + 'px ' + FONT; }
+function T(s, x, y, px, col, al, w) { font(px, w); ctx.fillStyle = col; ctx.textAlign = al || 'left'; ctx.fillText(s, x, y); }
+function tw(s, px, w) { font(px, w); return ctx.measureText(s).width; }
+function fit(s, maxW, px, min) { while (px > min && tw(s, px) > maxW) px -= 2; return px; }
+function rr(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); }
+}
+function circle(x, y, r, stroke, lw, fill, dash) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); ctx.setLineDash([]); }
+}
+function line(x1, y1, x2, y2, col, lw, dash) { ctx.beginPath(); ctx.setLineDash(dash || []); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  ctx.strokeStyle = col; ctx.lineWidth = lw || 1; ctx.stroke(); ctx.setLineDash([]); }
+function stCol(st) { return st === 'alarm' ? p.alarm : st === 'warn' ? p.warn : st === 'ok' ? p.ok : p.faint; }
+const fmt1 = (v) => (v == null ? '—' : (+v).toFixed(1));
+const fmt0 = (v) => (v == null ? '—' : String(Math.round(v)));
+
+function anchorGlyph(x, y, s, col) {
+  ctx.strokeStyle = col; ctx.lineWidth = Math.max(1.5, s / 6); ctx.lineCap = 'round';
+  circle(x, y - s * 0.78, s * 0.2, col, ctx.lineWidth);
+  line(x, y - s * 0.58, x, y + s * 0.8, col, ctx.lineWidth);
+  line(x - s * 0.38, y - s * 0.3, x + s * 0.38, y - s * 0.3, col, ctx.lineWidth);
+  ctx.beginPath(); ctx.arc(x, y + s * 0.15, s * 0.65, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke();
+  ctx.lineCap = 'butt';
+}
+function boatGlyph(x, y, s, hdg, col) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(((hdg || 0) * Math.PI) / 180);
+  ctx.beginPath(); ctx.moveTo(0, -s); ctx.lineTo(s * 0.62, s * 0.8); ctx.lineTo(0, s * 0.45); ctx.lineTo(-s * 0.62, s * 0.8); ctx.closePath();
+  ctx.fillStyle = col; ctx.fill(); ctx.restore();
+}
+function radar(d, cx, cy, R, big) {
+  const a = d.anc, on = a.act && !d.stale;
+  circle(cx, cy, R, p.line, 1, p.bg);
+  if (!on) { anchorGlyph(cx, cy, big ? 22 : 13, p.faint); return; }
+  let ext = (a.rad || 20) * 1.25;
+  if (a.boff) ext = Math.max(ext, Math.hypot(a.boff[0], a.boff[1]) * 1.15);
+  for (const t of a.track || []) ext = Math.max(ext, Math.hypot(t[0], t[1]) * 1.08);
+  const k = (R - 6) / ext, X = (e) => cx + e * k, Y = (n) => cy - n * k;
+  if (big) {   // distance rings every 10/25/50 m
+    const step = ext > 120 ? 50 : ext > 50 ? 25 : 10;
+    for (let r = step; r < ext; r += step) { circle(cx, cy, r * k, p.faint, 1, null, [2, 4]); T(r + ' m', cx + 3, cy - r * k - 3, 10, p.dim, 'left', 400); }
+    T('N', cx, cy - R + 14, 12, p.dim, 'center');
+  }
+  const rc = a.st === 'alarm' ? p.alarm : a.st === 'warn' ? p.warn : p.acc;
+  circle(cx, cy, (a.rad || 0) * k, rc, big ? 2.5 : 2, null, [6, 4]);
+  const tr = a.track || [];
+  if (tr.length > 1) { ctx.beginPath(); tr.forEach((t, i) => (i ? ctx.lineTo(X(t[0]), Y(t[1])) : ctx.moveTo(X(t[0]), Y(t[1]))));
+    ctx.strokeStyle = p.dim; ctx.globalAlpha = 0.55; ctx.lineWidth = big ? 1.5 : 1; ctx.stroke(); ctx.globalAlpha = 1; }
+  if (a.boff) {
+    line(cx, cy, X(a.boff[0]), Y(a.boff[1]), p.faint, 1, [3, 3]);
+    boatGlyph(X(a.boff[0]), Y(a.boff[1]), big ? 11 : 7, a.hdg, a.st === 'alarm' ? p.alarm : p.boat);
+  }
+  anchorGlyph(cx, cy, big ? 14 : 9, p.txt);
+}
+function chip(x, y, txt, col, filled) {   // right-aligned at x
+  const w = tw(txt, 11) + 16; rr(x - w, y, w, 20, 10, filled ? col : null, col, 1.5);
+  T(txt, x - w / 2, y + 14, 11, filled ? p.bg : col, 'center');
+}
+function speaker(x, y, col, muted) {
+  ctx.beginPath(); ctx.moveTo(x, y + 4); ctx.lineTo(x + 4, y + 4); ctx.lineTo(x + 9, y); ctx.lineTo(x + 9, y + 14); ctx.lineTo(x + 4, y + 10); ctx.lineTo(x, y + 10);
+  ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+  if (muted) { line(x + 12, y + 3, x + 19, y + 11, col, 1.6); line(x + 19, y + 3, x + 12, y + 11, col, 1.6); }
+  else { ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x + 9, y + 7, 5, -0.9, 0.9); ctx.stroke();
+         ctx.beginPath(); ctx.arc(x + 9, y + 7, 9, -0.9, 0.9); ctx.stroke(); }
+}
+
+// ── Screens ────────────────────────────────────────────────────────────────
+function blinkOn() { return Date.now() % 1000 < 550; }
+
+function header(d) {   // shared alarm banner logic
+  const ak = d.keys.map((k) => ALARM_NAME[k] || (k.startsWith('storm') ? 'THUNDERSTORM' : k.startsWith('rig') ? 'RIG LOAD' : k.toUpperCase()));
+  return ak;
+}
+
+function drawHome(d) {
+  const alarm = d.status === 'alarm' && !d.stale, names = header(d);
+  // Clock
+  const time = d.time || '--:--';
+  T(time, 12, 100, fit(time, 288, 112, 64), d.stale ? p.dim : p.txt);
+  // Right column: status / alarm banner
+  if (alarm) {
+    const on = d.blink && blinkOn();
+    rr(306, 10, 166, 98, 10, d.blink ? (on ? p.alarm : p.alarmBg) : p.alarmBg, p.alarm, 2);
+    const fg = d.blink && on ? p.bg : p.alarm;
+    const title = names[0] || 'ALARM';
+    T(title, 389, 46, fit(title, 150, 22, 12), fg, 'center');
+    if (names.length > 1) T('+ ' + names.slice(1).join(' · '), 389, 66, fit('+ ' + names.slice(1).join(' · '), 150, 13, 9), fg, 'center', 400);
+    T(d.blink ? 'TAP TO SILENCE' : 'SILENCED', 389, 94, 12, fg, 'center');
+  } else {
+    const ok = !d.stale && d.status === 'ok';
+    const txt = d.stale ? 'NO DATA' : ok ? 'ALL OK' : 'NOTICE';
+    const col = d.stale ? p.warn : ok ? p.ok : p.warn;
+    circle(318, 30, 6, null, 0, col); T(txt, 332, 35, 15, col);
+    T(d.date || '', 318, 70, 16, p.dim, 'left', 400);
+    T('UTC ' + (d.utc || '--:--'), 318, 98, 20, p.dim, 'left', 700);
+  }
+  // Anchor tile
+  const a = d.anc, ax = 8, ay = 118, aw = 228, ah = 172, aAl = a.st === 'alarm' && !d.stale;
+  rr(ax, ay, aw, ah, 12, aAl && d.blink && blinkOn() ? p.alarmBg : p.tile, aAl ? p.alarm : p.line, aAl ? 3 : 1);
+  T('ANCHOR', ax + 12, ay + 22, 13, p.dim);
+  const ast = d.stale ? ['—', p.faint] : !a.act ? ['OFF', p.faint] : a.st === 'alarm' ? ['DRAG', p.alarm] : a.st === 'warn' ? ['WATCH', p.warn] : ['ARMED', p.ok];
+  chip(ax + aw - 10, ay + 8, ast[0], ast[1], a.st === 'alarm' && !d.stale);
+  radar(d, ax + 66, ay + 102, 56, false);
+  const nx = ax + 176;
+  if (a.act && !d.stale && a.dist != null) {
+    const s = fmt0(a.dist), col = a.st === 'alarm' ? p.alarm : a.st === 'warn' ? p.warn : p.txt;
+    T(s, nx, ay + 98, fit(s, 84, 56, 30), col, 'center');
+    T('m of ' + fmt0(a.rad) + ' m', nx, ay + 120, 13, p.dim, 'center', 400);
+    const pct = Math.min(1, (a.dist || 0) / (a.rad || 1));
+    rr(nx - 40, ay + 134, 80, 6, 3, p.faint); rr(nx - 40, ay + 134, Math.max(6, 80 * pct), 6, 3, a.st === 'alarm' ? p.alarm : a.st === 'warn' ? p.warn : p.acc);
+    T('DEPTH ' + fmt1(a.depth) + ' m', nx, ay + 160, 12, p.dim, 'center', 400);
+  } else {
+    T('—', nx, ay + 98, 48, p.faint, 'center');
+    T(d.stale ? 'no data' : 'not armed', nx, ay + 122, 13, p.dim, 'center', 400);
+  }
+  // Wind tile
+  const w = d.wind, wx = 244, wy = 118, ww = 228, wh = 172, wAl = w.st === 'alarm' && !d.stale;
+  rr(wx, wy, ww, wh, 12, wAl && d.blink && blinkOn() ? p.alarmBg : p.tile, wAl ? p.alarm : p.line, wAl ? 3 : 1);
+  T('WIND', wx + 12, wy + 22, 13, p.dim);
+  T((w.src || 'AWS') + ' · kn', wx + ww - 12, wy + 22, 12, p.dim, 'right', 400);
+  const ws = d.stale ? '—' : fmt1(w.kn), wcol = d.stale ? p.faint : w.st === 'alarm' ? p.alarm : w.st === 'warn' ? p.warn : p.txt;
+  T(ws, wx + ww / 2, wy + 98, fit(ws, ww - 30, 80, 44), wcol, 'center');
+  // sparkline
+  const hist = d.stale ? [] : (w.hist || []), gx = wx + 12, gy = wy + 114, gw = ww - 24, gh = 30;
+  if (hist.length > 1) {
+    const top = Math.max(10, (w.thr || 0) * 1.05, ...hist) ;
+    const P = (v, i) => [gx + (gw * i) / (hist.length - 1), gy + gh - (gh * v) / top];
+    ctx.beginPath(); hist.forEach((v, i) => { const q = P(v, i); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); });
+    ctx.lineTo(gx + gw, gy + gh); ctx.lineTo(gx, gy + gh); ctx.closePath(); ctx.fillStyle = p.faint; ctx.globalAlpha = 0.6; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath(); hist.forEach((v, i) => { const q = P(v, i); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); });
+    ctx.strokeStyle = wcol === p.txt ? p.acc : wcol; ctx.lineWidth = 1.5; ctx.stroke();
+    if (w.thr && w.thr <= top) { const ty = gy + gh - (gh * w.thr) / top; line(gx, ty, gx + gw, ty, p.alarm, 1, [4, 4]); }
+  }
+  T('MAX ' + (w.win || 10) + "'  " + (d.stale ? '—' : fmt1(w.max)), wx + 12, wy + 162, 13, p.dim, 'left', 400);
+  T('ALARM ' + fmt0(w.thr), wx + ww - 12, wy + 162, 12, p.dim, 'right', 400);
+  footer(d);
+}
+
+function footer(d) {
+  const y = 300, b = d.batt || {};
+  // battery
+  const bc = d.stale ? p.faint : b.st === 'alarm' ? p.alarm : b.st === 'warn' ? p.warn : p.dim;
+  rr(12, y + 2, 24, 12, 2, null, bc, 1.5); rr(36, y + 5, 3, 6, 1, bc);
+  if (!d.stale && b.soc != null) rr(14, y + 4, Math.max(2, 20 * b.soc / 100), 8, 1, bc);
+  T(d.stale ? '—' : fmt0(b.soc) + ' %', 46, y + 13, 14, bc, 'left', 700);
+  const r = d.baro || {}, rc = d.stale ? p.faint : r.st === 'alarm' ? p.alarm : r.st === 'warn' ? p.warn : p.dim;
+  const tr = r.d == null ? '' : r.d <= -1 ? ' ↓' : r.d < -0.3 ? ' ↘' : r.d >= 1 ? ' ↑' : r.d > 0.3 ? ' ↗' : ' →';
+  T((d.stale ? '—' : fmt0(r.hpa)) + ' hPa' + (d.stale ? '' : tr), 112, y + 13, 14, rc, 'left', 700);
+  // sound + link
+  const muted = app.vol === 0;
+  speaker(330, y, d.blink ? p.alarm : p.dim, muted);
+  T(muted ? 'OFF' : (isNight(d) ? app.nightSound.toUpperCase() : 'ON'), 354, y + 12, 11, p.dim, 'left', 400);
+  circle(408, y + 8, 4, null, 0, d.stale ? p.alarm : p.ok);
+  // page dots
+  for (let i = 0; i < PAGES.length; i++) circle(436 + i * 14, y + 8, 3.5, i === app.page ? null : p.dim, 1, i === app.page ? p.txt : null);
+}
+
+function topBar(d, title) {
+  T(d.time || '--:--', 12, 28, 24, p.txt);
+  T(title, 240, 26, 14, p.dim, 'center');
+  if (d.status === 'alarm' && !d.stale) chip(470, 10, d.blink ? 'TAP TO SILENCE' : 'SILENCED', p.alarm, d.blink && blinkOn());
+  line(0, 42, W, 42, p.line, 1);
+}
+
+function drawAnchor(d) {
+  topBar(d, 'ANCHOR WATCH');
+  const a = d.anc, on = a.act && !d.stale;
+  radar(d, 158, 180, 128, true);
+  if (!on) T(d.stale ? 'NO DATA' : 'ANCHOR NOT ARMED', 158, 232, 15, p.dim, 'center');
+  const cells = [['DISTANCE', on ? fmt0(a.dist) : '—', 'm', a.st], ['RADIUS', fmt0(a.rad), 'm'], ['DEPTH', fmt1(a.depth), 'm'], ['CHAIN', on ? fmt0(a.chain) : '—', 'm']];
+  cells.forEach((c, i) => {
+    const y = 52 + i * 50; rr(306, y, 166, 44, 8, p.tile, p.line, 1);
+    T(c[0], 316, y + 17, 11, p.dim, 'left', 400);
+    const col = c[3] === 'alarm' ? p.alarm : c[3] === 'warn' ? p.warn : p.txt;
+    T(c[1], 462 - tw(' ' + c[2], 13, 400), y + 37, 26, col, 'right'); T(' ' + c[2], 462, y + 37, 13, p.dim, 'right', 400);
+  });
+  // button: silence while alarming, else two-tap ANCHOR UP
+  const by = 256, armed = Date.now() - app.upArm < 4000;
+  let lbl, col, fill = false;
+  if (d.blink && !d.stale) { lbl = 'SILENCE'; col = p.alarm; fill = true; }
+  else if (on) { lbl = armed ? 'TAP AGAIN' : 'ANCHOR UP'; col = armed ? p.warn : p.txt; fill = armed; }
+  else { lbl = 'NOT ARMED'; col = p.faint; }
+  rr(306, by, 166, 54, 10, fill ? col : p.tile, col, 2);
+  T(lbl, 389, by + 34, 17, fill ? p.bg : col, 'center');
+}
+
+const SET_ROWS = [
+  { k: 'nightMode', lbl: 'NIGHT MODE', opts: ['off', 'on', 'auto'] },
+  { k: 'briDay', lbl: 'BRIGHTNESS DAY', step: 10, min: 10, max: 100, unit: '%' },
+  { k: 'briNight', lbl: 'BRIGHTNESS NIGHT', step: 5, min: 5, max: 60, unit: '%' },
+  { k: 'vol', lbl: 'VOLUME', step: 10, min: 0, max: 100, unit: '%', test: true },
+  { k: 'nightSound', lbl: 'ALARM AT NIGHT', opts: ['full', 'short'] },
+];
+function drawSettings(d) {
+  topBar(d, 'SETTINGS');
+  SET_ROWS.forEach((r, i) => {
+    const y = 52 + i * 52; rr(8, y, 464, 46, 8, p.tile, p.line, 1);
+    T(r.lbl, 20, y + 29, 14, p.dim, 'left', 700);
+    if (r.opts) {
+      r.opts.forEach((o, j) => { const bx = 470 - (r.opts.length - j) * 74, sel = app[r.k] === o;
+        rr(bx, y + 7, 68, 32, 6, sel ? p.acc : null, sel ? p.acc : p.line, 1.5); T(o.toUpperCase(), bx + 34, y + 28, 13, sel ? p.bg : p.txt, 'center'); });
+      if (r.k === 'nightMode' && app.nightMode === 'auto') T((d.ss || '19:00') + '–' + (d.sr || '07:00'), 186, y + 29, 12, p.dim, 'center', 400);
+    } else {
+      const bx = r.test ? 252 : 326;
+      rr(bx, y + 7, 40, 32, 6, null, p.line, 1.5); T('−', bx + 20, y + 30, 20, p.txt, 'center');
+      T(app[r.k] + ' ' + r.unit, bx + 72, y + 30, 18, p.txt, 'center');
+      rr(bx + 104, y + 7, 40, 32, 6, null, p.line, 1.5); T('+', bx + 124, y + 30, 20, p.txt, 'center');
+      if (r.test) { rr(402, y + 7, 68, 32, 6, null, p.line, 1.5); T('TEST', 436, y + 28, 13, p.txt, 'center'); }
+    }
+  });
+}
+
+function render() {
+  const d = effective(data()), night = isNight(d);
+  p = night ? PAL.night : PAL.day;
+  ctx.fillStyle = p.bg; ctx.fillRect(0, 0, W, H);
+  [drawHome, drawAnchor, drawSettings][app.page](d);
+  if (Date.now() - app.tapFlash < 120) { ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(0, 0, W, H); }
+  cv.style.filter = 'brightness(' + (0.4 + 0.6 * (night ? app.briNight : app.briDay) / 100).toFixed(2) + ')';   // rough backlight preview
+  sound(d, night);
+  info(d, night);
+  window.__last = d;
+}
+
+// ── Touch: tap / swipe (same zones as the firmware will use) ───────────────
+let down = null;
+function pt(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; }
+cv.addEventListener('pointerdown', (e) => { down = pt(e); });
+cv.addEventListener('pointerup', (e) => {
+  if (!down) return; const u = pt(e), dx = u[0] - down[0]; const s = down; down = null;
+  if (Math.abs(dx) > 60) { app.page = (app.page + (dx < 0 ? 1 : PAGES.length - 1)) % PAGES.length; syncButtons(); return; }
+  tap(s[0], s[1]);
+});
+function tap(x, y) {
+  app.tapFlash = Date.now();
+  const d = window.__last || data();
+  if (d.blink && !d.stale && (app.page !== 2 || y < 42)) { app.localAck = d.keys.join(','); return; }   // any tap silences
+  if (app.page === 0) { if (x < 240 && y > 118 && y < 292) { app.page = 1; syncButtons(); } return; }
+  if (app.page === 1) {
+    if (x > 306 && y > 256 && d.anc.act && !d.stale) {
+      if (Date.now() - app.upArm < 4000) { app.upArm = 0; alert('Simulator: ANCHOR UP would now be sent (POST /esp-dash/api/anchor-up).\nNot sent – the simulator never changes the real anchor watch.'); }
+      else app.upArm = Date.now();
+    }
+    return;
+  }
+  SET_ROWS.forEach((r, i) => {
+    const ry = 52 + i * 52; if (y < ry || y > ry + 46) return;
+    if (r.opts) { r.opts.forEach((o, j) => { const bx = 470 - (r.opts.length - j) * 74; if (x >= bx && x <= bx + 68) app[r.k] = o; }); syncButtons(); return; }
+    const bx = r.test ? 252 : 326;
+    if (x >= bx && x <= bx + 40) app[r.k] = Math.max(r.min, app[r.k] - r.step);
+    if (x >= bx + 104 && x <= bx + 144) app[r.k] = Math.min(r.max, app[r.k] + r.step);
+    if (r.test && x >= 402) testTone();
+  });
+}
+
+// ── Sound (Web Audio stands in for the ES8311 speaker) ─────────────────────
+let ac = null, nextBeep = 0;
+function tone(f, t0, dur, vol) {
+  const o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = f;
+  g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(vol, t0 + 0.01); g.gain.setValueAtTime(vol, t0 + dur - 0.02); g.gain.linearRampToValueAtTime(0, t0 + dur);
+  o.connect(g).connect(ac.destination); o.start(t0); o.stop(t0 + dur);
+}
+function testTone() { if (!ac) return; const t = ac.currentTime + 0.02, v = 0.15 * app.vol / 100; tone(880, t, 0.25, v); tone(660, t + 0.3, 0.25, v); }
+// Patterns: anchor = two-tone siren (unmistakable), other alarms = triple beep, night "short" = one soft beep / 2 s,
+// lost data = two quiet beeps per minute.
+function sound(d, night) {
+  if (!ac || !app.sound) return;
+  const now = ac.currentTime; if (now < nextBeep) return;
+  const v = 0.15 * app.vol / 100; if (v <= 0) return;
+  if (d.stale) { tone(520, now, 0.12, v * 0.5); tone(520, now + 0.25, 0.12, v * 0.5); nextBeep = now + 60; return; }
+  if (!d.blink) { nextBeep = now + 0.25; return; }
+  if (night && app.nightSound === 'short') { tone(800, now, 0.12, v * 0.7); nextBeep = now + 2; return; }
+  if (d.keys.includes('anchor')) { for (let i = 0; i < 4; i++) tone(i % 2 ? 660 : 880, now + i * 0.3, 0.28, v); nextBeep = now + 1.2; return; }
+  for (let i = 0; i < 3; i++) tone(1000, now + i * 0.22, 0.14, v); nextBeep = now + 1.6;
+}
+document.getElementById('snd').onclick = () => {
+  if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+  ac.resume(); app.sound = !app.sound; nextBeep = 0; syncButtons();
+};
+
+// ── Live data ──────────────────────────────────────────────────────────────
+async function poll() {
+  if (app.src === 'Live') {
+    try { const r = await fetch('api/state', { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status);
+      app.live = await r.json(); app.liveAt = Date.now(); app.liveErr = ''; }
+    catch (e) { app.liveErr = String(e.message || e); }
+  }
+  setTimeout(poll, 2000);
+}
+
+// ── Control panel ──────────────────────────────────────────────────────────
+function btns(id, items, cur, on) { const el = document.getElementById(id); el.innerHTML = '';
+  items.forEach((it) => { const b = document.createElement('button'); b.textContent = it; if (it === cur) b.className = 'on'; b.onclick = () => on(it); el.appendChild(b); }); }
+function syncButtons() {
+  btns('src', ['Live', ...Object.keys(SCEN)], app.src, (v) => { app.src = v; app.localAck = null; syncButtons(); });
+  btns('pages', PAGES, PAGES[app.page], (v) => { app.page = PAGES.indexOf(v); syncButtons(); });
+  btns('night', ['off', 'on', 'auto'], app.nightMode, (v) => { app.nightMode = v; syncButtons(); });
+  document.getElementById('snd').textContent = app.sound ? 'Sound ON (click to mute)' : 'Enable sound on Mac';
+  document.getElementById('snd').className = app.sound ? 'on' : '';
+}
+function info(d, night) {
+  const bytes = JSON.stringify(app.src === 'Live' && app.live ? toCabin(app.live) : d).length;
+  const src = app.src === 'Live' ? (app.liveAt ? 'live from Pi, ' + Math.round((Date.now() - app.liveAt) / 1000) + ' s old' : 'waiting for Pi…') + (app.liveErr ? ' · ' + app.liveErr : '') : 'demo scenario';
+  document.getElementById('info').textContent = src + ' · ' + (night ? 'night' : 'day') + ' · cabin payload ' + bytes + ' B · Tap = silence alarm / open anchor · Swipe = next screen';
+  document.getElementById('sndinfo').textContent = app.sound ? (d.blink ? 'alarm sounding' : 'quiet') : '';
+}
+
+syncButtons(); poll();
+(function loop() { render(); setTimeout(loop, 100); })();
+</script>
+</body>
+</html>

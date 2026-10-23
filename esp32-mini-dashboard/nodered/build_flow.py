@@ -16,6 +16,7 @@ MFD_FN = 'https://lzvwhzzscsjeivtviyjm.supabase.co/functions/v1/mfd-anchor'
 MFD_KEY = 'mfd-b00c60fed1bb860778d4c704eb12a8804884377bffafca83'  # anchor_config.mfd_api_key (SUKI)
 ANCHOR_URL = f'{MFD_FN}?key={MFD_KEY}'
 CFG_FILE = '/home/admin/esp-dash/config.json'
+WIFI_FILE = '/home/admin/esp-dash/wifi.json'
 LABEL = 'ESP32 Mini Dashboard'
 
 HERE = Path(__file__).parent
@@ -474,6 +475,80 @@ http_out('config antwort', 600, 400, {'Cache-Control': 'no-store'})
 add('Config schreiben', 'file', 610, 440, filename=CFG_FILE, filenameType='str',
     appendNewline=False, createDir=True, overwriteFile='true', encoding='utf8')
 
+# ── 3b) WLAN der Displays (je Gerät 2 Netze, DHCP oder feste IP) ─────────────
+# Geräte holen ihre Einstellungen jede Minute über /wifi/device (melden dabei IP/SSID/RSSI);
+# die Settings-Seite liest /wifi (ohne Passwörter) und schreibt per POST /wifi.
+inject('WLAN laden (Start)', 160, 480, 'WLAN lesen', '', [], once_delay=0.5)
+add('WLAN lesen', 'file in', 380, 480, [['WLAN übernehmen']], filename=WIFI_FILE,
+    filenameType='str', format='utf8', chunk=False, sendError=False, encoding='none', allProps=False)
+fn('WLAN übernehmen', """\
+try { flow.set('wifi', JSON.parse(msg.payload)); node.status({ fill: 'green', text: 'geladen' }); }
+catch (e) { node.status({ fill: 'yellow', text: 'leer' }); }
+return null;""", 600, 480)
+WIFI_FN = """\
+const DEVS = { mini: 'Mini Dash (7")', cabin: 'Cabin Watch (3.5")' };
+const all = flow.get('wifi') || {};
+const stat = flow.get('wifi_status') || {};
+const ipok = (s) => /^\\d{1,3}(\\.\\d{1,3}){3}$/.test(s || '') && s.split('.').every((x) => +x <= 255);
+const bad = (e) => { msg.statusCode = 400; msg.payload = { error: e }; return [msg, null]; };
+const pub = (d) => ({ rev: d.rev || 0, changed: d.changed || 0, by: d.by || '', note: d.note || '',
+    nets: [0, 1].map((i) => { const n = (d.nets || [])[i] || {};
+        return { ssid: n.ssid || '', hasPass: !!n.pass, dhcp: n.dhcp !== false, ip: n.ip || '', gw: n.gw || '',
+                 mask: n.mask || '255.255.255.0', dns: n.dns || '' }; }) });
+
+if (msg.req.method === 'GET' && /\\/device$/.test(msg.req.path)) {          // vom Display
+    const q = msg.req.query || {}, dev = q.dev;
+    if (!DEVS[dev]) return bad('unknown device');
+    stat[dev] = { ssid: q.ssid || '', ip: q.ip || '', rssi: Number(q.rssi), mac: q.mac || '', rev: Number(q.rev) || 0,
+                  mode: q.mode || '', ts: Date.now() };
+    flow.set('wifi_status', stat);
+    const d = all[dev] || {};
+    msg.payload = { rev: d.rev || 0, nets: d.nets || [] };
+    return [msg, null];
+}
+if (msg.req.method === 'GET') {                                          // Settings-Seite
+    msg.payload = { now: Date.now(), devices: Object.keys(DEVS).map((k) => ({ id: k, name: DEVS[k], cfg: pub(all[k] || {}), status: stat[k] || null })) };
+    return [msg, null];
+}
+const b = msg.payload || {}, dev = b.dev;
+if (!DEVS[dev]) return bad('unknown device');
+const fromDev = b.source === 'device';
+const old = all[dev] || { rev: 0, nets: [] };
+const nets = [0, 1].map((i) => {
+    const n = (b.nets || [])[i] || {}, o = (old.nets || [])[i] || {};
+    const ssid = String(n.ssid || '').trim().slice(0, 32);
+    let pass = n.pass;
+    if (!fromDev && (pass === undefined || pass === null || pass === '')) pass = ssid === o.ssid ? (o.pass || '') : '';
+    return { ssid, pass: String(pass || ''), dhcp: n.dhcp !== false, ip: String(n.ip || '').trim(), gw: String(n.gw || '').trim(),
+             mask: String(n.mask || '255.255.255.0').trim(), dns: String(n.dns || '').trim() };
+});
+for (const n of nets) if (!n.dhcp && ipok(n.ip)) {          // leeres Gateway → x.x.x.1, leere Maske → /24
+    if (!n.gw) n.gw = n.ip.split('.').slice(0, 3).join('.') + '.1';
+    if (!n.mask) n.mask = '255.255.255.0';
+}
+if (!nets[0].ssid && !nets[1].ssid) return bad('At least one network is required');
+for (let i = 0; i < 2; i++) {
+    const n = nets[i], L = 'Network ' + (i + 1) + ': ';
+    if (!n.ssid) continue;
+    if (n.pass.length && (n.pass.length < 8 || n.pass.length > 63)) return bad(L + 'password must be 8-63 characters');
+    if (!n.dhcp && !(ipok(n.ip) && ipok(n.gw) && ipok(n.mask))) return bad(L + 'fixed IP needs a valid IP address (e.g. 192.168.0.10)');
+    if (!n.dhcp && n.dns && !ipok(n.dns)) return bad(L + 'invalid DNS address');
+}
+const rec = { rev: (old.rev || 0) + 1, nets, changed: Date.now(), by: fromDev ? 'device' : 'settings page',
+              note: fromDev ? String(b.note || '').slice(0, 80) : '' };
+all[dev] = rec;
+flow.set('wifi', all);
+node.status({ fill: 'green', text: dev + ' rev ' + rec.rev + ' (' + rec.by + ')' });
+msg.payload = { ok: true, rev: rec.rev };
+return [msg, { payload: JSON.stringify(all, null, 2) }];"""
+http_in('GET wifi', '/esp-dash/api/wifi', 'get', 150, 500, 'WLAN API')
+http_in('GET wifi device', '/esp-dash/api/wifi/device', 'get', 150, 520, 'WLAN API')
+http_in('POST wifi', '/esp-dash/api/wifi', 'post', 150, 540, 'WLAN API')
+fn('WLAN API', WIFI_FN, 380, 520, [['wifi antwort'], ['WLAN schreiben']], outputs=2)
+http_out('wifi antwort', 600, 500, {'Cache-Control': 'no-store'})
+add('WLAN schreiben', 'file', 610, 540, filename=WIFI_FILE, filenameType='str',
+    appendNewline=False, createDir=True, overwriteFile='true', encoding='utf8')
+
 # ── 4) State + Quittieren (für ESP32 und Simulator) ──────────────────────────
 http_in('GET state', '/esp-dash/api/state', 'get', 150, 520, 'State')
 fn('State', """\
@@ -487,6 +562,25 @@ msg.payload = st || { v: 1, status: 'warn', blink: false, msg: 'Starting ...',
     batt: { st: 'na' }, energy: { ok: false }, weather: { ok: false }, engine: {}, tanks: [], sos: {}, ais: { targets: [] }, sail: { rig: {} }, water: { st: 'na' }, baro: { st: 'na', hist: [] }, wind: { st: 'na', hist: [] }, anchor: { st: 'na' } };
 return msg;""", 360, 520, [['state antwort']])
 http_out('state antwort', 560, 520, {'Cache-Control': 'no-store'})
+
+# Cabin Watch (3,5"-Display in der Kabine): nur Uhr, Anker, Wind, Bordbatterie, Druck (~1 KB statt ~6 KB)
+http_in('GET cabin', '/esp-dash/api/cabin', 'get', 150, 550, 'Cabin')
+fn('Cabin', """\
+const s = flow.get('state');
+if (!s) { msg.payload = { v: 1, stale: true }; return msg; }
+const a = s.anchor || {}, m = a.map || {}, w = s.wind || {}, t = (s.weather && s.weather.today) || {};
+const d = new Date(s.ts * 1000).toLocaleDateString('en-GB', { timeZone: s.tz || 'UTC', weekday: 'short', day: '2-digit', month: 'short' });
+msg.payload = {
+    v: 1, ts: s.ts, time: s.time, utc: s.utc, date: d.replace(',', '').toUpperCase(), sr: t.sr || null, ss: t.ss || null,
+    status: s.status, blink: s.blink, acked: s.acked, beep: s.beep, keys: s.alarmKeys || [],
+    anc: { st: a.st, act: !!a.act, dist: a.dist, rad: a.rad, depth: m.depth, chain: m.chain, hdg: m.hdg,
+           boff: m.boff || null, track: (m.track || []).slice(-60) },
+    wind: { st: w.st, kn: w.kn, max: w.max, thr: w.thr, src: w.src || 'AWS', win: w.win, hist: (w.hist || []).slice(-60) },
+    batt: { st: (s.batt || {}).st, soc: (s.batt || {}).soc },
+    baro: { st: (s.baro || {}).st, hpa: (s.baro || {}).hpa, d: (s.baro || {}).d },
+};
+return msg;""", 360, 550, [['cabin antwort']])
+http_out('cabin antwort', 560, 550, {'Cache-Control': 'no-store'})
 
 http_in('POST ack', '/esp-dash/api/ack', 'post', 150, 580, 'Quittieren')
 fn('Quittieren', """\

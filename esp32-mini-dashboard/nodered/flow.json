@@ -1168,6 +1168,165 @@
       "encoding": "utf8"
     },
     {
+      "id": "861fdb7c295624fb",
+      "type": "inject",
+      "z": "057ae48bc2fee831",
+      "name": "WLAN laden (Start)",
+      "x": 160,
+      "y": 480,
+      "wires": [
+        [
+          "2cf48eb94d1143bd"
+        ]
+      ],
+      "props": [],
+      "repeat": "",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "0.5",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
+    },
+    {
+      "id": "2cf48eb94d1143bd",
+      "type": "file in",
+      "z": "057ae48bc2fee831",
+      "name": "WLAN lesen",
+      "x": 380,
+      "y": 480,
+      "wires": [
+        [
+          "0e5c0a7116188277"
+        ]
+      ],
+      "filename": "/home/admin/esp-dash/wifi.json",
+      "filenameType": "str",
+      "format": "utf8",
+      "chunk": false,
+      "sendError": false,
+      "encoding": "none",
+      "allProps": false
+    },
+    {
+      "id": "0e5c0a7116188277",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "WLAN übernehmen",
+      "x": 600,
+      "y": 480,
+      "wires": [],
+      "func": "try { flow.set('wifi', JSON.parse(msg.payload)); node.status({ fill: 'green', text: 'geladen' }); }\ncatch (e) { node.status({ fill: 'yellow', text: 'leer' }); }\nreturn null;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "136dea7ddd442d31",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "GET wifi",
+      "x": 150,
+      "y": 500,
+      "wires": [
+        [
+          "136ef2a370756f01"
+        ]
+      ],
+      "url": "/esp-dash/api/wifi",
+      "method": "get",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "3a9c2d44e2418b39",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "GET wifi device",
+      "x": 150,
+      "y": 520,
+      "wires": [
+        [
+          "136ef2a370756f01"
+        ]
+      ],
+      "url": "/esp-dash/api/wifi/device",
+      "method": "get",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "710dfc868e8cee92",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "POST wifi",
+      "x": 150,
+      "y": 540,
+      "wires": [
+        [
+          "136ef2a370756f01"
+        ]
+      ],
+      "url": "/esp-dash/api/wifi",
+      "method": "post",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "136ef2a370756f01",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "WLAN API",
+      "x": 380,
+      "y": 520,
+      "wires": [
+        [
+          "1d4edabe0f5a73a7"
+        ],
+        [
+          "2c94d3d67d968253"
+        ]
+      ],
+      "func": "const DEVS = { mini: 'Mini Dash (7\")', cabin: 'Cabin Watch (3.5\")' };\nconst all = flow.get('wifi') || {};\nconst stat = flow.get('wifi_status') || {};\nconst ipok = (s) => /^\\d{1,3}(\\.\\d{1,3}){3}$/.test(s || '') && s.split('.').every((x) => +x <= 255);\nconst bad = (e) => { msg.statusCode = 400; msg.payload = { error: e }; return [msg, null]; };\nconst pub = (d) => ({ rev: d.rev || 0, changed: d.changed || 0, by: d.by || '', note: d.note || '',\n    nets: [0, 1].map((i) => { const n = (d.nets || [])[i] || {};\n        return { ssid: n.ssid || '', hasPass: !!n.pass, dhcp: n.dhcp !== false, ip: n.ip || '', gw: n.gw || '',\n                 mask: n.mask || '255.255.255.0', dns: n.dns || '' }; }) });\n\nif (msg.req.method === 'GET' && /\\/device$/.test(msg.req.path)) {          // vom Display\n    const q = msg.req.query || {}, dev = q.dev;\n    if (!DEVS[dev]) return bad('unknown device');\n    stat[dev] = { ssid: q.ssid || '', ip: q.ip || '', rssi: Number(q.rssi), mac: q.mac || '', rev: Number(q.rev) || 0,\n                  mode: q.mode || '', ts: Date.now() };\n    flow.set('wifi_status', stat);\n    const d = all[dev] || {};\n    msg.payload = { rev: d.rev || 0, nets: d.nets || [] };\n    return [msg, null];\n}\nif (msg.req.method === 'GET') {                                          // Settings-Seite\n    msg.payload = { now: Date.now(), devices: Object.keys(DEVS).map((k) => ({ id: k, name: DEVS[k], cfg: pub(all[k] || {}), status: stat[k] || null })) };\n    return [msg, null];\n}\nconst b = msg.payload || {}, dev = b.dev;\nif (!DEVS[dev]) return bad('unknown device');\nconst fromDev = b.source === 'device';\nconst old = all[dev] || { rev: 0, nets: [] };\nconst nets = [0, 1].map((i) => {\n    const n = (b.nets || [])[i] || {}, o = (old.nets || [])[i] || {};\n    const ssid = String(n.ssid || '').trim().slice(0, 32);\n    let pass = n.pass;\n    if (!fromDev && (pass === undefined || pass === null || pass === '')) pass = ssid === o.ssid ? (o.pass || '') : '';\n    return { ssid, pass: String(pass || ''), dhcp: n.dhcp !== false, ip: String(n.ip || '').trim(), gw: String(n.gw || '').trim(),\n             mask: String(n.mask || '255.255.255.0').trim(), dns: String(n.dns || '').trim() };\n});\nfor (const n of nets) if (!n.dhcp && ipok(n.ip)) {          // leeres Gateway → x.x.x.1, leere Maske → /24\n    if (!n.gw) n.gw = n.ip.split('.').slice(0, 3).join('.') + '.1';\n    if (!n.mask) n.mask = '255.255.255.0';\n}\nif (!nets[0].ssid && !nets[1].ssid) return bad('At least one network is required');\nfor (let i = 0; i < 2; i++) {\n    const n = nets[i], L = 'Network ' + (i + 1) + ': ';\n    if (!n.ssid) continue;\n    if (n.pass.length && (n.pass.length < 8 || n.pass.length > 63)) return bad(L + 'password must be 8-63 characters');\n    if (!n.dhcp && !(ipok(n.ip) && ipok(n.gw) && ipok(n.mask))) return bad(L + 'fixed IP needs a valid IP address (e.g. 192.168.0.10)');\n    if (!n.dhcp && n.dns && !ipok(n.dns)) return bad(L + 'invalid DNS address');\n}\nconst rec = { rev: (old.rev || 0) + 1, nets, changed: Date.now(), by: fromDev ? 'device' : 'settings page',\n              note: fromDev ? String(b.note || '').slice(0, 80) : '' };\nall[dev] = rec;\nflow.set('wifi', all);\nnode.status({ fill: 'green', text: dev + ' rev ' + rec.rev + ' (' + rec.by + ')' });\nmsg.payload = { ok: true, rev: rec.rev };\nreturn [msg, { payload: JSON.stringify(all, null, 2) }];",
+      "outputs": 2,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "1d4edabe0f5a73a7",
+      "type": "http response",
+      "z": "057ae48bc2fee831",
+      "name": "wifi antwort",
+      "x": 600,
+      "y": 500,
+      "wires": [],
+      "statusCode": "",
+      "headers": {
+        "Cache-Control": "no-store"
+      }
+    },
+    {
+      "id": "2c94d3d67d968253",
+      "type": "file",
+      "z": "057ae48bc2fee831",
+      "name": "WLAN schreiben",
+      "x": 610,
+      "y": 540,
+      "wires": [],
+      "filename": "/home/admin/esp-dash/wifi.json",
+      "filenameType": "str",
+      "appendNewline": false,
+      "createDir": true,
+      "overwriteFile": "true",
+      "encoding": "utf8"
+    },
+    {
       "id": "370dadcc35d9fc53",
       "type": "http in",
       "z": "057ae48bc2fee831",
@@ -1211,6 +1370,56 @@
       "name": "state antwort",
       "x": 560,
       "y": 520,
+      "wires": [],
+      "statusCode": "",
+      "headers": {
+        "Cache-Control": "no-store"
+      }
+    },
+    {
+      "id": "cf428f97982a579a",
+      "type": "http in",
+      "z": "057ae48bc2fee831",
+      "name": "GET cabin",
+      "x": 150,
+      "y": 550,
+      "wires": [
+        [
+          "9b6c9682f8318775"
+        ]
+      ],
+      "url": "/esp-dash/api/cabin",
+      "method": "get",
+      "upload": false,
+      "swaggerDoc": ""
+    },
+    {
+      "id": "9b6c9682f8318775",
+      "type": "function",
+      "z": "057ae48bc2fee831",
+      "name": "Cabin",
+      "x": 360,
+      "y": 550,
+      "wires": [
+        [
+          "a6089626d16ad693"
+        ]
+      ],
+      "func": "const s = flow.get('state');\nif (!s) { msg.payload = { v: 1, stale: true }; return msg; }\nconst a = s.anchor || {}, m = a.map || {}, w = s.wind || {}, t = (s.weather && s.weather.today) || {};\nconst d = new Date(s.ts * 1000).toLocaleDateString('en-GB', { timeZone: s.tz || 'UTC', weekday: 'short', day: '2-digit', month: 'short' });\nmsg.payload = {\n    v: 1, ts: s.ts, time: s.time, utc: s.utc, date: d.replace(',', '').toUpperCase(), sr: t.sr || null, ss: t.ss || null,\n    status: s.status, blink: s.blink, acked: s.acked, beep: s.beep, keys: s.alarmKeys || [],\n    anc: { st: a.st, act: !!a.act, dist: a.dist, rad: a.rad, depth: m.depth, chain: m.chain, hdg: m.hdg,\n           boff: m.boff || null, track: (m.track || []).slice(-60) },\n    wind: { st: w.st, kn: w.kn, max: w.max, thr: w.thr, src: w.src || 'AWS', win: w.win, hist: (w.hist || []).slice(-60) },\n    batt: { st: (s.batt || {}).st, soc: (s.batt || {}).soc },\n    baro: { st: (s.baro || {}).st, hpa: (s.baro || {}).hpa, d: (s.baro || {}).d },\n};\nreturn msg;",
+      "outputs": 1,
+      "timeout": 0,
+      "noerr": 0,
+      "initialize": "",
+      "finalize": "",
+      "libs": []
+    },
+    {
+      "id": "a6089626d16ad693",
+      "type": "http response",
+      "z": "057ae48bc2fee831",
+      "name": "cabin antwort",
+      "x": 560,
+      "y": 550,
       "wires": [],
       "statusCode": "",
       "headers": {
@@ -1514,7 +1723,7 @@
       "fieldType": "msg",
       "format": "html",
       "syntax": "plain",
-      "template": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>SUKI Mini Dash Settings</title>\n<style>\n  body{margin:0;background:#000;color:#eee;font-family:-apple-system,\"DejaVu Sans\",Arial,sans-serif;padding:16px}\n  main{max-width:560px;margin:0 auto}\n  h1{font-size:22px;margin:4px 0 16px} h2{font-size:15px;color:#00d000;letter-spacing:2px;margin:22px 0 8px;text-transform:uppercase}\n  .row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #222}\n  .row label{flex:1} .row small{display:block;color:#777;font-size:12px;margin-top:2px}\n  input[type=number],input[type=text],select{width:130px;background:#111;color:#fff;border:1px solid #333;border-radius:8px;padding:8px;font-size:16px}\n  input[type=checkbox]{width:22px;height:22px;accent-color:#00d000}\n  button{background:#00a000;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;font-weight:bold;cursor:pointer}\n  button.sec{background:#333} button.warn{background:#b00000}\n  .bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px} #out{margin-top:12px;color:#aaa;min-height:20px}\n  a{color:#888}\n</style>\n</head>\n<body><main>\n<h1>SUKI Mini Dashboard – Settings</h1>\n<p><a href=\"/esp-dash\">&larr; Back to dashboard</a></p>\n\n<h2>Display</h2>\n<div class=\"row\"><label>Night mode<small>Black/red palette to preserve night vision</small></label><input type=\"checkbox\" id=\"night\"></div>\n\n<div class=\"row\"><label>Alarm sound<small>Buzzer on the display, stops when acknowledged</small></label><input type=\"checkbox\" id=\"soundOn\"></div>\n<div class=\"row\"><label>Sound in night mode</label><select id=\"soundNight\"><option value=\"full\">Full (beeps with blinking)</option><option value=\"short\">Short beep every 2 s</option><option value=\"off\">Silent</option></select></div>\n\n<h2>Wind</h2>\n<div class=\"row\"><label>Wind alarm enabled</label><input type=\"checkbox\" id=\"windAlarmOn\"></div>\n<div class=\"row\"><label>Alarm at (kn)<small>Average over the window set below</small></label><input type=\"number\" id=\"windAlarmKn\" min=\"5\" max=\"80\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (kn)<small>Alarm clears only below threshold minus hysteresis</small></label><input type=\"number\" id=\"windHystKn\" min=\"0\" max=\"10\" step=\"0.5\"></div>\n<div class=\"row\"><label>Averaging window (s)</label><input type=\"number\" id=\"windAvgSec\" min=\"2\" max=\"120\" step=\"1\"></div>\n<div class=\"row\"><label>Chart window</label><select id=\"windWinMin\"><option value=\"2\">2 min</option><option value=\"10\">10 min</option><option value=\"20\">20 min</option><option value=\"30\">30 min</option><option value=\"60\">1 h</option><option value=\"180\">3 h</option><option value=\"360\">6 h</option></select></div>\n<div class=\"row\"><label>Wind source</label><select id=\"windSource\"><option value=\"auto\">Auto (TWS, else AWS)</option><option value=\"true\">True wind (TWS)</option><option value=\"apparent\">Apparent wind (AWS)</option></select></div>\n\n<h2>Battery</h2>\n<div class=\"row\"><label>Battery alarm enabled</label><input type=\"checkbox\" id=\"battAlarmOn\"></div>\n<div class=\"row\"><label>Alarm below SOC (%)</label><input type=\"number\" id=\"battLowSoc\" min=\"5\" max=\"95\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (%)</label><input type=\"number\" id=\"battHystSoc\" min=\"0\" max=\"20\" step=\"1\"></div>\n<div class=\"row\"><label>Voltage fallback (V)<small>only used when no SOC is available, 0 = off</small></label><input type=\"number\" id=\"battLowVolt\" min=\"0\" max=\"60\" step=\"0.1\"></div>\n<div class=\"row\"><label>Battery (SignalK instance)</label><select id=\"battInstance\"><option value=\"auto\">Auto (lowest instance with SOC)</option></select></div>\n\n<h2>Water</h2>\n<div class=\"row\"><label>Water alarm enabled</label><input type=\"checkbox\" id=\"waterAlarmOn\"></div>\n<div class=\"row\"><label>Alarm below (%)</label><input type=\"number\" id=\"waterLowPct\" min=\"0\" max=\"95\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (%)</label><input type=\"number\" id=\"waterHystPct\" min=\"0\" max=\"20\" step=\"1\"></div>\n<div class=\"row\"><label>Tank (SignalK instance)</label><select id=\"waterInstance\"><option value=\"auto\">Auto (lowest instance)</option></select></div>\n\n<h2>Barometer</h2>\n<div class=\"row\"><label>Pressure alarm enabled</label><input type=\"checkbox\" id=\"baroAlarmOn\"></div>\n<div class=\"row\"><label>Alarm below (hPa)</label><input type=\"number\" id=\"baroLowHpa\" min=\"900\" max=\"1050\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (hPa)</label><input type=\"number\" id=\"baroHystHpa\" min=\"0\" max=\"10\" step=\"0.5\"></div>\n<div class=\"row\"><label>Chart window<small>Weather trends show over 1–3 h; short windows mostly show sensor noise</small></label><select id=\"baroWinMin\"><option value=\"2\">2 min</option><option value=\"10\">10 min</option><option value=\"20\">20 min</option><option value=\"30\">30 min</option><option value=\"60\">1 h</option><option value=\"180\">3 h</option><option value=\"360\">6 h</option></select></div>\n\n<h2>Sailing</h2>\n<div class=\"row\"><label>Wind instrument style</label><select id=\"sailStyle\"><option value=\"tacho\">Gauge (like tachometer)</option><option value=\"classic\">Classic SailSteer</option></select></div>\n<div class=\"row\"><label>Close-hauled sectors (° AWA)<small>Red/green band on the wind instrument</small></label><span><input type=\"number\" id=\"sailCloseFrom\" min=\"0\" max=\"90\" step=\"1\" style=\"width:70px\"> – <input type=\"number\" id=\"sailCloseTo\" min=\"0\" max=\"120\" step=\"1\" style=\"width:70px\"></span></div>\n\n<h2>AIS</h2>\n<div class=\"row\"><label>Cruising alarm: CPA below (NM)</label><input type=\"number\" id=\"aisCruiseNm\" min=\"0.1\" max=\"5\" step=\"0.1\"></div>\n<div class=\"row\"><label>Offshore alarm: CPA below (NM)</label><input type=\"number\" id=\"aisOffshoreNm\" min=\"0.2\" max=\"10\" step=\"0.1\"></div>\n<div class=\"row\"><label>Only if closest approach within (min)</label><input type=\"number\" id=\"aisTcpaMin\" min=\"1\" max=\"120\" step=\"1\"></div>\n\n<h2>Emergency (VHF)</h2>\n<div class=\"row\"><label>Persons on board<small>Read out in MAYDAY / PAN PAN</small></label><input type=\"number\" id=\"sosPob\" min=\"1\" max=\"30\" step=\"1\"></div>\n<div class=\"row\" style=\"flex-wrap:wrap\"><label style=\"flex-basis:100%\">Vessel description<small>Helps rescuers find you, e.g. \"white sailing trimaran, 14 metres\"</small></label><input type=\"text\" id=\"sosDesc\" maxlength=\"40\" style=\"width:100%;margin-top:8px\"></div>\n\n<h2>Tanks</h2>\n<div class=\"row\"><label>Black water: orange from (%)</label><input type=\"number\" id=\"bwWarnPct\" min=\"10\" max=\"100\" step=\"1\"></div>\n<div class=\"row\"><label>Black water: red from (%)</label><input type=\"number\" id=\"bwHighPct\" min=\"10\" max=\"100\" step=\"1\"></div>\n<div class=\"row\"><label>Swap Black Main / Guest<small>By default the lower SignalK instance is Main</small></label><input type=\"checkbox\" id=\"bwSwap\"></div>\n<div class=\"row\"><label>Diesel: orange below (%)</label><input type=\"number\" id=\"fuelWarnPct\" min=\"0\" max=\"90\" step=\"1\"></div>\n<div class=\"row\"><label>Diesel: red below (%)</label><input type=\"number\" id=\"fuelLowPct\" min=\"0\" max=\"90\" step=\"1\"></div>\n\n<h2>Rig load sensors</h2>\n<div class=\"row\"><label>Rig load alarm enabled</label><input type=\"checkbox\" id=\"rigAlarmOn\"></div>\n<div class=\"row\"><label>Green up to (t)<small>Above this the value turns orange (no alarm)</small></label><input type=\"number\" id=\"rigWarnT\" min=\"0.5\" max=\"20\" step=\"0.1\"></div>\n<div class=\"row\"><label>Alarm above (t)<small>Screen blinks + buzzer, port and starboard separately</small></label><input type=\"number\" id=\"rigAlarmT\" min=\"0.5\" max=\"25\" step=\"0.1\"></div>\n<div class=\"row\"><label>Hysteresis (t)</label><input type=\"number\" id=\"rigHystT\" min=\"0\" max=\"2\" step=\"0.05\"></div>\n<div class=\"row\"><label>Bar scale max (t)</label><input type=\"number\" id=\"rigScaleT\" min=\"1\" max=\"30\" step=\"0.5\"></div>\n\n<h2>Engine</h2>\n<div class=\"row\"><label>Coolant temperature alarm<small>Volvo Penta D2-60: thermostat opens 75 °C, fully open 87 °C</small></label><input type=\"checkbox\" id=\"engTempAlarmOn\"></div>\n<div class=\"row\"><label>Warning from (°C)<small>Orange, no blinking</small></label><input type=\"number\" id=\"engTempWarnC\" min=\"40\" max=\"130\" step=\"1\"></div>\n<div class=\"row\"><label>Alarm from (°C)<small>TEMP box + screen blink, buzzer</small></label><input type=\"number\" id=\"engTempAlarmC\" min=\"40\" max=\"130\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (°C)</label><input type=\"number\" id=\"engTempHystC\" min=\"0\" max=\"10\" step=\"1\"></div>\n<div class=\"row\"><label>Tachometer max (rpm)</label><input type=\"number\" id=\"engMaxRpm\" min=\"1000\" max=\"6000\" step=\"100\"></div>\n<div class=\"row\"><label>Red zone from (rpm)</label><input type=\"number\" id=\"engRedRpm\" min=\"500\" max=\"6000\" step=\"100\"></div>\n<div class=\"row\"><label>Green zone (rpm)<small>Economical cruising range</small></label><span><input type=\"number\" id=\"engGreenFrom\" min=\"0\" max=\"6000\" step=\"100\" style=\"width:80px\"> – <input type=\"number\" id=\"engGreenTo\" min=\"0\" max=\"6000\" step=\"100\" style=\"width:80px\"></span></div>\n<div class=\"row\"><label>Diesel tank (SignalK)</label><select id=\"fuelInstance\"><option value=\"auto\">Auto (first fuel/diesel tank)</option></select></div>\n<div class=\"row\"><label>Use fuel-rate sensor<small>If the engine sends fuel.rate via NMEA 2000; otherwise the curve below is used</small></label><input type=\"checkbox\" id=\"fuelUseSensor\"></div>\n<div class=\"row\" style=\"flex-wrap:wrap\"><label style=\"flex-basis:100%\">Fuel curve (rpm:l/h)<small>Comma-separated points, linear in between — take the values from your engine manual</small></label><input type=\"text\" id=\"fuelCurve\" style=\"width:100%;margin-top:8px\"></div>\n\n<h2>Thunderstorm warnings</h2>\n<div class=\"row\"><label>Thunderstorm alarm<small>Official warnings from MeteoAlarm (national weather services) for the region at the GPS position. Orange and red = alarm, acknowledge silences it for 4 h. Yellow = note only.</small></label><input type=\"checkbox\" id=\"stormAlarmOn\"></div>\n\n<h2>Anchor</h2>\n<div class=\"row\"><label>Show anchor alarm<small>Status comes from Supabase (anchor-check)</small></label><input type=\"checkbox\" id=\"anchorAlarmOn\"></div>\n<div class=\"row\"><label>Local fallback<small>Drag check against the last known anchor position while the cloud is unreachable</small></label><input type=\"checkbox\" id=\"anchorLocalFallback\"></div>\n\n<h2>General</h2>\n<div class=\"row\"><label>Acknowledge stops blinking for (min)</label><input type=\"number\" id=\"ackMinutes\" min=\"1\" max=\"120\" step=\"1\"></div>\n<div class=\"row\"><label>Data stale after (s)</label><input type=\"number\" id=\"staleSec\" min=\"5\" max=\"300\" step=\"1\"></div>\n<div class=\"row\"><label>Time zone<small>Set automatically from the GPS position (incl. summer/winter time)</small></label><span id=\"tzAuto\" style=\"color:#aaa\">--</span></div>\n\n<div class=\"bar\">\n  <button id=\"save\">Save</button>\n  <button class=\"warn\" id=\"test\">Test alarm 30 s</button>\n  <button class=\"sec\" id=\"reload\">Reload</button>\n</div>\n<div id=\"out\"></div>\n</main>\n<script>\nvar NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','aisCruiseNm','aisOffshoreNm','aisTcpaMin','sailCloseFrom','sailCloseTo','sosPob','bwWarnPct','bwHighPct','fuelWarnPct','fuelLowPct','engTempWarnC','engTempAlarmC','engTempHystC','rigWarnT','rigAlarmT','rigHystT','rigScaleT','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec'];\nvar BOOL = ['night','soundOn','baroAlarmOn','rigAlarmOn','bwSwap','engTempAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback','stormAlarmOn'];\nvar STR = ['sailStyle','sosDesc','soundNight','fuelInstance','fuelCurve','windSource','battInstance','waterInstance'];\nfunction $(id){return document.getElementById(id);}\nfunction req(method, url, body, cb){\n  var x = new XMLHttpRequest(); x.open(method, url); x.setRequestHeader('Content-Type','application/json');\n  x.onload = function(){ var d=null; try{d=JSON.parse(x.responseText);}catch(e){} cb(x.status, d); };\n  x.onerror = function(){ cb(0, null); }; x.send(body ? JSON.stringify(body) : null);\n}\nfunction load(){\n  req('GET','/esp-dash/api/config',null,function(st,d){\n    if(st!==200||!d){ $('out').textContent='Failed to load'; return; }\n    var sel=$('battInstance'); sel.length=1;\n    (d.batteries||[]).forEach(function(b){\n      var o=document.createElement('option'); o.value=b.id;\n      o.textContent='Instance '+b.id+' – '+(b.soc!=null?b.soc+' %':'no SOC')+', '+(b.v!=null?b.v+' V':'-')+', '+(b.a!=null?b.a+' A':'-');\n      sel.appendChild(o);\n    });\n    var ts=$('waterInstance'); ts.length=1;\n    (d.tanks||[]).forEach(function(t){\n      var o=document.createElement('option'); o.value=t.id;\n      o.textContent='Tank '+t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');\n      ts.appendChild(o);\n    });\n    var fs=$('fuelInstance'); fs.length=1;\n    (d.fuelTanks||[]).forEach(function(t){\n      var o=document.createElement('option'); o.value=t.id;\n      o.textContent=t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');\n      fs.appendChild(o);\n    });\n    $('tzAuto').textContent = d.config.tzAuto || 'UTC (no position yet)';\n    var c=d.config;\n    NUM.concat(STR).forEach(function(k){ $(k).value=c[k]; });\n    BOOL.forEach(function(k){ $(k).checked=!!c[k]; });\n    $('out').textContent='';\n  });\n}\n$('save').onclick=function(){\n  var c={}; NUM.forEach(function(k){c[k]=parseFloat($(k).value);}); STR.forEach(function(k){c[k]=$(k).value;}); BOOL.forEach(function(k){c[k]=$(k).checked;});\n  req('POST','/esp-dash/api/config',c,function(st,d){ $('out').textContent = st===200 ? 'Saved ✓' : ('Error: '+(d&&d.error||st)); if(st===200) load(); });\n};\n$('test').onclick=function(){ req('POST','/esp-dash/api/config',{testSeconds:30},function(st){ $('out').textContent = st===200?'Test alarm running for 30 s':'Error'; }); };\n$('reload').onclick=load;\nload();\n</script>\n</body>\n</html>\n",
+      "template": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>SUKI Mini Dash Settings</title>\n<style>\n  body{margin:0;background:#000;color:#eee;font-family:-apple-system,\"DejaVu Sans\",Arial,sans-serif;padding:16px}\n  main{max-width:560px;margin:0 auto}\n  h1{font-size:22px;margin:4px 0 16px} h2{font-size:15px;color:#00d000;letter-spacing:2px;margin:22px 0 8px;text-transform:uppercase}\n  .row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #222}\n  .row label{flex:1} .row small{display:block;color:#777;font-size:12px;margin-top:2px}\n  input[type=number],input[type=text],input[type=password],select{width:130px;background:#111;color:#fff;border:1px solid #333;border-radius:8px;padding:8px;font-size:16px}\n  input[type=checkbox]{width:22px;height:22px;accent-color:#00d000}\n  button{background:#00a000;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;font-weight:bold;cursor:pointer}\n  button.sec{background:#333} button.warn{background:#b00000}\n  .bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px} #out{margin-top:12px;color:#aaa;min-height:20px}\n  a{color:#888}\n  .dev{border:1px solid #222;border-radius:10px;padding:4px 12px 14px;margin:10px 0}\n  .dev h3{font-size:16px;margin:12px 0 4px} .wst{font-size:13px;color:#aaa;margin-bottom:6px} .wst b{color:#00d000} .wst .off{color:#ffb300}\n  .net{margin-top:10px} .net h4{font-size:12px;color:#888;letter-spacing:1px;margin:8px 0 4px}\n  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px} .grid label{font-size:12px;color:#888;display:block;margin-bottom:3px}\n  .grid input,.grid select{width:100%;box-sizing:border-box} .full{grid-column:1/-1}\n  .wout{color:#aaa;margin-top:8px;min-height:18px}\n</style>\n</head>\n<body><main>\n<h1>SUKI Mini Dashboard – Settings</h1>\n<p><a href=\"/esp-dash\">&larr; Back to dashboard</a></p>\n\n<h2>Display</h2>\n<div class=\"row\"><label>Night mode<small>Black/red palette to preserve night vision</small></label><input type=\"checkbox\" id=\"night\"></div>\n\n<div class=\"row\"><label>Alarm sound<small>Buzzer on the display, stops when acknowledged</small></label><input type=\"checkbox\" id=\"soundOn\"></div>\n<div class=\"row\"><label>Sound in night mode</label><select id=\"soundNight\"><option value=\"full\">Full (beeps with blinking)</option><option value=\"short\">Short beep every 2 s</option><option value=\"off\">Silent</option></select></div>\n\n<h2>Wind</h2>\n<div class=\"row\"><label>Wind alarm enabled</label><input type=\"checkbox\" id=\"windAlarmOn\"></div>\n<div class=\"row\"><label>Alarm at (kn)<small>Average over the window set below</small></label><input type=\"number\" id=\"windAlarmKn\" min=\"5\" max=\"80\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (kn)<small>Alarm clears only below threshold minus hysteresis</small></label><input type=\"number\" id=\"windHystKn\" min=\"0\" max=\"10\" step=\"0.5\"></div>\n<div class=\"row\"><label>Averaging window (s)</label><input type=\"number\" id=\"windAvgSec\" min=\"2\" max=\"120\" step=\"1\"></div>\n<div class=\"row\"><label>Chart window</label><select id=\"windWinMin\"><option value=\"2\">2 min</option><option value=\"10\">10 min</option><option value=\"20\">20 min</option><option value=\"30\">30 min</option><option value=\"60\">1 h</option><option value=\"180\">3 h</option><option value=\"360\">6 h</option></select></div>\n<div class=\"row\"><label>Wind source</label><select id=\"windSource\"><option value=\"auto\">Auto (TWS, else AWS)</option><option value=\"true\">True wind (TWS)</option><option value=\"apparent\">Apparent wind (AWS)</option></select></div>\n\n<h2>Battery</h2>\n<div class=\"row\"><label>Battery alarm enabled</label><input type=\"checkbox\" id=\"battAlarmOn\"></div>\n<div class=\"row\"><label>Alarm below SOC (%)</label><input type=\"number\" id=\"battLowSoc\" min=\"5\" max=\"95\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (%)</label><input type=\"number\" id=\"battHystSoc\" min=\"0\" max=\"20\" step=\"1\"></div>\n<div class=\"row\"><label>Voltage fallback (V)<small>only used when no SOC is available, 0 = off</small></label><input type=\"number\" id=\"battLowVolt\" min=\"0\" max=\"60\" step=\"0.1\"></div>\n<div class=\"row\"><label>Battery (SignalK instance)</label><select id=\"battInstance\"><option value=\"auto\">Auto (lowest instance with SOC)</option></select></div>\n\n<h2>Water</h2>\n<div class=\"row\"><label>Water alarm enabled</label><input type=\"checkbox\" id=\"waterAlarmOn\"></div>\n<div class=\"row\"><label>Alarm below (%)</label><input type=\"number\" id=\"waterLowPct\" min=\"0\" max=\"95\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (%)</label><input type=\"number\" id=\"waterHystPct\" min=\"0\" max=\"20\" step=\"1\"></div>\n<div class=\"row\"><label>Tank (SignalK instance)</label><select id=\"waterInstance\"><option value=\"auto\">Auto (lowest instance)</option></select></div>\n\n<h2>Barometer</h2>\n<div class=\"row\"><label>Pressure alarm enabled</label><input type=\"checkbox\" id=\"baroAlarmOn\"></div>\n<div class=\"row\"><label>Alarm below (hPa)</label><input type=\"number\" id=\"baroLowHpa\" min=\"900\" max=\"1050\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (hPa)</label><input type=\"number\" id=\"baroHystHpa\" min=\"0\" max=\"10\" step=\"0.5\"></div>\n<div class=\"row\"><label>Chart window<small>Weather trends show over 1–3 h; short windows mostly show sensor noise</small></label><select id=\"baroWinMin\"><option value=\"2\">2 min</option><option value=\"10\">10 min</option><option value=\"20\">20 min</option><option value=\"30\">30 min</option><option value=\"60\">1 h</option><option value=\"180\">3 h</option><option value=\"360\">6 h</option></select></div>\n\n<h2>Sailing</h2>\n<div class=\"row\"><label>Wind instrument style</label><select id=\"sailStyle\"><option value=\"tacho\">Gauge (like tachometer)</option><option value=\"classic\">Classic SailSteer</option></select></div>\n<div class=\"row\"><label>Close-hauled sectors (° AWA)<small>Red/green band on the wind instrument</small></label><span><input type=\"number\" id=\"sailCloseFrom\" min=\"0\" max=\"90\" step=\"1\" style=\"width:70px\"> – <input type=\"number\" id=\"sailCloseTo\" min=\"0\" max=\"120\" step=\"1\" style=\"width:70px\"></span></div>\n\n<h2>AIS</h2>\n<div class=\"row\"><label>Cruising alarm: CPA below (NM)</label><input type=\"number\" id=\"aisCruiseNm\" min=\"0.1\" max=\"5\" step=\"0.1\"></div>\n<div class=\"row\"><label>Offshore alarm: CPA below (NM)</label><input type=\"number\" id=\"aisOffshoreNm\" min=\"0.2\" max=\"10\" step=\"0.1\"></div>\n<div class=\"row\"><label>Only if closest approach within (min)</label><input type=\"number\" id=\"aisTcpaMin\" min=\"1\" max=\"120\" step=\"1\"></div>\n\n<h2>Emergency (VHF)</h2>\n<div class=\"row\"><label>Persons on board<small>Read out in MAYDAY / PAN PAN</small></label><input type=\"number\" id=\"sosPob\" min=\"1\" max=\"30\" step=\"1\"></div>\n<div class=\"row\" style=\"flex-wrap:wrap\"><label style=\"flex-basis:100%\">Vessel description<small>Helps rescuers find you, e.g. \"white sailing trimaran, 14 metres\"</small></label><input type=\"text\" id=\"sosDesc\" maxlength=\"40\" style=\"width:100%;margin-top:8px\"></div>\n\n<h2>Tanks</h2>\n<div class=\"row\"><label>Black water: orange from (%)</label><input type=\"number\" id=\"bwWarnPct\" min=\"10\" max=\"100\" step=\"1\"></div>\n<div class=\"row\"><label>Black water: red from (%)</label><input type=\"number\" id=\"bwHighPct\" min=\"10\" max=\"100\" step=\"1\"></div>\n<div class=\"row\"><label>Swap Black Main / Guest<small>By default the lower SignalK instance is Main</small></label><input type=\"checkbox\" id=\"bwSwap\"></div>\n<div class=\"row\"><label>Diesel: orange below (%)</label><input type=\"number\" id=\"fuelWarnPct\" min=\"0\" max=\"90\" step=\"1\"></div>\n<div class=\"row\"><label>Diesel: red below (%)</label><input type=\"number\" id=\"fuelLowPct\" min=\"0\" max=\"90\" step=\"1\"></div>\n\n<h2>Rig load sensors</h2>\n<div class=\"row\"><label>Rig load alarm enabled</label><input type=\"checkbox\" id=\"rigAlarmOn\"></div>\n<div class=\"row\"><label>Green up to (t)<small>Above this the value turns orange (no alarm)</small></label><input type=\"number\" id=\"rigWarnT\" min=\"0.5\" max=\"20\" step=\"0.1\"></div>\n<div class=\"row\"><label>Alarm above (t)<small>Screen blinks + buzzer, port and starboard separately</small></label><input type=\"number\" id=\"rigAlarmT\" min=\"0.5\" max=\"25\" step=\"0.1\"></div>\n<div class=\"row\"><label>Hysteresis (t)</label><input type=\"number\" id=\"rigHystT\" min=\"0\" max=\"2\" step=\"0.05\"></div>\n<div class=\"row\"><label>Bar scale max (t)</label><input type=\"number\" id=\"rigScaleT\" min=\"1\" max=\"30\" step=\"0.5\"></div>\n\n<h2>Engine</h2>\n<div class=\"row\"><label>Coolant temperature alarm<small>Volvo Penta D2-60: thermostat opens 75 °C, fully open 87 °C</small></label><input type=\"checkbox\" id=\"engTempAlarmOn\"></div>\n<div class=\"row\"><label>Warning from (°C)<small>Orange, no blinking</small></label><input type=\"number\" id=\"engTempWarnC\" min=\"40\" max=\"130\" step=\"1\"></div>\n<div class=\"row\"><label>Alarm from (°C)<small>TEMP box + screen blink, buzzer</small></label><input type=\"number\" id=\"engTempAlarmC\" min=\"40\" max=\"130\" step=\"1\"></div>\n<div class=\"row\"><label>Hysteresis (°C)</label><input type=\"number\" id=\"engTempHystC\" min=\"0\" max=\"10\" step=\"1\"></div>\n<div class=\"row\"><label>Tachometer max (rpm)</label><input type=\"number\" id=\"engMaxRpm\" min=\"1000\" max=\"6000\" step=\"100\"></div>\n<div class=\"row\"><label>Red zone from (rpm)</label><input type=\"number\" id=\"engRedRpm\" min=\"500\" max=\"6000\" step=\"100\"></div>\n<div class=\"row\"><label>Green zone (rpm)<small>Economical cruising range</small></label><span><input type=\"number\" id=\"engGreenFrom\" min=\"0\" max=\"6000\" step=\"100\" style=\"width:80px\"> – <input type=\"number\" id=\"engGreenTo\" min=\"0\" max=\"6000\" step=\"100\" style=\"width:80px\"></span></div>\n<div class=\"row\"><label>Diesel tank (SignalK)</label><select id=\"fuelInstance\"><option value=\"auto\">Auto (first fuel/diesel tank)</option></select></div>\n<div class=\"row\"><label>Use fuel-rate sensor<small>If the engine sends fuel.rate via NMEA 2000; otherwise the curve below is used</small></label><input type=\"checkbox\" id=\"fuelUseSensor\"></div>\n<div class=\"row\" style=\"flex-wrap:wrap\"><label style=\"flex-basis:100%\">Fuel curve (rpm:l/h)<small>Comma-separated points, linear in between — take the values from your engine manual</small></label><input type=\"text\" id=\"fuelCurve\" style=\"width:100%;margin-top:8px\"></div>\n\n<h2>Thunderstorm warnings</h2>\n<div class=\"row\"><label>Thunderstorm alarm<small>Official warnings from MeteoAlarm (national weather services) for the region at the GPS position. Orange and red = alarm, acknowledge silences it for 4 h. Yellow = note only.</small></label><input type=\"checkbox\" id=\"stormAlarmOn\"></div>\n\n<h2>Anchor</h2>\n<div class=\"row\"><label>Show anchor alarm<small>Status comes from Supabase (anchor-check)</small></label><input type=\"checkbox\" id=\"anchorAlarmOn\"></div>\n<div class=\"row\"><label>Local fallback<small>Drag check against the last known anchor position while the cloud is unreachable</small></label><input type=\"checkbox\" id=\"anchorLocalFallback\"></div>\n\n<h2>WiFi</h2>\n<p style=\"color:#888;font-size:13px;margin:4px 0\">Each display picks up changes within 1 minute. If it cannot connect with the new settings it returns to the previous ones after 2 minutes.\nIf no known network is reachable for 1 minute, the display opens its own setup WiFi (password <b>sukisetup</b>) &ndash; scan the QR code on the display, the setup page opens automatically.</p>\n<div id=\"wifiBox\">Loading ...</div>\n\n<h2>General</h2>\n<div class=\"row\"><label>Acknowledge stops blinking for (min)</label><input type=\"number\" id=\"ackMinutes\" min=\"1\" max=\"120\" step=\"1\"></div>\n<div class=\"row\"><label>Data stale after (s)</label><input type=\"number\" id=\"staleSec\" min=\"5\" max=\"300\" step=\"1\"></div>\n<div class=\"row\"><label>Time zone<small>Set automatically from the GPS position (incl. summer/winter time)</small></label><span id=\"tzAuto\" style=\"color:#aaa\">--</span></div>\n\n<div class=\"bar\">\n  <button id=\"save\">Save</button>\n  <button class=\"warn\" id=\"test\">Test alarm 30 s</button>\n  <button class=\"sec\" id=\"reload\">Reload</button>\n</div>\n<div id=\"out\"></div>\n</main>\n<script>\nvar NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','aisCruiseNm','aisOffshoreNm','aisTcpaMin','sailCloseFrom','sailCloseTo','sosPob','bwWarnPct','bwHighPct','fuelWarnPct','fuelLowPct','engTempWarnC','engTempAlarmC','engTempHystC','rigWarnT','rigAlarmT','rigHystT','rigScaleT','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec'];\nvar BOOL = ['night','soundOn','baroAlarmOn','rigAlarmOn','bwSwap','engTempAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback','stormAlarmOn'];\nvar STR = ['sailStyle','sosDesc','soundNight','fuelInstance','fuelCurve','windSource','battInstance','waterInstance'];\nfunction $(id){return document.getElementById(id);}\nfunction req(method, url, body, cb){\n  var x = new XMLHttpRequest(); x.open(method, url); x.setRequestHeader('Content-Type','application/json');\n  x.onload = function(){ var d=null; try{d=JSON.parse(x.responseText);}catch(e){} cb(x.status, d); };\n  x.onerror = function(){ cb(0, null); }; x.send(body ? JSON.stringify(body) : null);\n}\nfunction load(){\n  req('GET','/esp-dash/api/config',null,function(st,d){\n    if(st!==200||!d){ $('out').textContent='Failed to load'; return; }\n    var sel=$('battInstance'); sel.length=1;\n    (d.batteries||[]).forEach(function(b){\n      var o=document.createElement('option'); o.value=b.id;\n      o.textContent='Instance '+b.id+' – '+(b.soc!=null?b.soc+' %':'no SOC')+', '+(b.v!=null?b.v+' V':'-')+', '+(b.a!=null?b.a+' A':'-');\n      sel.appendChild(o);\n    });\n    var ts=$('waterInstance'); ts.length=1;\n    (d.tanks||[]).forEach(function(t){\n      var o=document.createElement('option'); o.value=t.id;\n      o.textContent='Tank '+t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');\n      ts.appendChild(o);\n    });\n    var fs=$('fuelInstance'); fs.length=1;\n    (d.fuelTanks||[]).forEach(function(t){\n      var o=document.createElement('option'); o.value=t.id;\n      o.textContent=t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');\n      fs.appendChild(o);\n    });\n    $('tzAuto').textContent = d.config.tzAuto || 'UTC (no position yet)';\n    var c=d.config;\n    NUM.concat(STR).forEach(function(k){ $(k).value=c[k]; });\n    BOOL.forEach(function(k){ $(k).checked=!!c[k]; });\n    $('out').textContent='';\n  });\n}\n$('save').onclick=function(){\n  var c={}; NUM.forEach(function(k){c[k]=parseFloat($(k).value);}); STR.forEach(function(k){c[k]=$(k).value;}); BOOL.forEach(function(k){c[k]=$(k).checked;});\n  req('POST','/esp-dash/api/config',c,function(st,d){ $('out').textContent = st===200 ? 'Saved ✓' : ('Error: '+(d&&d.error||st)); if(st===200) load(); });\n};\n$('test').onclick=function(){ req('POST','/esp-dash/api/config',{testSeconds:30},function(st){ $('out').textContent = st===200?'Test alarm running for 30 s':'Error'; }); };\n$('reload').onclick=load;\nload();\n\n// ── WiFi der Displays ──\nvar wifiDevs = [];\nfunction el(tag, attrs, html){ var e=document.createElement(tag); for(var k in (attrs||{})) e.setAttribute(k, attrs[k]); if(html!=null) e.innerHTML=html; return e; }\nfunction escH(s){ return String(s==null?'':s).replace(/[&<>\"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c];}); }\nfunction ago(ms){ var s=Math.round(ms/1000); return s<90 ? s+' s ago' : s<5400 ? Math.round(s/60)+' min ago' : Math.round(s/3600)+' h ago'; }\nfunction wifiStatus(d, now){\n  var st=d.status;\n  var hint = '<br><span class=\"off\">Settings saved here only reach the display once it is online. Without a network, use its setup WiFi (QR code on the display).</span>';\n  if(!st) return '<span class=\"off\">Not seen yet (display offline or old firmware)</span>' + hint;\n  var fresh = now - st.ts < 150000;\n  if (fresh) hint = '';\n  var t = (fresh ? '<b>Online</b>' : '<span class=\"off\">Offline</span>') + ' &middot; ' + escH(st.ssid) + ' &middot; ' + escH(st.ip) + ' (' + (st.mode==='static'?'fixed IP':'DHCP') + ')'\n        + (isFinite(st.rssi) ? ' &middot; ' + st.rssi + ' dBm' : '') + ' &middot; last seen ' + ago(now - st.ts);\n  if (st.rev && d.cfg.rev && st.rev !== d.cfg.rev) t += '<br><span class=\"off\">Display has not picked up the latest settings yet</span>';\n  if (d.cfg.note) t += '<br><span class=\"off\">Display: ' + escH(d.cfg.note) + '</span>';\n  return t + hint;\n}\nfunction renderWifi(r){\n  var box=$('wifiBox'); box.innerHTML=''; wifiDevs=r.devices;\n  r.devices.forEach(function(d){\n    var c=el('div',{'class':'dev'});\n    c.appendChild(el('h3',null,escH(d.name)));\n    c.appendChild(el('div',{'class':'wst'},wifiStatus(d, r.now)));\n    d.cfg.nets.forEach(function(n,i){\n      var p='w_'+d.id+'_'+i+'_';\n      var w=el('div',{'class':'net'});\n      w.innerHTML='<h4>NETWORK '+(i+1)+(i?' (optional)':'')+'</h4><div class=\"grid\">'\n        +'<div><label>SSID</label><input type=\"text\" id=\"'+p+'ssid\" maxlength=\"32\" value=\"'+escH(n.ssid)+'\"></div>'\n        +'<div><label>Password</label><input type=\"password\" id=\"'+p+'pass\" maxlength=\"63\" placeholder=\"'+(n.hasPass?'unchanged':'none')+'\"></div>'\n        +'<div class=\"full\"><label>IP address</label><select id=\"'+p+'dhcp\"><option value=\"1\">DHCP (automatic)</option><option value=\"0\">Fixed IP</option></select></div>'\n        +'<div class=\"st'+p+'\"><label>IP</label><input type=\"text\" id=\"'+p+'ip\" value=\"'+escH(n.ip)+'\" placeholder=\"192.168.0.240\"></div>'\n        +'<div class=\"st'+p+'\"><label>Gateway</label><input type=\"text\" id=\"'+p+'gw\" value=\"'+escH(n.gw)+'\" placeholder=\"automatic (x.x.x.1)\"></div>'\n        +'<div class=\"st'+p+'\"><label>Subnet mask</label><input type=\"text\" id=\"'+p+'mask\" value=\"'+escH(n.mask)+'\"></div>'\n        +'<div class=\"st'+p+'\"><label>DNS (empty = gateway)</label><input type=\"text\" id=\"'+p+'dns\" value=\"'+escH(n.dns)+'\"></div></div>';\n      c.appendChild(w);\n      var sel=w.querySelector('select'); sel.value=n.dhcp?'1':'0';\n      var sync=function(){ w.querySelectorAll('.st'+p).forEach(function(x){ x.style.display = sel.value==='1'?'none':'block'; }); };\n      sel.onchange=sync; sync();\n    });\n    var bar=el('div',{'class':'bar'}); var btn=el('button',null,'Save WiFi'); bar.appendChild(btn); c.appendChild(bar);\n    var out=el('div',{'class':'wout'}); c.appendChild(out);\n    btn.onclick=function(){\n      var nets=[0,1].map(function(i){ var p='w_'+d.id+'_'+i+'_';\n        return { ssid:$(p+'ssid').value.trim(), pass:$(p+'pass').value, dhcp:$(p+'dhcp').value==='1',\n                 ip:$(p+'ip').value.trim(), gw:$(p+'gw').value.trim(), mask:$(p+'mask').value.trim(), dns:$(p+'dns').value.trim() }; });\n      req('POST','/esp-dash/api/wifi',{dev:d.id,nets:nets},function(st,res){\n        out.textContent = st===200 ? 'Saved \\u2713 \\u2013 the display picks it up within 1 minute' : ('Error: '+(res&&res.error||st));\n        if(st===200) setTimeout(loadWifi, 800);\n      });\n    };\n    box.appendChild(c);\n  });\n}\nfunction loadWifi(){ req('GET','/esp-dash/api/wifi',null,function(st,r){ if(st===200&&r) renderWifi(r); else $('wifiBox').textContent='WiFi settings not available'; }); }\nloadWifi();\n</script>\n</body>\n</html>\n",
       "output": "str"
     },
     {
