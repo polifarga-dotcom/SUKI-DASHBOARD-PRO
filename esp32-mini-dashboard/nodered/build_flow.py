@@ -17,6 +17,8 @@ MFD_KEY = 'mfd-b00c60fed1bb860778d4c704eb12a8804884377bffafca83'  # anchor_confi
 ANCHOR_URL = f'{MFD_FN}?key={MFD_KEY}'
 CFG_FILE = '/home/admin/esp-dash/config.json'
 WIFI_FILE = '/home/admin/esp-dash/wifi.json'
+FW_FILE = '/home/admin/esp-dash/fw.json'      # Firmware-Angebot je Display (Version, Größe, SHA-256, Auto/Force)
+FW_DIR = '/home/admin/esp-dash/fw'            # <dev>.bin, von build.sh ota hochgeladen
 LABEL = 'ESP32 Mini Dashboard'
 
 HERE = Path(__file__).parent
@@ -500,14 +502,23 @@ if (msg.req.method === 'GET' && /\\/device$/.test(msg.req.path)) {          // v
     const q = msg.req.query || {}, dev = q.dev;
     if (!DEVS[dev]) return bad('unknown device');
     stat[dev] = { ssid: q.ssid || '', ip: q.ip || '', rssi: Number(q.rssi), mac: q.mac || '', rev: Number(q.rev) || 0,
-                  mode: q.mode || '', ts: Date.now() };
+                  mode: q.mode || '', fw: q.fw || '', fwres: q.fwres || '', ts: Date.now() };
     flow.set('wifi_status', stat);
     const d = all[dev] || {};
     msg.payload = { rev: d.rev || 0, nets: d.nets || [] };
+    // Firmware-Update anbieten (nur Displays, die ihre Version melden = OTA-fähige Firmware)
+    const fws = flow.get('fw') || {}, f = fws[dev];
+    if (f && f.ver && q.fw) {
+        if (q.fw === f.ver) { if (f.force) { f.force = false; flow.set('fw', fws); } }
+        else if (f.auto !== false || f.force)
+            msg.payload.fw = { ver: f.ver, size: f.size, sha256: f.sha256, url: '/fw/' + dev + '.bin', force: !!f.force };
+    }
     return [msg, null];
 }
 if (msg.req.method === 'GET') {                                          // Settings-Seite
-    msg.payload = { now: Date.now(), devices: Object.keys(DEVS).map((k) => ({ id: k, name: DEVS[k], cfg: pub(all[k] || {}), status: stat[k] || null })) };
+    const fws = flow.get('fw') || {};
+    msg.payload = { now: Date.now(), devices: Object.keys(DEVS).map((k) => ({ id: k, name: DEVS[k], cfg: pub(all[k] || {}), status: stat[k] || null,
+                                                                             fw: fws[k] || null })) };
     return [msg, null];
 }
 const b = msg.payload || {}, dev = b.dev;
@@ -548,6 +559,56 @@ fn('WLAN API', WIFI_FN, 380, 520, [['wifi antwort'], ['WLAN schreiben']], output
 http_out('wifi antwort', 600, 500, {'Cache-Control': 'no-store'})
 add('WLAN schreiben', 'file', 610, 540, filename=WIFI_FILE, filenameType='str',
     appendNewline=False, createDir=True, overwriteFile='true', encoding='utf8')
+
+# ── 3c) Firmware-Update per WLAN ────────────────────────────────────────────
+# build.sh ota legt <dev>.bin nach FW_DIR und meldet Version/Größe/SHA-256 per POST /fw.
+# Die Displays bekommen das Angebot über /wifi/device (siehe WLAN API) und laden GET /fw/<dev>.bin.
+inject('FW laden (Start)', 160, 600, 'FW lesen Datei', '', [], once_delay=0.5)
+add('FW lesen Datei', 'file in', 380, 600, [['FW übernehmen']], filename=FW_FILE,
+    filenameType='str', format='utf8', chunk=False, sendError=False, encoding='none', allProps=False)
+fn('FW übernehmen', """\
+try { flow.set('fw', JSON.parse(msg.payload)); node.status({ fill: 'green', text: 'geladen' }); }
+catch (e) { node.status({ fill: 'yellow', text: 'leer' }); }
+return null;""", 600, 600)
+http_in('POST fw', '/esp-dash/api/fw', 'post', 150, 640, 'FW API')
+fn('FW API', """\
+// {dev, ver, size, sha256} = neue Firmware (build.sh) · {dev, auto} = Auto-Update an/aus · {dev, force:true} = jetzt aktualisieren
+const DEVS = ['mini', 'cabin'];
+const b = msg.payload || {}, dev = b.dev;
+const bad = (e) => { msg.statusCode = 400; msg.payload = { error: e }; return [msg, null]; };
+if (!DEVS.includes(dev)) return bad('unknown device');
+const all = flow.get('fw') || {};
+const f = all[dev] || { auto: true };
+if (b.ver !== undefined) {
+    if (!/^[\\w.-]{1,31}$/.test(String(b.ver))) return bad('invalid version');
+    if (!/^[0-9a-f]{64}$/i.test(String(b.sha256 || ''))) return bad('invalid sha256');
+    const size = Number(b.size);
+    if (!(size > 100000 && size < 3300000)) return bad('invalid size');
+    Object.assign(f, { ver: String(b.ver), size, sha256: String(b.sha256).toLowerCase(), uploaded: Date.now(), force: false });
+}
+if (b.auto !== undefined) f.auto = !!b.auto;
+if (b.force) { if (!f.ver) return bad('no firmware uploaded'); f.force = true; }
+all[dev] = f;
+flow.set('fw', all);
+node.status({ fill: 'green', text: dev + ' ' + (f.ver || '-') + (f.auto === false ? ' (manual)' : '') + (f.force ? ' force' : '') });
+msg.payload = { ok: true, fw: f };
+return [msg, { payload: JSON.stringify(all, null, 2) }];""", 380, 640, [['fw antwort'], ['FW schreiben']], outputs=2)
+http_out('fw antwort', 600, 640, {'Cache-Control': 'no-store'})
+add('FW schreiben', 'file', 610, 680, filename=FW_FILE, filenameType='str',
+    appendNewline=False, createDir=True, overwriteFile='true', encoding='utf8')
+http_in('GET fw bin', '/esp-dash/api/fw/:file', 'get', 150, 720, 'FW Datei')
+fn('FW Datei', f"""\
+const m = /^(mini|cabin)\\.bin$/.exec(msg.req.params.file || '');
+const f = m && (flow.get('fw') || {{}})[m[1]];
+if (!f || !f.ver) {{ msg.statusCode = 404; msg.payload = 'no firmware'; return [null, msg]; }}
+msg.filename = '{FW_DIR}/' + m[1] + '.bin';
+node.status({{ fill: 'blue', text: m[1] + ' ' + f.ver + ' -> ' + (msg.req.ip || '?') }});
+return [msg, null];""", 380, 720, [['FW bin lesen'], ['fw bin antwort']], outputs=2)
+add('FW bin lesen', 'file in', 590, 720, [['fw bin antwort']], filename='filename', filenameType='msg',
+    format='', chunk=False, sendError=False, encoding='none', allProps=False)
+add('FW bin fehlt', 'catch', 590, 760, [['FW 404']], scope=[nid('FW bin lesen')], uncaught=False)
+fn('FW 404', """msg.statusCode = 404; msg.payload = 'firmware file missing'; return msg;""", 760, 760, [['fw bin antwort']])
+http_out('fw bin antwort', 800, 720, {'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store'})
 
 # ── 4) State + Quittieren (für ESP32 und Simulator) ──────────────────────────
 http_in('GET state', '/esp-dash/api/state', 'get', 150, 520, 'State')

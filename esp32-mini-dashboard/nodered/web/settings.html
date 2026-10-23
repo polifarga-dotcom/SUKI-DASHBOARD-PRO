@@ -187,12 +187,37 @@ function wifiStatus(d, now){
   if (d.cfg.note) t += '<br><span class="off">Display: ' + escH(d.cfg.note) + '</span>';
   return t + hint;
 }
+// Firmware-Update per WLAN: läuft / auf dem Pi / letztes Ergebnis, Auto-Update, „Update now“
+function fwBox(d, now){
+  var f=d.fw||{}, st=d.status||{}, run=st.fw||'', res=st.fwres||'';
+  var w=el('div',{'class':'net'});
+  var t='<h4>FIRMWARE</h4>Running <b>'+escH(run||'unknown (old firmware)')+'</b>';
+  if (f.ver) t+=' &middot; on Pi '+escH(f.ver)+(f.uploaded?' (uploaded '+ago(now-f.uploaded)+')':'');
+  if (f.ver && run && f.ver!==run) t+='<br><span class="off">'+(f.force?'Update requested':'Update pending')+' &ndash; installs within about 1 minute when no alarm is active</span>';
+  else if (f.ver && run===f.ver) t+=' &middot; up to date';
+  if (res) t+='<br>Last update: '+(res==='ok'?'ok':'<span class="off">'+escH(res)+'</span>');
+  w.innerHTML=t;
+  if (f.ver) {
+    var row=el('div',{'class':'row'}); row.innerHTML='<label>Auto-update<small>Install new firmware automatically (never during an alarm)</small></label>';
+    var cb=el('input',{type:'checkbox'}); cb.checked=f.auto!==false; row.appendChild(cb); w.appendChild(row);
+    var out=el('div',{'class':'wout'});
+    cb.onchange=function(){ req('POST','/esp-dash/api/fw',{dev:d.id,auto:cb.checked},function(s2){ out.textContent=s2===200?'Saved \u2713':'Error'; }); };
+    if (run!==f.ver) {
+      var bar=el('div',{'class':'bar'}); var b=el('button',{'class':'sec'},'Update now'); bar.appendChild(b); w.appendChild(bar);
+      b.onclick=function(){ req('POST','/esp-dash/api/fw',{dev:d.id,force:true},function(s2,res2){
+        out.textContent=s2===200?'Requested \u2713 \u2013 the display updates within about 1 minute':('Error: '+(res2&&res2.error||s2)); if(s2===200) setTimeout(loadWifi,800); }); };
+    }
+    w.appendChild(out);
+  }
+  return w;
+}
 function renderWifi(r){
   var box=$('wifiBox'); box.innerHTML=''; wifiDevs=r.devices;
   r.devices.forEach(function(d){
     var c=el('div',{'class':'dev'});
     c.appendChild(el('h3',null,escH(d.name)));
     c.appendChild(el('div',{'class':'wst'},wifiStatus(d, r.now)));
+    if (d.fw || (d.status && d.status.fw)) c.appendChild(fwBox(d, r.now));
     d.cfg.nets.forEach(function(n,i){
       var p='w_'+d.id+'_'+i+'_';
       var w=el('div',{'class':'net'});

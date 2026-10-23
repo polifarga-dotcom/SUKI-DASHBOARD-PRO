@@ -38,6 +38,9 @@ static int curNet = -1;
 enum St : uint8_t { IDLE, SCANNING, CONNECTING, UP };
 static St st = IDLE;
 static char statusLine[96] = "";
+// optional vom Sketch gesetzt (z. B. Firmware-Update): zusätzliche Query-Parameter für /wifi/device und Auswertung der Antwort
+static String (*syncExtra)() = nullptr;
+static void (*syncReply)(JsonVariantConst) = nullptr;
 
 static bool validIp(const char* s) { IPAddress a; return s && *s && a.fromString(s); }
 
@@ -239,7 +242,7 @@ static void sync(const String& dash) {
   HTTPClient http; http.setConnectTimeout(2000); http.setTimeout(3000);
   String url = dash + "/wifi/device?dev=" + devId + "&ssid=" + WiFi.SSID() + "&ip=" + WiFi.localIP().toString() +
                "&rssi=" + String(WiFi.RSSI()) + "&mac=" + WiFi.macAddress() + "&rev=" + String(cfg.rev) +
-               "&mode=" + (cfg.net[curNet < 0 ? 0 : curNet].dhcp ? "dhcp" : "static");
+               "&mode=" + (cfg.net[curNet < 0 ? 0 : curNet].dhcp ? "dhcp" : "static") + (syncExtra ? syncExtra() : String());
   url.replace(" ", "%20");
   if (!http.begin(url)) return;
   int code = http.GET();
@@ -249,6 +252,7 @@ static void sync(const String& dash) {
   http.end();
   if (e) return;
   haveNode = true;
+  if (syncReply) syncReply(d.as<JsonVariantConst>());
   uint32_t nrev = d["rev"] | 0;
   if (pushPending || nrev == 0) {
     JsonDocument b; JsonObject o = b.to<JsonObject>();
@@ -360,6 +364,7 @@ static void loop() {
 }
 
 static bool connected() { return staUp; }
+static void syncSoon() { lastSync = 0; }   // beim nächsten loop()/sync() sofort melden
 static bool apActive() { return apUp; }
 static const char* apSsid() { return apName; }
 static const char* status() { return statusLine; }

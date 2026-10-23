@@ -159,6 +159,29 @@ cd firmware-idf && ./build.sh flash
 Nach dem Flashen bleibt der Chip oft im Flash-Modus → Kabel kurz ab- und wieder anstecken. Hängt die Firmware in
 einer Neustart-Schleife: BOOT gedrückt halten, Kabel einstecken, loslassen, dann flashen. Log: `./build.sh monitor`.
 
+### Firmware-Update per WLAN
+
+Nach dem ersten Flashen per USB geht jedes weitere Update über WLAN, vom Mac aus im Boots-LAN:
+
+```bash
+cd firmware-idf && ./build.sh ota
+```
+
+- `build.sh` setzt die Version auf den Bauzeitpunkt (`fw_version.h`, `FW_VERSION`), baut, kopiert die Datei nach
+  `/home/admin/esp-dash/fw/mini.bin` auf dem Pi und meldet Version, Größe und SHA-256 an Node-RED
+  (`POST /esp-dash/api/fw`, gespeichert in `/home/admin/esp-dash/fw.json`).
+- Das Display meldet beim WLAN-Abgleich (1×/min) seine Version. Liegt eine andere bereit, lädt es
+  `GET /esp-dash/api/fw/mini.bin` in den freien App-Bereich (`app0`/`app1`), prüft SHA-256 und startet neu.
+  Während des Updates steht „UPDATING FIRMWARE xx %“ auf dem Bildschirm.
+- **Nie während eines Alarms** und nie auf dem SOS-Screen. Ein quittierter Alarm hält nur das automatische Update auf.
+- **Rückfallschutz:** Die neue Firmware läuft auf Probe und wird erst bestätigt, wenn sie Node-RED erreicht hat.
+  Ohne Kontakt innerhalb von 3 min, oder wenn sie vorher abstürzt, startet automatisch wieder die alte. Die alte
+  meldet `err:rollback-<version>` und lässt diese Version danach liegen; nur „Update now“ versucht sie erneut.
+- Settings-Seite → WiFi → Gerät → **FIRMWARE**: laufende Version, Version auf dem Pi, letztes Ergebnis,
+  Schalter „Auto-update“ und Knopf „Update now“. Die laufende Version steht auch auf dem Zahnrad-Screen des Displays.
+- Fehlercodes in `fwres`: `http-<code>`, `size`, `sha`, `timeout`, `write`, `image`. Nach einem Fehler versucht es
+  das Display erst nach 30 min wieder.
+
 ### Darstellung (warum so gebaut)
 
 - Gezeichnet wird in 40-Zeilen-Streifen in einen Puffer im internen RAM (nicht direkt im PSRAM, aus dem das Panel
@@ -182,3 +205,33 @@ python3 tools/dev_proxy.py --allow 192.168.178.164
 - Bild bleibt dunkel → Backlight/CH422G-Sequenz in `boardInit()` prüfen (I²C SDA 8 / SCL 9).
 - Serieller Monitor meldet `GT911 touch: NICHT gefunden` → Touch-Reset-Sequenz prüfen.
 - Variante „7B“ (1024×600) braucht andere Auflösung und Timings.
+
+## SignalK watchdog
+
+Problem (2026-10-23): Nach Aus/Ein der Instrumente meldet sich das Yacht-Devices-USB-Gateway neu an. SignalK versucht in dem Moment `/dev/serial/by-id/usb-Yacht_Devices_Ltd._NMEA_2000_USB_Gateway_00300828-if00` zu öffnen, bekommt `No such file or directory` und versucht es nie wieder; der Dienst läuft weiter, liefert aber keine Daten mehr. Abhilfe war `sudo systemctl restart signalk`. Das passiert jetzt automatisch auf dem Pi (`admin@192.168.0.100`):
+
+| Datei | Zweck |
+|---|---|
+| `/etc/udev/rules.d/99-signalk-gateway.rules` | Gateway (USB 0483:a217) wird neu angemeldet → nach 10 s `signalk-watchdog --replug` → Neustart von SignalK (nicht in den ersten 120 s nach dem Booten) |
+| `/usr/local/bin/signalk-watchdog` | Prüfskript; ohne Argument: jüngsten `timestamp` unter `/signalk/v1/api/vessels/self` lesen, Neustart, wenn er älter als 180 s ist **und** das Gateway vorhanden ist |
+| `/etc/systemd/system/signalk-watchdog.{service,timer}` | läuft alle 60 s (erstmals 3 min nach dem Booten) |
+| `/run/signalk-watchdog.state` | Zähler (geht beim Neustart verloren, das ist gewollt) |
+| `/etc/default/signalk-watchdog` (optional) | Overrides: `STALE_SEC=180 COOLDOWN_SEC=600 MAX_TRIES=2 BACKOFF_SEC=3600 GATEWAY=… API=…` |
+
+Schutz vor Neustart-Schleifen: höchstens ein Neustart pro 10 min, 180 s Schonfrist nach jedem SignalK-Start. Kommen nach 2 Neustarts immer noch keine Daten (Instrumente einfach aus), pausiert der Watchdog 1 h und versucht es dann wieder (also höchstens 2 Neustarts pro gut 1 h). Gateway abgesteckt → nichts passiert.
+
+```bash
+# Log ansehen
+ssh admin@192.168.0.100 'journalctl -t signalk-watchdog -n 20 --no-pager'
+# Status / nächster Lauf
+ssh admin@192.168.0.100 'systemctl list-timers signalk-watchdog; cat /run/signalk-watchdog.state'
+# Ausschalten / einschalten
+ssh admin@192.168.0.100 'sudo systemctl disable --now signalk-watchdog.timer'
+ssh admin@192.168.0.100 'sudo systemctl enable --now signalk-watchdog.timer'
+# Test: Datenausfall simulieren (falscher API-Pfad → Neustart 1/2)
+ssh admin@192.168.0.100 'sudo env API=http://localhost:3000/signalk/v1/api/vessels/self/bogus STALE_SEC=5 COOLDOWN_SEC=0 /usr/local/bin/signalk-watchdog'
+# Test: Gateway-Neuanmeldung simulieren (Neustart nach 10 s)
+ssh admin@192.168.0.100 'sudo udevadm trigger --action=add /dev/ttyACM0'
+```
+
+Getestet am 2026-10-23: simulierter Ausfall → 2 Neustarts → 1 h Pause; danach „data resumed“; `udevadm trigger` → Neustart nach 15 s, Daten fließen wieder.

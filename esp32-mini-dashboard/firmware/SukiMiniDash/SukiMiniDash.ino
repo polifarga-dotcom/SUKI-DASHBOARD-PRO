@@ -18,6 +18,10 @@
 #include "fonts_bold.h"
 #include "secrets.h"
 #include "SukiWifi.h"   // WLAN: 2 Netze, DHCP/feste IP, Abgleich mit Node-RED, Einrichtungs-WLAN
+#if __has_include("fw_version.h")
+#include "fw_version.h"  // von build.sh erzeugt: #define FW_VERSION "JJJJ-MM-TT-hhmm"
+#endif
+#include "ota.h"        // Firmware-Update per WLAN (vom Pi), mit automatischem Rückfall
 #ifndef DASH_URL_WIFI1
 #define DASH_URL_WIFI1 ""
 #endif
@@ -616,15 +620,25 @@ static void parseState(const char* body, size_t len) {
 
 static void netTask(void*) {
   // WLAN-Verwaltung (SukiWifi.h): Netze + DHCP/feste IP aus dem NVS, Einstellungen per Node-RED-Settings-Seite
+  sw::syncExtra = ota::syncExtra; sw::syncReply = ota::syncReply;   // Firmware-Version melden, Update-Angebot lesen
   sw::begin("mini", "SUKI-MiniDash");
   uint32_t lastPoll = 0;
   for (;;) {
     sw::loop();
+    ota::validate(lastOkMs != 0);   // neue Firmware erst bestätigen, wenn Node-RED erreicht wurde
     if (!sw::connected()) {
       vTaskDelay(pdMS_TO_TICKS(50));
       continue;
     }
     sw::sync(dashUrl());
+
+    if (ota::due() && page != 8 && lastOkMs && millis() - lastOkMs < 10000) {
+      // nie während eines Alarms; ein quittierter Alarm hält nur das automatische Update auf, nicht „Update now“
+      xSemaphoreTake(sMutex, portMAX_DELAY);
+      bool calm = S.valid && !S.blink && (strcmp(S.status, "alarm") || ota::offerForce);
+      xSemaphoreGive(sMutex);
+      if (calm) ota::run(dashUrl(), dataRev);
+    }
 
     if (ackRequested) {
       HTTPClient http;
@@ -1035,7 +1049,8 @@ static void settingsPage(bool red, uint16_t bg) {
   fb.fillRect(qx - 10, qy - 10, qs + 20, qs + 20, lgfx::color565(255, 255, 255));  // Ruhezone
   fb.qrcode(url.c_str(), qx, qy, qs, 4);
   centerText(url.c_str(), 400, 380, &fonts::DejaVu18, red ? C_ONRED : C_DIM, bg);
-  centerText(sw::status(), 400, 402, &fonts::DejaVu18, red ? C_ONRED : C_DIM, bg);   // eigenes WLAN: SSID · IP · dBm
+  String st = String(sw::status()) + "  ·  FW " + FW_VERSION;   // eigenes WLAN: SSID · IP · dBm + Firmware-Version
+  centerText(st.c_str(), 400, 402, &fonts::DejaVu18, red ? C_ONRED : C_DIM, bg);
 }
 
 // Verlauf als Hintergrund-Fläche (60 Punkte). Baro: Skala mind. 1 hPa um den Mittelwert.
@@ -2222,7 +2237,23 @@ static void offPage(const DashState& s, bool online) {
   if (online && s.utc[0]) { char b[16]; snprintf(b, sizeof(b), "UTC %s", s.utc); centerText(b, 400, 266, &fonts::DejaVu18, c2, C_BLACK); }
 }
 
+// Firmware-Update läuft: nur dieser Bildschirm (wenig Zeichenarbeit, solange in den Flash geschrieben wird)
+static void otaPage() {
+  fb.fillRect(0, 0, 800, 480, C_BLACK);
+  centerText("UPDATING FIRMWARE", 400, 170, &fonts::DejaVu40, C_WHITE, C_BLACK);
+  char b[64];
+  snprintf(b, sizeof(b), "%s  ->  %s", FW_VERSION, ota::offerVer);
+  centerText(b, 400, 222, &fonts::DejaVu24, C_GREY, C_BLACK);
+  int p = constrain((int)ota::pct, 0, 100);
+  fb.drawRoundRect(150, 260, 500, 28, 6, C_BORDER);
+  fb.fillRoundRect(153, 263, 494 * p / 100, 22, 4, C_BLUE);
+  snprintf(b, sizeof(b), "%d %%", p);
+  centerText(b, 400, 318, &fonts::DejaVu24, C_WHITE, C_BLACK);
+  centerText("Do not switch off - the display restarts by itself", 400, 380, &fonts::DejaVu18, C_DIM, C_BLACK);
+}
+
 static void renderScene(const DashState& s, bool online, bool redPhase) {
+  if (ota::pct >= 0) { otaPage(); return; }
   if (offMode) { offPage(s, online); return; }
   applyPalette(s.night);
   // Alarm-Blinken: nur die Kopfzeile wird rot und ein roter Rahmen erscheint — nicht mehr der ganze Bildschirm.
@@ -2550,6 +2581,7 @@ SET_LOOP_TASK_STACK_SIZE(16 * 1024);
 
 void setup() {
   Serial.begin(115200);
+  ota::begin();
   if (BUZZER_PIN >= 0) { pinMode(BUZZER_PIN, OUTPUT); buzzer(false); }
   boardInit();
   if (!rgbInit()) {   // Panel über esp_lcd mit Bounce-Buffer (Core-Aufteilung Panel/Zeichnen machte es schlechter)
