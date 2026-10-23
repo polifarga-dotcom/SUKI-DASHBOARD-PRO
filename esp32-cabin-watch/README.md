@@ -35,3 +35,19 @@ Any tap while an alarm is sounding = silence. Tap the anchor tile = anchor scree
 ```
 python3 sim/serve.py      # http://localhost:8091  (read-only proxy to Node-RED on the Pi)
 ```
+
+## Build and flash
+
+```
+cd firmware
+./build.sh flash      # build + flash over USB (/dev/cu.wchusbserial*)
+./build.sh ota        # build + put it on the Pi; the device updates itself over WiFi
+./build.sh monitor    # serial log
+```
+
+Firmware updates over WiFi work exactly like on the 7" mini dashboard (shared `ota.h`, see
+`esp32-mini-dashboard/README.md` → "Firmware-Update per WLAN"): the device reports its version once a minute,
+downloads `/esp-dash/api/fw/cabin.bin` when a different one is offered (never during an alarm), and only
+confirms the new firmware after reaching Node-RED — otherwise it returns to the previous one after 3 min.
+The settings page (WiFi → Cabin Watch → FIRMWARE) shows the running version and has "Auto-update" / "Update now";
+the device's NETWORK page shows the version too. Keep `ota.h` and `SukiWifi.h` identical in both sketch folders.

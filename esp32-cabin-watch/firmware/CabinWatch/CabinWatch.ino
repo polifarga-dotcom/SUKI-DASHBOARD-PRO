@@ -17,6 +17,10 @@
 #include "fonts.h"
 #include "secrets.h"
 #include "SukiWifi.h"   // WLAN: 2 Netze, DHCP/feste IP, Abgleich mit Node-RED, Einrichtungs-WLAN
+#if __has_include("fw_version.h")
+#include "fw_version.h"  // von build.sh erzeugt: #define FW_VERSION "JJJJ-MM-TT-hhmmss"
+#endif
+#include "ota.h"        // Firmware-Update per WLAN (vom Pi), mit automatischem Rückfall
 
 #ifndef DASH_URL_WIFI1
 #define DASH_URL_WIFI1 ""
@@ -202,11 +206,13 @@ static int post(const char* path, uint32_t timeout) {
 }
 
 static void netTask(void*) {
+  sw::syncExtra = ota::syncExtra; sw::syncReply = ota::syncReply;   // Firmware-Version melden, Update-Angebot lesen
   sw::begin("cabin", "SUKI-CabinWatch");   // WLAN-Verwaltung (SukiWifi.h)
   static char* buf = (char*)heap_caps_malloc(4096, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   uint32_t lastPoll = 0;
   for (;;) {
     sw::loop();
+    ota::validate(lastOkMs != 0);   // neue Firmware erst bestätigen, wenn Node-RED erreicht wurde
     if (!sw::connected()) {
       wifiUp = false;
       vTaskDelay(pdMS_TO_TICKS(50));
@@ -214,6 +220,13 @@ static void netTask(void*) {
     }
     wifiUp = true;
     sw::sync(dashUrl());
+    if (ota::due() && lastOkMs && millis() - lastOkMs < 10000) {
+      // nie während eines Alarms; ein quittierter Alarm hält nur das automatische Update auf, nicht „Update now“
+      xSemaphoreTake(mtx, portMAX_DELAY);
+      bool calm = cab.have && !cab.blink && (strcmp(cab.status, "alarm") || ota::offerForce);
+      xSemaphoreGive(mtx);
+      if (calm) ota::run(dashUrl(), dataRev);
+    }
     if (ackRequested) { post("/ack", 3000); ackRequested = false; lastPoll = 0; }
     if (anchorUpRequested) { aupResult = post("/anchor-up", 10000) == 200 ? 1 : -1; anchorUpRequested = false; lastPoll = 0; dataRev++; }
     if (millis() - lastPoll >= 2000) {
@@ -681,6 +694,7 @@ static void drawNetwork(const Cabin& d, bool stale, bool blink) {
       char b[40]; snprintf(b, sizeof(b), "%s  %d dBm", WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
       T(b, x, 216, &fR13F, P->dim);
     } else T("searching for WiFi ...", x, 196, &fR13F, P->warn);
+    T("FW " FW_VERSION, x, 240, &fR11F, P->faint);
   }
   T("swipe for other pages", 240, 306, &fR11F, P->faint, textdatum_t::baseline_center);
 }
@@ -733,6 +747,7 @@ void setup() {
   Serial.begin(115200);
   delay(100);
   Serial.println("\nSUKI Cabin Watch");
+  ota::begin();
   pinMode(PIN_SD_CS, OUTPUT); digitalWrite(PIN_SD_CS, HIGH);   // SD-Karte am selben SPI-Bus abmelden
   Wire.begin(PIN_SDA, PIN_SCL, 400000);
   pmuInit();
@@ -808,6 +823,7 @@ void loop() {
     for (int i = 0; i < d.nKeys; i++) if (!strcmp(d.keys[i], "anchor")) anchor = true;
     want = night && cfg.nightShort ? SND_SHORT : anchor ? SND_SIREN : SND_TRIPLE;
   }
+  if (ota::pct >= 0) want = SND_NONE;   // während des Updates still
   sndMode = want;
   if (cab.have && stale && cfg.vol > 0 && millis() - lastNoData > 60000) { lastNoData = millis(); sndOneShot = 1; }
   if (!stale) lastNoData = millis() - 45000;   // nach Datenverlust erster Hinweis nach ~15 s
@@ -818,6 +834,22 @@ void loop() {
   int phase = (blink || (millis() - aupArmedMs < 4100)) ? (millis() % 1000 < 550) : -1;
   if (night != lastNight) { lastNight = night; applyBrightness(); dirty = true; }
   if (dataRev != lastRev || phase != lastPhase || page != lastPage || strcmp(hm, lastMin) || millis() - lastDraw > 5000) dirty = true;
+  if (dirty && ota::pct >= 0) {   // Firmware-Update läuft: nur Fortschritt anzeigen
+    lastRev = dataRev; lastDraw = millis();
+    P = night ? &NIGHT : &DAY;
+    fb.fillScreen(P->bg);
+    T("UPDATING FIRMWARE", 240, 110, &fB24F, P->txt, textdatum_t::baseline_center);
+    char b[64]; snprintf(b, sizeof(b), "%s  ->  %s", FW_VERSION, ota::offerVer);
+    T(b, 240, 140, &fR13F, P->dim, textdatum_t::baseline_center);
+    int p = constrain((int)ota::pct, 0, 100);
+    rr(60, 165, 360, 24, 6, P->tile, P->line, 1);
+    if (p > 0) fb.fillRoundRect(63, 168, 354 * p / 100, 18, 4, P->acc);
+    snprintf(b, sizeof(b), "%d %%", p);
+    T(b, 240, 222, &fB17F, P->txt, textdatum_t::baseline_center);
+    T("Do not switch off - restarts by itself", 240, 270, &fR11F, P->faint, textdatum_t::baseline_center);
+    lcd.startWrite(); fb.pushSprite(0, 0); lcd.endWrite();
+    dirty = false;
+  }
   if (dirty) {
     lastRev = dataRev; lastPhase = phase; lastPage = page; strcpy(lastMin, hm); lastDraw = millis();
     P = night ? &NIGHT : &DAY;

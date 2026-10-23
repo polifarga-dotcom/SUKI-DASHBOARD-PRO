@@ -1,3 +1,4 @@
 firmware/CabinWatch/secrets.h
 firmware/build/
 backup/
+firmware/CabinWatch/fw_version.h

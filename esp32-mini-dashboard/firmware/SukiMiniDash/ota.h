@@ -1,4 +1,5 @@
-// ota.h — Firmware-Update per WLAN für die SUKI-ESP32-Displays.
+// ota.h — Firmware-Update per WLAN für die SUKI-ESP32-Displays (Mini Dash 7", Cabin Watch 3,5").
+// Identische Kopie in beiden Sketch-Ordnern halten (wie SukiWifi.h).
 //
 // Ablauf: build.sh ota legt die Firmware auf den Pi (Node-RED). Das Display meldet bei jedem
 // WLAN-Abgleich (sw::sync, 1×/min) seine Version (&fw=…). Liegt eine andere bereit, schickt
