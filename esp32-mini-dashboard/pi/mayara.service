@@ -1,0 +1,15 @@
+[Unit]
+Description=Mayara radar server (HALO, nur lesend: --replay, keine Radar-Steuerung)
+After=network-online.target signalk.service
+Wants=network-online.target
+
+[Service]
+User=admin
+WorkingDirectory=/home/admin/mayara
+ExecStart=/home/admin/mayara/mayara-server --replay -b navico -i eth0 --no-mdns -t none -n ws:127.0.0.1:3000 -p 6502
+Restart=always
+RestartSec=5
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

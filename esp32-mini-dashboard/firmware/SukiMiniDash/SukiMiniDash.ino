@@ -234,7 +234,16 @@ static int8_t aisRangeIdx = 3;           // 2 NM
 static char aisSel[10] = "";             // angetippte MMSI
 static volatile bool aisModePending = false;
 static char aisModeReq[10] = "";
-static int16_t aisPts[30][2]; static int aisPtN = 0; static char aisPtM[30][10];  // unterdrückt Blinken kurz bis zur Bestätigung von Node-RED
+static int16_t aisPts[30][2]; static int aisPtN = 0; static char aisPtM[30][10];
+// Radar (Seite 9): Rundraster vom Pi (/esp-dash/api/radar, mayara → Node-RED), Doppelpuffer im PSRAM
+#define RAD_NA 512
+#define RAD_NR 192
+#define RAD_BYTES (RAD_NA * RAD_NR / 2)
+static uint8_t* radBuf[2] = {nullptr, nullptr};   // [0] = Anzeige, [1] = Empfang (getauscht unter sMutex)
+static volatile uint32_t radRange = 0, radAge = 0xFFFFFFFF, radRxMs = 0;
+static uint16_t* radQ = nullptr;   // Viertelkreis-Tabelle: je |dx|,|dy| Richtung im Viertel (obere 8 Bit) + Entfernungsstufe (255 = außerhalb)
+static const uint8_t PAGE_ORDER[] = {1, 2, 3, 4, 5, 6, 9, 7, 8};   // Wisch-Reihenfolge: Radar direkt hinter AIS
+  // unterdrückt Blinken kurz bis zur Bestätigung von Node-RED
 
 // Tag: schwarz/weiß/grün — Nacht: schwarz/rot (Nachtsicht schonen), Alarm blinkt dunkelrot
 static void applyPalette(bool night) {
@@ -746,7 +755,7 @@ static void netTask(void*) {
       static bool init = false;
       if (!init) { http.setReuse(true); http.setConnectTimeout(1500); http.setTimeout(2000); init = true; }
       static char* rx = (char*)heap_caps_malloc(RX_MAX, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-      if (http.begin(dashUrl() + (page == 6 ? "/state" : "/state?ais=0"))) {   // AIS-Zielliste nur auf dem AIS-Screen
+      if (http.begin(dashUrl() + (page == 6 || page == 9 ? "/state" : "/state?ais=0"))) {   // AIS-Zielliste nur auf AIS- und Radar-Screen
         int code = http.GET();
         if (code == 200) {
           int n = http.getSize();
@@ -766,6 +775,44 @@ static void netTask(void*) {
           }
         }
         else Serial.printf("state -> %d\n", code);
+        http.end();
+      }
+    }
+    // Radar-Raster (nur auf dem Radar-Screen, 1×/s): 16 Byte Kopf + 49152 Byte, in den Empfangspuffer, dann tauschen
+    static uint32_t lastRad = 0;
+    if (page == 9 && millis() - lastRad >= 1000) {
+      lastRad = millis();
+      if (!radBuf[0]) {
+        radBuf[0] = (uint8_t*)heap_caps_calloc(1, RAD_BYTES, MALLOC_CAP_SPIRAM);
+        radBuf[1] = (uint8_t*)heap_caps_calloc(1, RAD_BYTES, MALLOC_CAP_SPIRAM);
+      }
+      HTTPClient http;
+      http.setConnectTimeout(1500);
+      http.setTimeout(3000);
+      if (radBuf[0] && radBuf[1] && http.begin(dashUrl() + "/radar")) {
+        int code = http.GET();
+        if (code == 200 && http.getSize() == 16 + RAD_BYTES) {
+          WiFiClient* st = http.getStreamPtr();
+          auto readFull = [&](uint8_t* dst, int n) {
+            int got = 0; uint32_t t1 = millis();
+            while (got < n && millis() - t1 < 3000) {
+              int a = st->available();
+              if (a > 0) got += st->readBytes(dst + got, min(a, n - got)); else vTaskDelay(1);
+            }
+            return got == n;
+          };
+          uint8_t hdr[16];
+          if (readFull(hdr, 16) && !memcmp(hdr, "RDR1", 4) && (hdr[8] | hdr[9] << 8) == RAD_NA && (hdr[10] | hdr[11] << 8) == RAD_NR &&
+              readFull(radBuf[1], RAD_BYTES)) {
+            xSemaphoreTake(sMutex, portMAX_DELAY);
+            uint8_t* t = radBuf[0]; radBuf[0] = radBuf[1]; radBuf[1] = t;
+            radRange = hdr[4] | hdr[5] << 8 | hdr[6] << 16 | (uint32_t)hdr[7] << 24;
+            radAge = hdr[12] | hdr[13] << 8 | hdr[14] << 16 | (uint32_t)hdr[15] << 24;
+            radRxMs = millis();
+            xSemaphoreGive(sMutex);
+            dataRev++;
+          }
+        } else if (code != 200) Serial.printf("radar -> %d\n", code);
         http.end();
       }
     }
@@ -2278,6 +2325,140 @@ static void fbClip(int x, int y, int w, int h) {   // eigener Clip-Bereich, gesc
 // Abschnitt mit festen y-Koordinaten als Ganzes verschieben: der virtuelle Puffer wird um dy Zeilen versetzt
 static void fbShift(int dy) { gDy = dy; fb.setBuffer(bandBuf - (bandY - dy) * 800, 800, 480); fbUnclip(); }
 
+// ── Seite 9: Radar (B&G HALO, Reichweite wie am Plotter) mit AIS-Zielen, Bug oben ──
+static void nmText(char* b, size_t n, uint32_t m) {
+  float nm = m / 1852.0f;
+  if (nm >= 10) snprintf(b, n, "%d NM", (int)lroundf(nm));
+  else if (nm >= 1) snprintf(b, n, "%.1f NM", nm);
+  else snprintf(b, n, "%.2f NM", nm);
+}
+static void radarPage(const DashState& s, const AisState& a, bool online, uint16_t bg) {
+  const int MX = 12, MY = 56, MW = 476, MH = 392, cx = MX + 238, cy = MY + 196, RR = 186;
+  char b[32];
+  if (!radQ) {   // einmalig: Viertelkreis-Tabelle (238 × 197) im PSRAM
+    radQ = (uint16_t*)heap_caps_malloc(238 * 197 * 2, MALLOC_CAP_SPIRAM);
+    if (radQ)
+      for (int uy = 0; uy < 197; uy++)
+        for (int ux = 0; ux < 238; ux++) {
+          float d = sqrtf((float)ux * ux + (float)uy * uy);
+          int t = (int)(atan2f(ux, uy) / (2 * PI) * RAD_NA);
+          radQ[uy * 238 + ux] = d >= RR ? 0x00FF : (uint16_t)(min(t, 255) << 8 | min((int)(d / RR * RAD_NR), RAD_NR - 1));
+        }
+  }
+  uint8_t* buf; uint32_t rr, age, rx;
+  xSemaphoreTake(sMutex, portMAX_DELAY); buf = radBuf[0]; rr = radRange; age = radAge; rx = radRxMs; xSemaphoreGive(sMutex);
+  const bool ok = online && buf && rx && millis() - rx < 10000 && age < 10000 && rr > 0;
+  // Echos direkt in den Streifenpuffer (schnell, wenig Speicherverkehr); Farben schwach olivgelb → amber → orange/rot
+  if (ok && radQ) {
+    static const uint8_t DAY[16][3] = {{0, 0, 0}, {52, 50, 18}, {96, 90, 28}, {150, 120, 30}, {190, 140, 28}, {232, 163, 23}, {245, 180, 30}, {255, 190, 40},
+                                       {255, 175, 30}, {255, 160, 20}, {255, 140, 0}, {255, 120, 0}, {255, 100, 0}, {250, 80, 10}, {240, 60, 20}, {230, 40, 30}};
+    uint16_t pal[16];
+    for (int v = 0; v < 16; v++) pal[v] = s.night ? lgfx::color565(40 + v * 13, 0, 0) : lgfx::color565(DAY[v][0], DAY[v][1], DAY[v][2]);
+    int y0 = max(MY, bandY), y1 = min(MY + MH, bandY + BAND_H);
+    for (int y = y0; y < y1; y++) {
+      int dy = y - cy, uy = abs(dy);
+      if (uy > 196) continue;
+      const uint16_t* Q = radQ + uy * 238;
+      uint16_t* row = bandBuf + (y - bandY) * 800;
+      for (int x = MX; x < MX + MW; x++) {
+        int dx = x - cx, ux = abs(dx);
+        if (ux > 237) continue;
+        uint16_t e = Q[ux];
+        uint8_t rb = e & 0xFF;
+        if (rb == 0xFF) continue;
+        int t = e >> 8;
+        int ai = dx >= 0 ? (dy <= 0 ? t : 256 - t) : (dy > 0 ? 256 + t : (512 - t) & 511);
+        if (ai > RAD_NA - 1) ai = RAD_NA - 1;
+        uint32_t c = (uint32_t)ai * RAD_NR + rb;
+        uint8_t bb = buf[c >> 1], v = (c & 1) ? (bb & 15) : (bb >> 4);
+        if (v) row[x] = pal[v];
+      }
+    }
+  }
+  sqRect(MX, MY, MW, MH, 0, C_BORDER);
+  // Ringe (Viertel der Reichweite) mit Beschriftung, Heading-Linie
+  const uint16_t ringC = s.night ? lgfx::color565(64, 0, 0) : lgfx::color565(58, 58, 58);
+  for (int k = 1; k <= 4; k++) {
+    int r = RR * k / 4;
+    if (k < 4) dashedCircle(cx, cy, r, ringC, 3, 5); else fb.drawCircle(cx, cy, r, ringC);
+    if (ok) {
+      nmText(b, sizeof(b), rr * k / 4);
+      fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::top_left); fb.setTextColor(C_DIM);
+      fb.drawString(b, cx + 4, cy - r + 3);
+    }
+  }
+  fb.drawLine(cx, cy, cx, cy - RR, s.night ? C_DIM : C_GREY);
+  // AIS gleich ausgerichtet wie das Radarbild (Bug oben) → nur mit echtem Heading deckungsgleich
+  const bool hdgOk = a.up != NA_I && !strcmp(a.upSrc, "HDG");
+  const int up = hdgOk ? a.up : 0;
+  const float ur = up * PI / 180, cu = cosf(ur), su = sinf(ur);
+  int inR[30], nIn = 0;
+  if (online && rr > 0) {
+    const float sc = (float)RR / rr;
+    fbClip(MX + 1, MY + 1, MW - 2, MH - 2);
+    for (int i = a.nt - 1; i >= 0; i--) {   // gefährlichste zuletzt = oben
+      const AisT& t = a.t[i];
+      float fx = cx + (t.e * cu - t.n * su) * sc, fy = cy - (t.e * su + t.n * cu) * sc;
+      if (hypotf(fx - cx, fy - cy) > RR) continue;
+      inR[nIn++] = i;
+      int x = fx, y = fy;
+      uint16_t c = t.stale ? C_DIM : t.st == 2 ? C_RED : t.st == 1 ? C_AMBER : C_WHITE;
+      if (!isnan(t.sog) && t.sog > 0.5f && t.cog != NA_I) {
+        float vl = t.sog * 0.5144f * 1800 * sc, vr = (t.cog - up) * PI / 180;   // Weg der nächsten 30 min
+        fb.drawLine(x, y, x + sinf(vr) * vl, y - cosf(vr) * vl, c);
+        aisArrow(x, y, (t.hdg != NA_I ? t.hdg : t.cog) - up, 1, c, C_BLACK);
+      } else { fb.fillCircle(x, y, 4, c); fb.drawCircle(x, y, 5, C_BLACK); }
+      if (t.st) {
+        fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::bottom_left); fb.setTextColor(c);
+        drawFit(t.nm[0] ? t.nm : t.m, x + 10, y - 6, 110);
+      }
+    }
+    fbUnclip();
+  }
+  aisArrow(cx, cy, 0, 1.2f, C_WHITE, C_BLACK);   // eigenes Boot, Bug oben
+  fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::bottom_right); fb.setTextColor(C_DIM);
+  fb.drawString(hdgOk ? "HEAD UP" : "HEAD UP - AIS WITHOUT HEADING", MX + MW - 10, MY + MH - 8);
+  if (!ok) centerText(buf ? "NO RADAR DATA" : "WAITING FOR RADAR", cx, cy + 40, &fonts::DejaVu24, C_GREY, bg);
+
+  // ── rechts: Status, Werte, AIS-Ziele im Radarbereich (nächste zuerst)
+  const int PX = 500, PW = 288;
+  sqRect(PX, MY, PW, 46, 0, C_BORDER); sqRect(PX + 1, MY + 1, PW - 2, 44, 0, C_BORDER);
+  fb.setFont(&fonts::DejaVu24); fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(ok ? C_WHITE : C_AMBER, bg);
+  fb.drawString(ok ? "TRANSMIT" : "STANDBY / OFF", PX + 14, MY + 23);
+  if (ok) { fb.setFont(&fonts::DejaVu18); fb.setTextDatum(textdatum_t::middle_right); fb.setTextColor(C_GREY, bg); fb.drawString("HALO", PX + PW - 14, MY + 24); }
+  char v[4][16];
+  if (ok) nmText(v[0], 16, rr); else strcpy(v[0], "--");
+  if (hdgOk) snprintf(v[1], 16, "%03d", up); else strcpy(v[1], "--");
+  if (ok) nmText(v[2], 16, rr / 4); else strcpy(v[2], "--");
+  if (online) snprintf(v[3], 16, "%d", nIn); else strcpy(v[3], "--");
+  static const char* lb[] = {"RANGE", "HEADING", "RINGS", "AIS IN RANGE"};
+  for (int i = 0; i < 4; i++) {
+    int x = PX + (i % 2) * 147, y = 110 + (i / 2) * 44;
+    sqRect(x, y + 1, 141, 36, 0, C_BORDER);
+    fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(C_DIM, bg);
+    fb.drawString(lb[i], x + 8, y + 19);
+    fb.setFont(&fonts::DejaVu18); fb.setTextDatum(textdatum_t::middle_right); fb.setTextColor(C_WHITE, bg);
+    fb.drawString(v[i], x + 133, y + 19);
+  }
+  const int LY = 202;
+  sqRect(PX, LY, PW, MY + MH - LY, 0, C_BORDER);
+  fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(C_DIM, bg);
+  fb.drawString("AIS IN RANGE - CLOSEST FIRST", PX + 12, LY + 16);
+  for (int i = 1; i < nIn; i++)   // nach Entfernung sortieren (wenige Einträge → Einfügesortieren)
+    for (int j = i; j > 0 && a.t[inR[j]].d < a.t[inR[j - 1]].d; j--) { int q = inR[j]; inR[j] = inR[j - 1]; inR[j - 1] = q; }
+  for (int k = 0; k < nIn && k < 9; k++) {
+    const AisT& t = a.t[inR[k]];
+    int y = LY + 40 + k * 22;
+    uint16_t c = t.st == 2 ? C_RED : t.st == 1 ? C_AMBER : C_WHITE;
+    if (!isnan(t.tcpa)) snprintf(b, sizeof(b), "%.2f NM - CPA %.2f", t.d, t.cpa); else snprintf(b, sizeof(b), "%.2f NM", t.d);
+    fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_right); fb.setTextColor(c, bg);
+    int wv = fb.textWidth(b);
+    fb.drawString(b, PX + PW - 12, y);
+    fb.setTextDatum(textdatum_t::middle_left);
+    drawFit(t.nm[0] ? t.nm : t.m, PX + 12, y, PW - 24 - wv - 8);
+  }
+}
+
 // „Off“-Screen, wenn die anderen Screens nachts zu hell sind: nur Uhrzeit lokal + UTC, sehr dunkel
 static void offPage(const DashState& s, bool online) {
   fb.fillScreen(C_BLACK);
@@ -2350,9 +2531,9 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
     { const int ox = 166, oy = 24; thickArc(ox, oy, 9, 310, 590, 3, C_GREY); fbWideLine(ox, oy - 12, ox, oy - 2, 1.4f, C_GREY); }   // Power
     drawAlpha4(LOGO_NEEL, LOGO_NEEL_W, LOGO_NEEL_H, 200, 14, C_WHITE, hb);
     fb.fillRect(300, 14, 2, 20, C_ACC);
-    static const char* PN[] = {"SUKI", "ENERGY", "WEATHER", "ENGINE", "SAILSTEER", "AIS", "ANCHOR", "EMERGENCY"};
+    static const char* PN[] = {"SUKI", "ENERGY", "WEATHER", "ENGINE", "SAILSTEER", "AIS", "ANCHOR", "EMERGENCY", "RADAR"};
     fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(C_GREY, hb);
-    fb.drawString(showSettings ? "SETTINGS" : PN[constrain((int)page, 1, 8) - 1], 312, 25);
+    fb.drawString(showSettings ? "SETTINGS" : PN[constrain((int)page, 1, 9) - 1], 312, 25);
     {   // Uhrzeit lokal groß + UTC klein, gemeinsam um x 505 zentriert
       const char* lt = online ? s.time : "--:--";
       char ut[16] = "";
@@ -2519,13 +2700,15 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
     anchorPage(s, online, red, bg);
   } else if (page == 6) {
     aisPage(s, aisR, online, red, bg);
+  } else if (page == 9) {
+    radarPage(s, aisR, online, bg);
   } else {
     sosPage(s, online, red, bg);
   }
   }
 
   // Alarm-Overlay unten über dem Inhalt (ersetzt die feste Meldungszeile)
-  if (ovlKind && (page <= 5 || showSettings) && bandY + BAND_H > 366 && bandY < 450) {
+  if (ovlKind && (page <= 5 || page == 9 || showSettings) && bandY + BAND_H > 366 && bandY < 450) {
     const int ox = 60, oy = 366, ow = 680, oh = 84;
     const uint16_t ac = ovlKind == 1 ? C_ACC : C_AMBER, ob = C_HDR;
     fb.fillRect(ox, oy, ow, oh, ob);
@@ -2550,10 +2733,11 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
   }
   // Seitenpunkte: kleine Quadrate, der aktive Screen als Balken
   if (bandY + BAND_H > 460 && bandY < 472) {
-    int xx = 400 - (7 * 6 + 16 + 7 * 8) / 2;
-    for (int i = 0; i < 8; i++) {
-      int ww = page == i + 1 ? 16 : 6;
-      fb.fillRect(xx, 463, ww, 6, page == i + 1 ? C_WHITE : C_BORDER);
+    int xx = 400 - (8 * 6 + 16 + 8 * 8) / 2;
+    for (int i = 0; i < 9; i++) {   // in Wisch-Reihenfolge
+      bool on = page == PAGE_ORDER[i];
+      int ww = on ? 16 : 6;
+      fb.fillRect(xx, 463, ww, 6, on ? C_WHITE : C_BORDER);
       xx += ww + 8;
     }
   }
@@ -2692,10 +2876,11 @@ void loop() {
         aupState = AUP_CONFIRM; aupUntil = millis() + 4000;
       }
       dataRev++;
-    } else if (ovlKind == 1 && page <= 5 && abs(dx) <= 120 && t0y >= 366 && t0y < 450 && t0x >= 60 && t0x < 740) {
+    } else if (ovlKind == 1 && (page <= 5 || page == 9) && abs(dx) <= 120 && t0y >= 366 && t0y < 450 && t0x >= 60 && t0x < 740) {
       ackRequested = true; localAckMs = millis(); dataRev++;      // Tipp aufs Alarm-Overlay → quittieren
     } else if (abs(dx) > 120 && !showSettings) {
-      page = constrain(page + (dx < 0 ? 1 : -1), 1, 8);
+      int pi = 0; for (int i = 0; i < 9; i++) if (PAGE_ORDER[i] == page) pi = i;   // Wisch-Reihenfolge (Radar hinter AIS)
+      page = PAGE_ORDER[constrain(pi + (dx < 0 ? 1 : -1), 0, 8)];
       dataRev++;  // sofort neu zeichnen
     } else if (page == 7 && !showSettings && t0y >= 56 && t0y <= 448 && anchorTouch(t0x, t0y)) {
       dataRev++;

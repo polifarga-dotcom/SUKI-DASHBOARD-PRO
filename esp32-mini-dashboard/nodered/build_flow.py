@@ -770,6 +770,93 @@ add('Supabase POST 2', 'http request', 590, 700, [['Anker-up Antwort']], method=
     authType='', senderr=False, headers=[])
 http_out('anchor antwort', 600, 760)
 
+# ── 4b) Radar (B&G HALO über mayara, nur lesend) → kompaktes Rundraster für Screen 9 ──
+# mayara (systemd-Dienst auf dem Pi, --replay) liefert je Radar-Bereich (HALO Dual Range: A/B) einen
+# WebSocket mit Protobuf-Strahlen (2048 je Umdrehung, bis 1024 Werte, Reichweite in m).
+# Hier: 512 Richtungen × 192 Entfernungsstufen, je Zelle der stärkste Wert 0…15 (4 Bit).
+# GET /esp-dash/api/radar → 16 Byte Kopf + 49152 Byte Raster (2 Zellen je Byte, obere 4 Bit zuerst):
+#   'RDR1', uint32 Reichweite m, uint16 Richtungen, uint16 Stufen, uint32 Alter ms (alles little endian)
+MAYARA = 'ws://127.0.0.1:6502/signalk/v2/api/vessels/self/radars'
+RADAR_CFGS = []
+RADAR_FN = """\
+// Protobuf RadarMessage { repeated Spoke spokes = 2 } dekodieren und ins Rundraster eintragen
+const NA = 512, NR = 192, SPR = 2048;
+const id = '__ID__';
+let R = flow.get('radar_' + id);
+if (!R) { R = { cells: new Uint8Array(NA * NR), range: 0, t: 0 }; flow.set('radar_' + id, R); }
+const b = msg.payload;
+if (!Buffer.isBuffer(b)) return null;
+let p = 0;
+const varint = (buf, pos) => { let v = 0, m = 1, c; do { c = buf[pos.i++]; v += (c & 127) * m; m *= 128; } while (c & 128); return v; };
+const pos = { i: 0 };
+while (pos.i < b.length) {
+    const key = varint(b, pos), f = key >> 3, wt = key & 7;
+    if (wt === 2) {
+        const len = varint(b, pos), end = pos.i + len;
+        if (f === 2) {   // Spoke
+            let angle = 0, range = 0, data = null;
+            while (pos.i < end) {
+                const k2 = varint(b, pos), f2 = k2 >> 3, w2 = k2 & 7;
+                if (w2 === 0) { const v = varint(b, pos); if (f2 === 1) angle = v; else if (f2 === 3) range = v; }
+                else if (w2 === 1) pos.i += 8;
+                else if (w2 === 5) pos.i += 4;
+                else if (w2 === 2) { const l2 = varint(b, pos); if (f2 === 5) data = b.subarray(pos.i, pos.i + l2); pos.i += l2; }
+                else { pos.i = end; }
+            }
+            if (data && data.length) {
+                // Strahl reicht bis range m (über die Bildecken hinaus); angezeigt wird bis zur am Plotter
+                // eingestellten Reichweite (controls/range) → gleicher Zoom wie am Zeus
+                const setR = flow.get('radar_set_' + id) || range, frac = range ? Math.min(1, setR / range) : 1;
+                const ai = Math.floor((angle % SPR) * NA / SPR), row = ai * NR, L = Math.max(1, Math.round(data.length * frac));
+                if (angle % (SPR / NA) === 0) R.cells.fill(0, row, row + NR);   // erste von 4 Strahlen je Richtung
+                for (let j = 0; j < L; j++) {
+                    let v = data[j];
+                    if (v > 18) continue;              // Nachleuchten (History) ignorieren
+                    if (v > 15) v = 15;                // Doppler (17/18) wie starkes Echo
+                    const c = row + Math.floor(j * NR / L);
+                    if (v > R.cells[c]) R.cells[c] = v;
+                }
+                R.range = setR;
+                R.t = Date.now();
+            }
+        }
+        pos.i = end;
+    } else if (wt === 0) varint(b, pos);
+    else if (wt === 1) pos.i += 8;
+    else if (wt === 5) pos.i += 4;
+    else break;
+}
+return null;"""
+for i, rid in enumerate(['nav6578A', 'nav6578B']):
+    cid = nid(f'Radar WS {rid}')
+    RADAR_CFGS.append({'id': cid, 'type': 'websocket-client', 'path': f'{MAYARA}/{rid}/spokes',
+                       'tls': '', 'wholemsg': 'false', 'hb': '0', 'subprotocol': '', 'headers': []})
+    add(f'Radar {rid}', 'websocket in', 150, 820 + i * 40, [[f'Radar Raster {rid}']], server='', client=cid)
+    fn(f'Radar Raster {rid}', RADAR_FN.replace('__ID__', rid), 380, 820 + i * 40)
+
+for i, rid in enumerate(['nav6578A', 'nav6578B']):
+    inject(f'Radar Reichweite holen {rid}', 150, 940 + i * 40, f'Radar range {rid}', 2, [], once_delay=5)
+    add(f'Radar range {rid}', 'http request', 380, 940 + i * 40, [[f'Radar Reichweite {rid}']], method='GET', ret='obj',
+        paytoqs='ignore', url=f'http://127.0.0.1:6502/signalk/v2/api/vessels/self/radars/{rid}/controls/range', tls='',
+        persist=False, proxy='', insecureHTTPParser=False, authType='', senderr=False, headers=[])
+    fn(f'Radar Reichweite {rid}', f"""if (msg.statusCode === 200 && msg.payload && msg.payload.value > 0) flow.set('radar_set_{rid}', msg.payload.value);
+return null;""", 600, 940 + i * 40)
+http_in('GET radar', '/esp-dash/api/radar', 'get', 150, 900, 'Radar ausliefern')
+fn('Radar ausliefern', """\
+// den Bereich nehmen, der zuletzt Strahlen geliefert hat (der Zeus zeigt meist nur einen an)
+const now = Date.now(), NA = 512, NR = 192;
+let best = null;
+for (const id of ['nav6578A', 'nav6578B']) { const R = flow.get('radar_' + id); if (R && R.t && (!best || R.t > best.t)) best = R; }
+const out = Buffer.alloc(16 + NA * NR / 2);
+out.write('RDR1', 0, 'ascii');
+out.writeUInt32LE(best ? best.range : 0, 4);
+out.writeUInt16LE(NA, 8); out.writeUInt16LE(NR, 10);
+out.writeUInt32LE(best ? Math.min(0xffffffff, now - best.t) : 0xffffffff, 12);
+if (best) for (let i = 0, o = 16; i < NA * NR; i += 2, o++) out[o] = (best.cells[i] << 4) | best.cells[i + 1];
+msg.payload = out;
+return msg;""", 380, 900, [['radar antwort']])
+http_out('radar antwort', 580, 900, {'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store'})
+
 # ── 5) Web-Seiten: Simulator + Einstellungen ─────────────────────────────────
 for i, (name, url, file) in enumerate([('Simulator', '/esp-dash', 'index.html'),
                                        ('Einstellungen', '/esp-dash/settings', 'settings.html')]):
@@ -784,7 +871,7 @@ flow = {'id': TAB, 'label': LABEL, 'disabled': False,
         'info': 'Backend für das Waveshare ESP32-S3 7" Mini-Dashboard. Quelle: '
                 'SUKI DASHBOARD PRO/esp32-mini-dashboard/nodered (build_flow.py). '
                 'Nicht im Editor ändern — wird beim nächsten Deploy überschrieben.',
-        'nodes': nodes, 'configs': configs + [ws_cfg]}
+        'nodes': nodes, 'configs': configs + [ws_cfg] + RADAR_CFGS}
 (HERE / 'flow.json').write_text(json.dumps(flow, indent=2, ensure_ascii=False))
 print(f'flow.json geschrieben ({len(nodes)} Nodes, Tab {TAB})')
 
