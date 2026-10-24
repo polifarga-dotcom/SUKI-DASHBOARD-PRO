@@ -50,6 +50,8 @@ const ALLOWED_COLUMNS = new Set([
   'solar_total_w',
   // Rudder
   'rudder_rad',
+  // Rigging load cells (rigging.{port,starboard}.tension, N)
+  'rig_port', 'rig_sb',
   // Wakespeed alternator regulators (up to 2 units, electrical.alternator.{0,1}.*)
   'ws_0_alt_v', 'ws_0_alt_temp_k', 'ws_0_field_pct',
   'ws_1_alt_v', 'ws_1_alt_temp_k', 'ws_1_field_pct',
