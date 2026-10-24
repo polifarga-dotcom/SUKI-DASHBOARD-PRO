@@ -626,15 +626,7 @@
   </div>
 
   <div class="page" id="pR" style="display:none">
-    <div class="amap"><canvas id="rcv" width="476" height="392" style="position:absolute;inset:0;width:100%;height:100%"></canvas></div>
-    <div class="apanel" id="rpanel">
-      <div class="ahead"><span id="r-st">RADAR</span><span class="asub" id="r-sub"></span></div>
-      <div class="acells">
-        <div><i>RANGE</i><b id="r-rng">--</b></div><div><i>HEADING</i><b id="r-hdg">--</b></div>
-        <div><i>RINGS</i><b id="r-ring">--</b></div><div><i>AIS IN RANGE</i><b id="r-nais">--</b></div>
-      </div>
-      <div class="aisinfo" id="r-list" style="top:126px"></div>
-    </div>
+    <canvas id="rcv" width="800" height="408" style="position:absolute;left:0;top:48px;width:800px;height:408px"></canvas>
   </div>
 
   <div class="page" id="p5" style="display:none">
@@ -1387,7 +1379,7 @@ $('ar-out').addEventListener('click', function (e) { e.stopPropagation(); var i 
 
 // ── Radar-Screen: Rundraster vom Pi (mayara → Node-RED), Reichweite wie am Plotter, AIS darüber ──
 var RAD = { buf: null, range: 0, age: 0, t: 0, na: 0, nr: 0, lut: null, lutKey: '', busy: false };
-var RW = 476, RH = 392, RCX = 238, RCY = 196, RR = 186;
+var RW = 800, RH = 408, RCX = 400, RCY = 204, RR = 200;
 // Echo-Farben 0…15: schwach olivgelb → mittel amber → stark orange/rot (B&G-ähnlich); nachts nur Rot
 var RPAL_D = [], RPAL_N = [];
 (function () {
@@ -1451,13 +1443,17 @@ function renderRadar(s) {
   ctx.setLineDash([]);
   ctx.strokeStyle = night ? '#700000' : '#9a9a9a'; ctx.beginPath(); ctx.moveTo(RCX, RCY); ctx.lineTo(RCX, RCY - RR); ctx.stroke();
   // AIS: gleiche Ausrichtung wie das Radarbild (Bug oben) → nur mit echtem Heading deckungsgleich
-  var a = s && s.ais, hdgOk = !!(a && a.upSrc === 'HDG' && a.up != null), up = hdgOk ? a.up : 0, inR = [];
+  var a = s && s.ais, hdgOk = !!(a && a.upSrc === 'HDG' && a.up != null), up = hdgOk ? a.up : 0, nIn = 0, boxes = [];
   if (a && a.targets && RAD.range) {
     var sc = RR / RAD.range, ur = up * Math.PI / 180, cu = Math.cos(ur), su = Math.sin(ur);
-    a.targets.forEach(function (t) {
+    // gefährliche zuerst, dann nach Entfernung → deren Namen haben Vorrang, wenn sich Namen überlappen
+    var rank = { alarm: 0, warn: 1, ok: 2 };
+    var list = a.targets.slice().sort(function (p, q) { return rank[p.st] - rank[q.st] || p.d - q.d; });
+    ctx.font = '11px "DejaVu Sans", sans-serif'; ctx.textAlign = 'left';
+    list.forEach(function (t) {
       var x = RCX + (t.e * cu - t.n * su) * sc, y = RCY - (t.e * su + t.n * cu) * sc;
       if (Math.hypot(x - RCX, y - RCY) > RR) return;
-      inR.push(t);
+      nIn++;
       var col = night ? (t.st === 'alarm' ? '#ff2020' : '#c00000') : t.stale ? '#555' : t.st === 'alarm' ? '#ff3b3b' : t.st === 'warn' ? '#e8a317' : '#ffffff';
       if (t.sog > 0.5) {
         var vl = t.sog * 0.5144 * 1800 * sc, vr = (t.cog - up) * Math.PI / 180;
@@ -1466,24 +1462,27 @@ function renderRadar(s) {
       ctx.save(); ctx.translate(x, y); ctx.rotate(((t.hdg != null ? t.hdg : t.cog) - up) * Math.PI / 180);
       ctx.fillStyle = col; ctx.strokeStyle = '#000'; ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(6, 7); ctx.lineTo(0, 4); ctx.lineTo(-6, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.restore();
-      if (t.st !== 'ok') { ctx.fillStyle = col; ctx.fillText((t.nm || t.m).slice(0, 14), x + 9, y - 7); }
+      var nm = (t.nm || t.m).slice(0, 16), w = ctx.measureText(nm).width, bx = x + 9, by = y - 18;
+      if (boxes.some(function (q) { return bx < q[0] + q[2] && bx + w > q[0] && by < q[1] + q[3] && by + 13 > q[1]; })) return;
+      boxes.push([bx, by, w, 13]);
+      ctx.fillStyle = t.st === 'ok' && !night ? '#9a9a9a' : col; ctx.fillText(nm, bx, by + 10);
     });
   }
   ctx.fillStyle = night ? '#c00000' : '#ffffff'; ctx.beginPath(); ctx.moveTo(RCX, RCY - 10); ctx.lineTo(RCX + 6, RCY + 7); ctx.lineTo(RCX, RCY + 3); ctx.lineTo(RCX - 6, RCY + 7); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = lblC; ctx.textAlign = 'right'; ctx.fillText('HEAD UP' + (hdgOk ? '' : ' - AIS WITHOUT HEADING'), RW - 10, RH - 10);
   if (!ok) { ctx.fillStyle = night ? '#900000' : '#9a9a9a'; ctx.textAlign = 'center'; ctx.font = 'bold 20px "DejaVu Sans", sans-serif'; ctx.fillText(RAD.buf ? 'NO RADAR DATA' : 'WAITING FOR RADAR', RCX, RCY + 40); }
-  // rechte Seite
-  $('r-st').textContent = ok ? 'TRANSMIT' : 'STANDBY / OFF'; $('r-st').className = ok ? '' : 'warn-c';
-  $('r-sub').textContent = ok ? 'HALO' : '';
-  $('r-rng').textContent = ok && RAD.range ? nmTxt(RAD.range) : '--';
-  $('r-ring').textContent = ok && RAD.range ? nmTxt(RAD.range / 4) : '--';
-  $('r-hdg').textContent = hdgOk ? String(Math.round(up)).padStart(3, '0') + '°' : '--';
-  $('r-nais').textContent = a ? inR.length : '--';
-  inR.sort(function (p, q) { return p.d - q.d; });
-  var h = '<div class="hd">AIS IN RANGE · CLOSEST FIRST</div>' + inR.slice(0, 11).map(function (t) {
-    return '<div class="row ' + t.st + '"><span>' + (t.nm || t.m) + '</span><span>' + t.d.toFixed(2) + ' NM' + (t.tcpa != null ? ' · CPA ' + t.cpa.toFixed(2) : '') + '</span></div>';
-  }).join('');
-  if ($('r-list').innerHTML !== h) $('r-list').innerHTML = h;
+  // Infos in den vier Ecken
+  var lab = night ? '#800000' : '#9a9a9a', val = night ? '#c00000' : '#ffffff';
+  var corner = function (x, y, al, l, v, vc) {
+    ctx.textAlign = al; ctx.font = '12px "DejaVu Sans", sans-serif'; ctx.fillStyle = lab; ctx.fillText(l, x, y);
+    ctx.font = 'bold 22px "DejaVu Sans", sans-serif'; ctx.fillStyle = vc || val; ctx.fillText(v, x, y + 25);
+  };
+  corner(14, 22, 'left', 'RANGE', ok && RAD.range ? nmTxt(RAD.range) : '--');
+  corner(14, 80, 'left', 'RINGS', ok && RAD.range ? nmTxt(RAD.range / 4) : '--');
+  corner(RW - 14, 22, 'right', ok ? 'HALO' : 'RADAR', ok ? 'TRANSMIT' : 'STANDBY', ok ? null : (night ? '#d04000' : '#e8a317'));
+  corner(RW - 14, 80, 'right', 'HEADING', hdgOk ? String(Math.round(up)).padStart(3, '0') + '°' : '--');
+  corner(14, RH - 40, 'left', 'AIS IN RANGE', a ? String(nIn) : '--');
+  ctx.textAlign = 'right'; ctx.font = '11px "DejaVu Sans", sans-serif'; ctx.fillStyle = lab;
+  ctx.fillText('HEAD UP' + (hdgOk ? '' : ' - AIS WITHOUT HEADING'), RW - 14, RH - 12);
 }
 
 function winLabel(m) { return m >= 60 ? (m / 60) + ' h' : m + ' min'; }
