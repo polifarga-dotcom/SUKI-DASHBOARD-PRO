@@ -10,7 +10,23 @@
 	let { t, vrm }: Props = $props();
 
 	const pressColor = $derived(pressureColor(t?.env_pressure_pa ?? null));
-	const hasTanks   = $derived(!!vrm && vrm.tanks.length > 0);
+	// Fuel tanks (VRM fluid type 0 = Fuel, 6 = Diesel): the lowest instance is the
+	// main tank; any further fuel tank is shown as "Day Tank" directly below it.
+	// If VRM doesn't report a second fuel tank, fall back to telemetry tank_dsl2
+	// (bridge plugin: second fuel instance in SignalK).
+	const tankRows = $derived.by(() => {
+		const all  = vrm?.tanks ?? [];
+		const fuel = all.filter(x => x.fluidType === 0 || x.fluidType === 6)
+			.sort((a, b) => a.instance - b.instance);
+		const rows = all.filter(x => !fuel.includes(x) || x === fuel[0])
+			.map(x => ({ name: x.name, level: x.level }));
+		const day = fuel.slice(1).map(x => ({ name: 'Day Tank', level: x.level }));
+		if (day.length === 0 && t?.tank_dsl2 != null) day.push({ name: 'Day Tank', level: t.tank_dsl2 * 100 });
+		const at = fuel[0] ? rows.findIndex(r => r.name === fuel[0].name) + 1 : rows.length;
+		rows.splice(at, 0, ...day);
+		return rows;
+	});
+	const hasTanks   = $derived(tankRows.length > 0);
 	const hasTemps   = $derived(!!vrm && vrm.temperatures.length > 0);
 
 	let sensorNames = $state<Record<number, string>>({});
@@ -56,7 +72,7 @@
 	{#if hasTanks}
 	<div class="sub-title">Tanks</div>
 	<div class="tanks">
-		{#each vrm!.tanks as tank}
+		{#each tankRows as tank}
 		{@const lvl = Math.round(tank.level)}
 		{@const tc  = tankColor(lvl)}
 		<div class="tank-row">

@@ -291,7 +291,7 @@ export function parseVRMDiagnostics(attrs: unknown[]): VRMData {
 			const fluidType = fluidTypes.get(key);
 			const fallback  = fluidType != null ? (FLUID_TYPE[fluidType] ?? `Tank ${r.instance}`) : `Tank ${r.instance}`;
 			const name      = customNames.get(key) ?? (r.Device ? r.Device : fallback);
-			return { name, level: num(r.rawValue) ?? 0 };
+			return { name, level: num(r.rawValue) ?? 0, instance: r.instance, fluidType: fluidType ?? null };
 		});
 
 	// ── GPS ───────────────────────────────────────────────────────────────────

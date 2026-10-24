@@ -198,7 +198,7 @@ export type VRMData = {
 	// Environment
 	temperatures: VRMTempSensor[];
 	// Tanks
-	tanks: { name: string; level: number }[];
+	tanks: { name: string; level: number; instance: number; fluidType: number | null }[];
 	// GPS
 	gps_lat: number | null;
 	gps_lon: number | null;
