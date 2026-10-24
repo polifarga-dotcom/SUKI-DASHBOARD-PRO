@@ -425,14 +425,15 @@ const DEF = { windAlarmOn: true, windAlarmKn: 25, windHystKn: 2, windSource: 'au
     aisMode: 'cruising', aisCruiseNm: 0.5, aisOffshoreNm: 2, aisTcpaMin: 20, aisRangeNm: 2,
     sailStyle: 'tacho', sailCloseFrom: 30, sailCloseTo: 50, sosPob: 2, sosDesc: 'sailing trimaran, 14 metres',
     bwSwap: false, bwWarnPct: 75, bwHighPct: 90, fuelWarnPct: 20, fuelLowPct: 10,
+    dayInstance: 'auto', dayAlarmOn: true, dayWarnPct: 30, dayLowPct: 15, dayHystPct: 3,
     rigAlarmOn: true, rigWarnT: 3.2, rigAlarmT: 4.2, rigHystT: 0.1, rigScaleT: 5,
     engTempAlarmOn: true, engTempWarnC: 90, engTempAlarmC: 95, engTempHystC: 2,
     engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true, fuelCurve: '800:0.8,1000:1.2,1500:2.2,2000:3.8,2500:6.2,3000:9.5',
     anchorAlarmOn: true, anchorLocalFallback: true, stormAlarmOn: true, ackMinutes: 5, staleSec: 30, testUntil: 0, night: false,
     soundOn: true, soundNight: 'short' };
 const RANGE = { windWinMin: [1, 360], windAlarmKn: [5, 80], windHystKn: [0, 10], windAvgSec: [2, 120], battLowSoc: [5, 95],
-    battHystSoc: [0, 20], battLowVolt: [0, 60], waterLowPct: [0, 95], waterHystPct: [0, 20], baroLowHpa: [900, 1050], baroHystHpa: [0, 10], baroWinMin: [1, 360], sosPob: [1, 30], aisCruiseNm: [0.1, 5], aisOffshoreNm: [0.2, 10], aisTcpaMin: [1, 120], aisRangeNm: [0.25, 24], sailCloseFrom: [0, 90], sailCloseTo: [0, 120], bwWarnPct: [10, 100], bwHighPct: [10, 100], fuelWarnPct: [0, 90], fuelLowPct: [0, 90], rigWarnT: [0.5, 20], rigAlarmT: [0.5, 25], rigHystT: [0, 2], rigScaleT: [1, 30], engTempWarnC: [40, 130], engTempAlarmC: [40, 130], engTempHystC: [0, 10], engMaxRpm: [1000, 6000], engRedRpm: [500, 6000], engGreenFrom: [0, 6000], engGreenTo: [0, 6000], ackMinutes: [1, 120], staleSec: [5, 300] };
-const BOOL = ['night', 'soundOn', 'baroAlarmOn', 'rigAlarmOn', 'bwSwap', 'engTempAlarmOn', 'fuelUseSensor', 'windAlarmOn', 'battAlarmOn', 'waterAlarmOn', 'anchorAlarmOn', 'anchorLocalFallback', 'stormAlarmOn'];
+    battHystSoc: [0, 20], battLowVolt: [0, 60], waterLowPct: [0, 95], waterHystPct: [0, 20], baroLowHpa: [900, 1050], baroHystHpa: [0, 10], baroWinMin: [1, 360], sosPob: [1, 30], aisCruiseNm: [0.1, 5], aisOffshoreNm: [0.2, 10], aisTcpaMin: [1, 120], aisRangeNm: [0.25, 24], sailCloseFrom: [0, 90], sailCloseTo: [0, 120], bwWarnPct: [10, 100], bwHighPct: [10, 100], fuelWarnPct: [0, 90], fuelLowPct: [0, 90], dayWarnPct: [0, 95], dayLowPct: [0, 95], dayHystPct: [0, 20], rigWarnT: [0.5, 20], rigAlarmT: [0.5, 25], rigHystT: [0, 2], rigScaleT: [1, 30], engTempWarnC: [40, 130], engTempAlarmC: [40, 130], engTempHystC: [0, 10], engMaxRpm: [1000, 6000], engRedRpm: [500, 6000], engGreenFrom: [0, 6000], engGreenTo: [0, 6000], ackMinutes: [1, 120], staleSec: [5, 300] };
+const BOOL = ['night', 'soundOn', 'baroAlarmOn', 'rigAlarmOn', 'bwSwap', 'engTempAlarmOn', 'fuelUseSensor', 'windAlarmOn', 'battAlarmOn', 'waterAlarmOn', 'anchorAlarmOn', 'anchorLocalFallback', 'stormAlarmOn', 'dayAlarmOn'];
 const cfg = Object.assign({}, DEF, flow.get('cfg') || {});
 
 if (msg.req.method === 'POST') {
@@ -458,6 +459,7 @@ if (msg.req.method === 'POST') {
         if (!ok) { msg.statusCode = 400; msg.payload = { error: 'Fuel curve: format rpm:l/h, e.g. 1000:1.2,2000:3.8' }; return [msg, null]; }
         cfg.fuelCurve = b.fuelCurve.replace(/\\s/g, '');
     }
+    if (typeof b.dayInstance === 'string' && /^[\\w.-]{1,30}$/.test(b.dayInstance)) cfg.dayInstance = b.dayInstance;
     if (typeof b.waterInstance === 'string' && /^[\\w-]{1,20}$/.test(b.waterInstance)) cfg.waterInstance = b.waterInstance;
     // Zeitzone ist nicht manuell einstellbar — sie kommt automatisch aus der GPS-Position (tzAuto)
     delete cfg.tz;

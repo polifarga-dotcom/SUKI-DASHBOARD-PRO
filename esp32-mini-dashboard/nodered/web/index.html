@@ -614,14 +614,16 @@ function renderSupply(s, b, f) {
     '<div class="sva">' + fmt(b.v, 2) + ' <span>V</span><br>' + (b.a != null && b.a > 0 ? '+' : '') + fmt(b.a, 1) + ' <span>A</span></div>' +
     '<div class="sbar" style="top:98px"><i style="width:' + bp + '%;background:' + (b.st === 'alarm' ? '#ff3030' : b.st === 'ok' ? '#00d000' : '#ffa000') + '"></i></div>' +
     '<div class="ssep"></div>';
-  for (var i = 0; i < 4; i++) {
-    var t = tanks[i] || { name: ['WATER', 'DIESEL', 'BLACK MAIN', 'BLACK GUEST'][i], kind: 'water', st: 'na' };
+  // 4 Tanks (Abstand 46 px) oder 5 mit Tagestank (36 px)
+  var nT = Math.min(5, Math.max(4, tanks.length)), step = nT > 4 ? 36 : 46, y0 = nT > 4 ? 132 : 136;
+  for (var i = 0; i < nT; i++) {
+    var t = tanks[i] || { name: ['WATER', 'DIESEL', 'BLACK MAIN', 'BLACK GUEST'][i] || '', kind: 'water', st: 'na' };
     var tst = t.kind === 'water' ? f.st : t.st;   // Frischwasser nutzt den echten Wasser-Alarm
     var col = tst === 'alarm' || tst === 'high' ? '#ff3030' : tst === 'warn' ? '#ffa000' : '';
-    var p = t.pct == null ? 0 : Math.max(0, Math.min(100, t.pct)), y = 136 + i * 46;
+    var p = t.pct == null ? 0 : Math.max(0, Math.min(100, t.pct)), y = y0 + i * step;
     h += '<div class="sr" style="top:' + y + 'px"><span class="n">' + t.name + '</span><span class="v">' +
       (t.l != null ? t.l + ' / ' + t.cap + ' l' : '') + '<b style="color:' + col + '">' + (t.pct == null ? '--' : t.pct) + ' %</b></span></div>' +
-      '<div class="sbar tb" style="top:' + (y + 24) + 'px"><i class="' + t.kind + '" style="width:' + p + '%' + (col ? ';background:' + col : '') + '"></i></div>';
+      '<div class="sbar tb" style="top:' + (y + (nT > 4 ? 21 : 24)) + 'px"><i class="' + t.kind + '" style="width:' + p + '%' + (col ? ';background:' + col : '') + '"></i></div>';
   }
   if ($('tsup').innerHTML !== h) $('tsup').innerHTML = h;
 }

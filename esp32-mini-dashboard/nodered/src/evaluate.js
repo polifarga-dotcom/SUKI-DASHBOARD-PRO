@@ -12,6 +12,7 @@ const DEF = {
     aisMode: 'cruising', aisCruiseNm: 0.5, aisOffshoreNm: 2, aisTcpaMin: 20, aisRangeNm: 2,
     sosPob: 2, sosDesc: 'sailing trimaran, 14 metres',
     bwSwap: false, bwWarnPct: 75, bwHighPct: 90, fuelWarnPct: 20, fuelLowPct: 10,
+    dayInstance: 'auto', dayAlarmOn: true, dayWarnPct: 30, dayLowPct: 15, dayHystPct: 3,
     rigAlarmOn: true, rigWarnT: 3.2, rigAlarmT: 4.2, rigHystT: 0.1, rigScaleT: 5,
     engTempAlarmOn: true, engTempWarnC: 90, engTempAlarmC: 95, engTempHystC: 2,
     engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true,
@@ -467,6 +468,23 @@ let ft = cfg.fuelInstance !== 'auto' ? fuelTanks.find((t) => t.id === cfg.fuelIn
 if (!ft) ft = fuelTanks.find((t) => t.lvl != null) || null;
 const fuelL = ft && ft.lvl != null && ft.capL != null ? ft.lvl * ft.capL : null;
 
+// Tagestank (SUKI: Gobius 40 l, tanks.fuel.4): 'auto' = der andere Fuel-/Diesel-Tank neben dem Haupttank, 'off' = ausblenden
+let dt = cfg.dayInstance === 'auto' ? fuelTanks.find((t) => t !== ft) || null
+    : cfg.dayInstance !== 'off' ? fuelTanks.find((t) => t.id === cfg.dayInstance) || null : null;
+const day = { st: 'na', pct: null, id: dt ? dt.id : null };
+if (dt && dt.lvl != null) {
+    day.pct = dt.lvl * 100;
+    let low = context.get('dayLow') || false;
+    if (!low && day.pct < cfg.dayLowPct) low = true;
+    else if (low && day.pct >= cfg.dayLowPct + cfg.dayHystPct) low = false;
+    context.set('dayLow', low);
+    // Farbe immer nach Schwellen, Alarm (Blinken + Summer) nur wenn eingeschaltet
+    day.st = low ? 'high' : day.pct < cfg.dayWarnPct ? 'warn' : 'ok';
+    if (low && cfg.dayAlarmOn) alarms.push({ key: 'daytank', text: `DAY TANK ${Math.round(day.pct)} % < ${cfg.dayLowPct} %` });
+} else if (dt) {
+    warns.push('No day tank data');
+}
+
 // Reichweite bei aktuellem Verbrauch (+ SOG für Seemeilen)
 const sogLeaf = skN && skN.data && leaf(skN.data.speedOverGround);
 const sog = sogLeaf && isNum(sogLeaf.value) && ageS(sogLeaf.timestamp) < cfg.staleSec ? sogLeaf.value * MS2KN : null;
@@ -607,7 +625,7 @@ const twdL = leaf(wTree.directionTrue);
 if (fresh(twdL)) sail.twd = Math.round(((twdL.value * 180 / Math.PI) % 360 + 360) % 360);
 else if (sail.twa != null && hdgDeg != null) sail.twd = Math.round(((hdgDeg + sail.twa) % 360 + 360) % 360);
 
-// ── Tank-Screen: Water, Diesel, Black Main, Black Guest ──────────────────
+// ── Tank-Screen: Water, Diesel, (Day Tank), Black Main, Black Guest ──────────────────
 const bwTree = (skT && skT.data && skT.data.blackWater && typeof skT.data.blackWater === 'object') ? skT.data.blackWater : {};
 const bw = Object.keys(bwTree).filter((k) => bwTree[k] && typeof bwTree[k] === 'object').map((k) => {
     const lvl = leaf(bwTree[k].currentLevel), cap = leaf(bwTree[k].capacity);
@@ -624,6 +642,7 @@ const fuelPct = ft && ft.lvl != null ? ft.lvl * 100 : null;
 const tanksScreen = [
     tankObj('WATER', 'water', water.pct, water.cap, water.st === 'alarm' ? 'high' : water.pct == null ? 'na' : 'ok'),
     tankObj('DIESEL', 'fuel', fuelPct, ft && ft.capL, fuelPct == null ? 'na' : fuelPct < cfg.fuelLowPct ? 'high' : fuelPct < cfg.fuelWarnPct ? 'warn' : 'ok'),
+    ...(dt ? [tankObj('DAY TANK', 'fuel', day.pct, dt.capL, day.st)] : []),
     tankObj('BLACK MAIN', 'black', bw[0] && bw[0].lvl != null ? bw[0].lvl * 100 : null, bw[0] && bw[0].capL, bwSt(bw[0] && bw[0].lvl != null ? bw[0].lvl * 100 : null)),
     tankObj('BLACK GUEST', 'black', bw[1] && bw[1].lvl != null ? bw[1].lvl * 100 : null, bw[1] && bw[1].capL, bwSt(bw[1] && bw[1].lvl != null ? bw[1].lvl * 100 : null)),
 ];

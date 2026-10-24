@@ -81,6 +81,13 @@
 <div class="row"><label>Diesel: orange below (%)</label><input type="number" id="fuelWarnPct" min="0" max="90" step="1"></div>
 <div class="row"><label>Diesel: red below (%)</label><input type="number" id="fuelLowPct" min="0" max="90" step="1"></div>
 
+<h2>Day tank</h2>
+<div class="row"><label>Day tank (SignalK)<small>Shown on screen 1 below Diesel</small></label><select id="dayInstance"><option value="auto">Auto (second fuel/diesel tank)</option><option value="off">Off (hide)</option></select></div>
+<div class="row"><label>Day tank alarm enabled<small>Screen blinks + buzzer</small></label><input type="checkbox" id="dayAlarmOn"></div>
+<div class="row"><label>Orange below (%)</label><input type="number" id="dayWarnPct" min="0" max="95" step="1"></div>
+<div class="row"><label>Alarm below (%)</label><input type="number" id="dayLowPct" min="0" max="95" step="1"></div>
+<div class="row"><label>Hysteresis (%)</label><input type="number" id="dayHystPct" min="0" max="20" step="1"></div>
+
 <h2>Rig load sensors</h2>
 <div class="row"><label>Rig load alarm enabled</label><input type="checkbox" id="rigAlarmOn"></div>
 <div class="row"><label>Green up to (t)<small>Above this the value turns orange (no alarm)</small></label><input type="number" id="rigWarnT" min="0.5" max="20" step="0.1"></div>
@@ -125,9 +132,9 @@ If no known network is reachable for 1 minute, the display opens its own setup W
 <div id="out"></div>
 </main>
 <script>
-var NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','aisCruiseNm','aisOffshoreNm','aisTcpaMin','sailCloseFrom','sailCloseTo','sosPob','bwWarnPct','bwHighPct','fuelWarnPct','fuelLowPct','engTempWarnC','engTempAlarmC','engTempHystC','rigWarnT','rigAlarmT','rigHystT','rigScaleT','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec'];
-var BOOL = ['night','soundOn','baroAlarmOn','rigAlarmOn','bwSwap','engTempAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback','stormAlarmOn'];
-var STR = ['sailStyle','sosDesc','soundNight','fuelInstance','fuelCurve','windSource','battInstance','waterInstance'];
+var NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','aisCruiseNm','aisOffshoreNm','aisTcpaMin','sailCloseFrom','sailCloseTo','sosPob','bwWarnPct','bwHighPct','fuelWarnPct','fuelLowPct','dayWarnPct','dayLowPct','dayHystPct','engTempWarnC','engTempAlarmC','engTempHystC','rigWarnT','rigAlarmT','rigHystT','rigScaleT','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec'];
+var BOOL = ['night','soundOn','baroAlarmOn','rigAlarmOn','bwSwap','engTempAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback','stormAlarmOn','dayAlarmOn'];
+var STR = ['sailStyle','sosDesc','soundNight','fuelInstance','dayInstance','fuelCurve','windSource','battInstance','waterInstance'];
 function $(id){return document.getElementById(id);}
 function req(method, url, body, cb){
   var x = new XMLHttpRequest(); x.open(method, url); x.setRequestHeader('Content-Type','application/json');
@@ -149,11 +156,10 @@ function load(){
       o.textContent='Tank '+t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');
       ts.appendChild(o);
     });
-    var fs=$('fuelInstance'); fs.length=1;
+    var fs=$('fuelInstance'), ds=$('dayInstance'); fs.length=1; ds.length=2;
     (d.fuelTanks||[]).forEach(function(t){
-      var o=document.createElement('option'); o.value=t.id;
-      o.textContent=t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');
-      fs.appendChild(o);
+      var label=t.id+' – '+(t.pct!=null?t.pct+' %':'-')+(t.capL!=null?', '+t.capL+' l':'');
+      [fs,ds].forEach(function(sel){ var o=document.createElement('option'); o.value=t.id; o.textContent=label; sel.appendChild(o); });
     });
     $('tzAuto').textContent = d.config.tzAuto || 'UTC (no position yet)';
     var c=d.config;

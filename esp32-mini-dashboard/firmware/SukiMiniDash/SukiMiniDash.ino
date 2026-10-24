@@ -126,8 +126,9 @@ struct DashState {
   // SOS / VHF-Notruf (Screen 8)
   char sosName[12] = "SUKI", sosCs[10] = "", sosMmsi[14] = "", sosPhon[64] = "", sosLat[48] = "", sosLon[48] = "", sosUtc[16] = "", sosDesc[44] = "";
   int sosPob = 2;
-  // Tanks (Screen 1, Box links)
-  TankV tanks[4];
+  // Tanks (Screen 1, Box links) — 4 oder 5 mit Tagestank
+  TankV tanks[5];
+  int nTanks = 0;
   // Segeln (Screen 5)
   float sAws = NAN, sTws = NAN, sStw = NAN, sSog = NAN, rigP = NAN, rigS = NAN, rigWarn = 3.2f, rigAlarm = 4.2f, rigScale = 5;
   int sAwa = NA_I, sTwa = NA_I, sTwd = NA_I, sHdg = NA_I, sWin = 0, sAwsN = 0;
@@ -427,13 +428,14 @@ static void parseState(const char* body, size_t len) {
   {
     int i = 0;
     for (JsonObject t : doc["tanks"].as<JsonArray>()) {
-      if (i >= 4) break;
+      if (i >= 5) break;
       strlcpy(n.tanks[i].name, t["name"] | "", sizeof(n.tanks[i].name));
       strlcpy(n.tanks[i].kind, t["kind"] | "", sizeof(n.tanks[i].kind));
       strlcpy(n.tanks[i].st, t["st"] | "na", sizeof(n.tanks[i].st));
       n.tanks[i].pct = t["pct"] | NA_I; n.tanks[i].l = t["l"] | NA_I; n.tanks[i].cap = t["cap"] | NA_I;
       i++;
     }
+    n.nTanks = i;
   }
 
   {
@@ -803,8 +805,10 @@ static void tileFrame(int x, const char* title, bool alarm, bool red, uint16_t b
 // Screen 1 links: Batterie groß + alle Tanks als Balken in einer Box
 static void supplyTile(const DashState& s, bool online, bool red, uint16_t bg) {
   const int x = 12, y = 72, w = 248, h = 320;
+  // 4 Tanks (Abstand 46 px) oder 5 mit Tagestank (36 px)
+  const int nT = s.nTanks > 4 ? 5 : 4, step = nT > 4 ? 36 : 46, y0 = nT > 4 ? 142 : 146, barOff = nT > 4 ? 12 : 14;
   bool hiTank = false;
-  for (int i = 0; i < 4; i++) if (!strcmp(s.tanks[i].st, "high")) hiTank = true;
+  for (int i = 0; i < nT; i++) if (!strcmp(s.tanks[i].st, "high")) hiTank = true;
   bool al = online && (!strcmp(s.battSt, "alarm") || !strcmp(s.waterSt, "alarm") || hiTank);
   uint16_t border = red ? C_ONRED : (al ? C_RED : C_BORDER);
   for (int i = 0; i < (al ? 5 : 2); i++) fb.drawRoundRect(x + i, y + i, w - 2 * i, h - 2 * i, 14 - i, border);
@@ -833,13 +837,13 @@ static void supplyTile(const DashState& s, bool online, bool red, uint16_t bg) {
   fb.drawFastHLine(x + 16, y + 124, 216, red ? C_ONRED : C_BORDER);
   // Tanks: Name, Liter, Prozent + Balken in Tankfarbe (Wasser blau, Diesel gelb, Schwarzwasser braun)
   static const char* defNames[] = {"WATER", "DIESEL", "BLACK MAIN", "BLACK GUEST"};
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < nT; i++) {
     const TankV& t = s.tanks[i];
     const char* st = !strcmp(t.kind, "water") ? s.waterSt : t.st;   // Frischwasser nutzt den echten Wasser-Alarm
     bool hi = online && (!strcmp(st, "alarm") || !strcmp(st, "high")), wr = online && !strcmp(st, "warn");
-    int ty = y + 146 + i * 46;
+    int ty = y + y0 + i * step;
     fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(grey, bg);
-    fb.drawString(t.name[0] ? t.name : defNames[i], x + 16, ty);
+    fb.drawString(t.name[0] ? t.name : (i < 4 ? defNames[i] : ""), x + 16, ty);
     if (online && t.pct != NA_I) snprintf(b, sizeof(b), "%d %%", t.pct); else strcpy(b, "--");
     fb.setFont(&fonts::DejaVu18); fb.setTextDatum(textdatum_t::middle_right);
     fb.setTextColor(red ? C_ONRED : hi ? C_RED : wr ? C_AMBER : C_WHITE, bg);
@@ -852,8 +856,8 @@ static void supplyTile(const DashState& s, bool online, bool red, uint16_t bg) {
     }
     int tp = online && t.pct != NA_I ? constrain(t.pct, 0, 100) : 0;
     uint16_t fc = red ? C_RED_BG : hi ? C_RED : wr ? C_AMBER : !strcmp(t.kind, "fuel") ? C_WSUN : !strcmp(t.kind, "black") ? C_BROWN : C_WRAIN;
-    fb.fillRoundRect(x + 16, ty + 14, 216, 8, 4, red ? C_ONRED : C_BORDER);
-    if (tp) fb.fillRoundRect(x + 16, ty + 14, max(8, 216 * tp / 100), 8, 4, fc);
+    fb.fillRoundRect(x + 16, ty + barOff, 216, 8, 4, red ? C_ONRED : C_BORDER);
+    if (tp) fb.fillRoundRect(x + 16, ty + barOff, max(8, 216 * tp / 100), 8, 4, fc);
   }
 }
 
