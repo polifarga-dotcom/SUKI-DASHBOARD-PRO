@@ -300,23 +300,24 @@ if (vic._t && now - vic._t < 60000) {
         dc: { w: r0(V('Dc/System/Power')) },
     };
 }
-// Verbrauchs-/Ertragsverlauf der letzten 10 min (Hintergrund-Diagramm in Solar, AC Loads, DC Loads): 60 Mittelwerte
+// Verbrauchs-/Ertragsverlauf der letzten 10 min (Hintergrund-Diagramm in Solar, AC Loads, DC Loads, Batteriestrom): 60 Mittelwerte
 {
     let eh = (flow.get('energy_hist') || []).filter((h) => now - h[0] < 600000);
-    if (energy.ok && (!eh.length || now - eh[eh.length - 1][0] >= 1000)) eh.push([now, energy.pv.w, energy.ac.w, energy.dc.w]);
+    if (energy.ok && (!eh.length || now - eh[eh.length - 1][0] >= 1000)) eh.push([now, energy.pv.w, energy.ac.w, energy.dc.w, energy.bat.a]);
     flow.set('energy_hist', eh);
     if (energy.ok) {
         const EW = 600000, ES = now - EW, EN = 60;
-        const bucket = (k) => {
+        const bucket = (k, dec) => {
             const sum = new Array(EN).fill(0), cnt = new Array(EN).fill(0);
             for (const h of eh) {
                 if (!isNum(h[k])) continue;
                 const i = Math.min(EN - 1, Math.floor((h[0] - ES) / EW * EN));
                 sum[i] += h[k]; cnt[i]++;
             }
-            return sum.map((v, i) => (cnt[i] ? Math.round(v / cnt[i]) : null));
+            const f = dec ? 10 : 1;
+            return sum.map((v, i) => (cnt[i] ? Math.round(v / cnt[i] * f) / f : null));
         };
-        energy.pv.hist = bucket(1); energy.ac.hist = bucket(2); energy.dc.hist = bucket(3);
+        energy.pv.hist = bucket(1); energy.ac.hist = bucket(2); energy.dc.hist = bucket(3); energy.bat.hist = bucket(4, true);
     }
 }
 

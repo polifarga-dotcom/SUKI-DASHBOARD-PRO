@@ -381,6 +381,88 @@
   .night .dots i{background:#300000}.night .dots i.on{background:#900000}
   .red .eb{background:transparent !important;border-color:#fff}
   .red .eh,.red .ev,.red .es,.red .ev small{color:#fff}
+
+  /* ════ B&G-Stil (2026-10-24): Raster statt Karten, Kopfleiste, Alarm-Overlay statt Meldungszeile ════ */
+  .hdr{left:0;right:0;top:0;height:48px;padding:0 12px;box-sizing:border-box;background:#0b0b0b;border-bottom:1px solid #2a2a2a}
+  #nbtn,#gbtn,#sosbtn,#offbtn{top:4px;width:40px;height:40px;border-radius:4px;border:1px solid #333}
+  #nbtn{left:8px} #gbtn{left:54px} #sosbtn{left:100px} #offbtn{left:146px}
+  .logo{position:absolute;left:200px;top:15px;width:84px;height:18px;fill:#fff} .logo svg{display:block;width:84px;height:18px}
+  .pbar{position:absolute;left:296px;top:14px;width:2px;height:20px;background:#d7262d}
+  .pname{position:absolute;left:308px;top:16px;font-size:13px;letter-spacing:2px;color:#9a9a9a}
+  .time{top:9px;left:505px;font-size:24px;font-weight:bold;color:#fff} .utc{font-size:12px;font-weight:normal;color:#7a7a7a;margin-left:8px}
+  .stat{flex-direction:row-reverse;gap:10px;font-size:14px;letter-spacing:1px;cursor:pointer}
+  .dot{width:18px;height:18px;border-radius:0} .dot.ok{background:#22c55e;box-shadow:none} .dot.warn{background:#e8a317} .dot.alarm{background:#d7262d}
+  .tile{border:1px solid #2a2a2a;border-radius:0}
+  .tile.alarm{border:1px solid #2a2a2a;box-shadow:inset 0 0 0 3px #d7262d;background:#1a0405}
+  #p1 .tile{top:48px;height:408px;border:0;border-right:1px solid #2a2a2a}
+  #tsup{left:0;width:267px} #tw{left:267px;width:267px}
+  #ta{left:534px;width:266px;height:188px;border-right:0 !important;border-bottom:1px solid #2a2a2a !important}
+  #tp{left:534px;top:236px !important;width:266px;height:220px !important;border-right:0 !important}
+  .httl{top:10px;left:14px;font-size:13px;letter-spacing:1.5px;color:#9a9a9a}
+  .hthr{top:11px;right:14px;font-size:12px;letter-spacing:1px;color:#6a6a6a}
+  .ca{fill:rgba(255,255,255,.06)} .cl{fill:none;stroke:#4a4a4a;stroke-width:2}
+  .cthr{fill:none;stroke:#7a1c1c;stroke-width:1.5;stroke-dasharray:6 4} .cz{fill:none;stroke:#333;stroke-width:1;stroke-dasharray:2 4}
+  .alarm .ca{fill:rgba(215,38,45,.15)} .alarm .cl{stroke:rgba(215,38,45,.6)}
+  .ok-c{color:#22c55e} .warn-c{color:#e8a317} .alarm-c{color:#ff3b3b}
+  .big.ok-c,.hbig.ok-c,.sbv.ok-c{color:#fff}
+  .sbv{position:absolute;left:14px;top:34px;font-size:58px;font-weight:bold;line-height:1;z-index:1}
+  .sbv small{font-size:18px;font-weight:normal;color:#9a9a9a;margin-left:4px}
+  .sva2{position:absolute;right:14px;top:36px;text-align:right;font-size:18px;font-weight:bold;line-height:26px;z-index:1}
+  .tsep{position:absolute;left:0;right:0;top:148px;height:1px;background:#2a2a2a}
+  .trow{position:absolute;left:14px;right:14px;display:flex;justify-content:space-between;align-items:baseline;white-space:nowrap}
+  .trow .n{font-size:12px;letter-spacing:1px;color:#9a9a9a} .trow .n.day{color:#e8a317}
+  .trow .v{font-size:12px;color:#6a6a6a} .trow .v b{font-size:18px;color:#fff;margin-left:8px}
+  .seg{position:absolute;left:14px;right:14px;height:9px;display:flex;gap:3px}
+  .seg i{flex:1;background:#1e1e1e} .seg i.water{background:#2f8fe0} .seg i.fuel{background:#e8a317} .seg i.day{background:#f5c76b} .seg i.black{background:#8b6f5a}
+  .seg i.warn{background:#e8a317} .seg i.high{background:#d7262d}
+  #tw .big{top:122px;font-size:104px} #tw .s3{top:246px;font-size:13px;letter-spacing:1px;color:#7a7a7a}
+  .wfoot{position:absolute;left:14px;right:14px;bottom:12px;display:flex;justify-content:space-between;align-items:baseline;font-size:12px;letter-spacing:1px;color:#9a9a9a;z-index:1}
+  .wfoot b{font-size:18px;margin-left:6px} #wmax b{color:#e8a317}
+  .wfoot .wtmp{position:static;font-size:18px;gap:6px;color:#fff} .wfoot .wtmp svg{width:20px;height:20px;color:#4fc3f7}
+  .pvw{top:34px}
+  #ta .hbig.aw{top:64px;font-size:48px} #ta.act .hbig.aw{top:40px;font-size:40px} #ta .hsub{top:94px} #ta .aup{top:138px;border-radius:0;border-width:1px}
+  #tp .hbig.aw{top:56px;font-size:56px} #tp .hsub{top:124px;font-size:15px;font-weight:bold}
+  .dots{top:466px;gap:8px} .dots i{width:6px;height:6px;border-radius:0;background:#3a3a3a} .dots i.on{width:16px;background:#fff}
+  #frame{position:absolute;inset:0;border:5px solid #d7262d;pointer-events:none;z-index:60;display:none} #frame.on{display:block}
+  #ovl{position:absolute;left:60px;right:60px;bottom:30px;height:84px;background:#0b0b0b;border:2px solid #d7262d;box-sizing:border-box;z-index:55;display:none;cursor:pointer}
+  #ovl.on{display:block} #ovl::before{content:'';position:absolute;left:0;top:0;bottom:0;width:8px;background:#d7262d}
+  #ovl.warn,#ovl.ack{border-color:#e8a317} #ovl.warn::before,#ovl.ack::before{background:#e8a317}
+  #ovl-t{position:absolute;left:26px;top:11px;font-size:13px;font-weight:bold;letter-spacing:2px;color:#d7262d} #ovl.warn #ovl-t,#ovl.ack #ovl-t{color:#e8a317}
+  #ovl-m{position:absolute;left:26px;right:196px;top:30px;font-size:22px;font-weight:bold;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #ovl-s{position:absolute;left:26px;right:196px;top:60px;font-size:12px;color:#9a9a9a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #ovl-b{position:absolute;right:14px;top:18px;width:164px;height:44px;border:0;background:#d7262d;color:#fff;font:bold 15px "DejaVu Sans",Verdana,sans-serif;letter-spacing:1px;cursor:pointer;padding:0}
+  #ovl.warn #ovl-b{background:#e8a317;color:#000}
+  .eb{background:#000;border:1px solid #2a2a2a;border-radius:0} .eb.ec{border-color:#3a3a3a} .eb.on{background:#0b0b0b;border-color:#6a6a6a}
+  .eb .ech{border-radius:0} .eb .ech .ca,.eb.on .ech .ca,#eb-pv .ech .ca{fill:rgba(255,255,255,.06)} .eb .ech .cl,.eb.on .ech .cl,#eb-pv .ech .cl{stroke:#4a4a4a}
+  .eh{font-size:13px;font-weight:normal;letter-spacing:1.5px;text-transform:uppercase;color:#9a9a9a} .ev{font-weight:bold}
+  .eb.r1{top:58px !important;height:138px} .eb.r2{top:226px !important;height:222px}
+  #cn-shore,#cn-ac{top:126px !important} #cn-pv,#cn-dc{top:336px !important} #cn-bat{top:196px !important;height:30px !important}
+  .cn.on::before{background:#fff} .cn.h.r.on::after{border-left-color:#fff} .cn.h.l.on::after{border-right-color:#fff} .cn.v.u.on::after{border-bottom-color:#fff} .cn.v.d.on::after{border-top-color:#fff}
+  .wb{border:1px solid #2a2a2a;border-radius:0} .wp{height:140px;padding-top:14px} .wd{height:100px;padding-top:17px} .wp > div,.wd > div{margin-top:14px} .wp.now{border-color:#6a6a6a}
+  .et{height:124px} .ev2{top:38px;font-size:38px} .es2{top:92px} .efl{top:52px}
+  .sc.tl,.sc.tr{top:66px} .sc.bl,.sc.br{top:400px} .sc i{color:#9a9a9a;letter-spacing:1.5px} .sc b{font-size:28px}
+  .rt{height:144px} .rt .rv{top:36px;font-size:40px} .rt .rb{top:96px;border-radius:0} .rt .rs{top:112px}
+  .amap{top:56px;height:392px;border-radius:0;border:1px solid #2a2a2a} #amap,#aisr{background:#000}
+  .apanel{top:56px;height:392px} .ahead,.aisinfo{border-radius:0;border:1px solid #2a2a2a} .acells div{border-radius:0}
+  .abtns{top:330px} .abtns button,.arow button,.mbtns button,.aismodes button,.aisack{border-radius:0;border-width:1px}
+  .sosb{top:56px;border-radius:0;border-width:2px} .sostabs{top:106px} .sostabs button{border-radius:0} .sosbox{top:138px;height:310px;border-radius:0;border:1px solid #2a2a2a}
+  .night .hdr{background:#000;border-color:#300000} .night .logo{fill:#900000} .night .pname{color:#700000} .night .pbar{background:#700000}
+  .night #nbtn,.night #gbtn,.night #sosbtn,.night #offbtn{border-color:#400000}
+  .night .tile,.night .eb,.night .wb,.night .amap,.night .ahead,.night .aisinfo,.night .sosbox{border-color:#300000} .night #p1 .tile{border-color:#300000} .night .tsep{background:#300000}
+  .night .ca{fill:rgba(160,0,0,.12)} .night .cl{stroke:#600000} .night .cthr{stroke:#a00000} .night .cz{stroke:#300000}
+  .night .httl,.night .trow .n,.night .wfoot,.night .eh,.night .sc i{color:#800000} .night .hthr,.night .trow .v{color:#600000}
+  .night .sbv,.night .big.ok-c,.night .hbig.ok-c,.night .sbv.ok-c,.night .trow .v b,.night .wfoot .wtmp,.night .sva2,.night .ev,.night .sc b{color:#c00000}
+  .night .seg i{background:#1a0000} .night .seg i.water,.night .seg i.fuel,.night .seg i.day,.night .seg i.black{background:#a00000} .night .seg i.high{background:#ff2020}
+  .night .eb.on{background:#0a0000;border-color:#700000} .night .cn.on::before{background:#a00000}
+  .night #ovl{background:#000;border-color:#a00000} .night #ovl::before{background:#a00000} .night #ovl-t,.night #ovl-m{color:#c00000} .night #ovl-s{color:#700000} .night #ovl-b{background:#700000;color:#000}
+  .night .dots i.on{background:#900000} .night .dot.alarm{background:#ff2020}
+  .night .wfoot .wtmp svg,.night #wmax b,.night .trow .n.day,.night .pvw{color:#c00000}
+  .night #tw .s3,.night .utc{color:#700000}
+  .night #ovl.warn,.night #ovl.ack{border-color:#a00000} .night #ovl.warn::before,.night #ovl.ack::before{background:#a00000}
+  .night #ovl.warn #ovl-t,.night #ovl.ack #ovl-t{color:#c00000} .night #ovl.warn #ovl-b{background:#700000;color:#000}
+  .night .eb.on .ech .ca,.night #eb-pv .ech .ca{fill:rgba(160,0,0,.15)} .night .eb.on .ech .cl,.night #eb-pv .ech .cl{stroke:#700000}
+  .night .sva2 .ok-c,.night .sva2 .warn-c{color:#c00000} .night .cn.on::before{background:#a00000}
+  .night .cn.h.r.on::after{border-left-color:#d00000} .night .cn.v.u.on::after{border-bottom-color:#d00000} .night .cn.v.d.on::after{border-top-color:#d00000}
 </style>
 </head>
 <body>
@@ -392,23 +474,29 @@
     <button id="sosbtn" aria-label="Emergency VHF"><svg viewBox="0 0 24 24" width="26" height="26"><circle cx="12" cy="12" r="8" fill="none" stroke="#fff" stroke-width="5"/><circle cx="12" cy="12" r="8" fill="none" stroke="#ff3030" stroke-width="5" stroke-dasharray="6.28 6.28" transform="rotate(-22.5 12 12)"/></svg></button>
     <button id="offbtn" aria-label="Display off"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7.05 6.6a7.5 7.5 0 1 0 9.9 0"/><line x1="12" y1="2.8" x2="12" y2="11"/></svg></button>
     <a id="gbtn" href="/esp-dash/settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="24" height="24"><g fill="currentColor"><rect x="10.5" y="1.5" width="3" height="5" rx="1"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(45 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(90 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(135 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(180 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(225 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(270 12 12)"/><rect x="10.5" y="1.5" width="3" height="5" rx="1" transform="rotate(315 12 12)"/></g><circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="3"/></svg></a>
+    <div class="logo" id="logo"></div><div class="pbar"></div><div class="pname" id="pname">SUKI</div>
     <div class="time"><span id="time">--:--</span><span class="utc" id="utc"></span></div>
-    <div class="stat"><span id="stxt">...</span><div class="dot" id="dot"></div></div>
+    <div class="stat" id="stat"><span id="stxt">...</span><div class="dot" id="dot"></div></div>
   </div>
 
   <div class="page" id="p1">
-  <div class="tile t1 sup" id="tsup"></div>
+  <div class="tile t1 sup" id="tsup">
+    <svg class="bchart" viewBox="0 0 267 148" preserveAspectRatio="none" style="height:148px"><path class="ca" id="sbarea"/><path class="cl" id="sbline"/><path class="cz" id="sbzero"/></svg>
+    <div class="httl">BATTERY</div><div class="hthr" id="sbthr"></div>
+    <div class="sbv" id="sbsoc">--</div><div class="sva2" id="sbva"></div>
+    <div class="tsep"></div><div class="httl" style="top:160px">TANKS</div>
+    <div id="stanks"></div>
+  </div>
 
   <div class="tile t2" id="tw">
-    <svg class="bchart" viewBox="0 0 248 320" preserveAspectRatio="none"><path class="ca" id="warea"/><path class="cl" id="wline"/></svg>
-    <svg class="pvsun" id="pvsun" viewBox="0 0 248 320" preserveAspectRatio="none"></svg>
+    <svg class="bchart" viewBox="0 0 267 408" preserveAspectRatio="none"><path class="ca" id="warea"/><path class="cl" id="wline"/><path class="cthr" id="wthrl"/></svg>
+    <svg class="pvsun" id="pvsun" viewBox="0 0 267 408" preserveAspectRatio="none"></svg>
     <div class="pvw" id="pvw"></div>
-    <div class="ttl">WIND</div>
-    <div class="big" id="wkn">--<small>kn</small></div>
-    <div class="sub s1" id="wsrc">--</div>
-    <div class="sub s2" id="wmax">Max 10' -- kn</div>
-    <div class="wtmp" id="wtmp" style="display:none"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M13 4a3 3 0 0 1 6 0v11a5.5 5.5 0 1 1-6 0z" stroke-width="2.2"/><circle cx="16" cy="19.5" r="2.8" fill="currentColor" stroke="none"/><line x1="16" y1="8" x2="16" y2="18" stroke-width="2.4"/><path d="M2 29.5q3.5-3 7 0t7 0t7 0t7 0" stroke-width="2"/></svg><span id="wtmpv"></span></div>
-    <div class="sub s3" id="wthr">Alarm at -- kn</div>
+    <div class="httl" id="wsrc">AWS</div><div class="hthr">KN</div>
+    <div class="big" id="wkn">--</div>
+    <div class="wfoot"><span id="wmax"></span>
+    <div class="wtmp" id="wtmp" style="display:none"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M13 4a3 3 0 0 1 6 0v11a5.5 5.5 0 1 1-6 0z" stroke-width="2.2"/><circle cx="16" cy="19.5" r="2.8" fill="currentColor" stroke="none"/><line x1="16" y1="8" x2="16" y2="18" stroke-width="2.4"/><path d="M2 29.5q3.5-3 7 0t7 0t7 0t7 0" stroke-width="2"/></svg><span id="wtmpv"></span></div></div>
+    <div class="sub s3" id="wthr"></div>
   </div>
 
   <div class="tile t3 half" id="ta">
@@ -418,9 +506,9 @@
     <button class="aup" id="aup" style="display:none">ANCHOR UP</button>
   </div>
   <div class="tile t3 half h2" id="tp">
-    <svg class="bchart" id="bchart" viewBox="0 0 248 154" preserveAspectRatio="none"><path class="ca" id="barea"/><path class="cl" id="bline"/></svg>
-    <div class="httl">BARO</div><div class="hthr" id="pthr"></div>
-    <div class="hbig aw" id="phpa">--<small>hPa</small></div>
+    <svg class="bchart" id="bchart" viewBox="0 0 266 220" preserveAspectRatio="none"><path class="ca" id="barea"/><path class="cl" id="bline"/><path class="cthr" id="pthrl"/></svg>
+    <div class="httl">BARO</div><div class="hthr" id="pthr">HPA</div>
+    <div class="hbig aw" id="phpa">--</div>
     <div class="hsub" id="pdelta"></div>
   </div>
 
@@ -446,6 +534,7 @@
       <div class="est" id="es-pva"></div><div class="ev" id="ev-pv">--</div><div class="es" id="es-pv"></div><div class="emp" id="emp"></div>
     </div>
     <div class="eb ec r2" id="eb-bat" style="left:290px;top:220px">
+      <svg class="bchart ech" viewBox="0 0 220 172" preserveAspectRatio="none"><path class="ca" id="ebarea"/><path class="cl" id="ebline"/><path class="cz" id="ebzero"/></svg>
       <div class="eh"><svg viewBox="0 0 16 16"><rect x="1" y="4" width="12" height="8" rx="1.5"/><line x1="13" y1="7" x2="15" y2="7"/><line x1="13" y1="9" x2="15" y2="9"/></svg>Battery</div>
       <div class="ebn" id="ebn"></div><div class="ev" id="ev-bat">--</div><div class="est" id="es-bat2"></div><div class="es" id="es-bat"></div><div class="ebs" id="ebs"></div>
     </div>
@@ -462,7 +551,7 @@
   </div>
 
   <div class="page" id="p3" style="display:none">
-    <div class="wb" style="left:12px;top:72px;width:776px;height:126px">
+    <div class="wb" style="left:12px;top:56px;width:776px;height:136px">
       <div class="wicon" id="w-icon" style="left:16px;top:10px;width:92px;height:92px"></div>
       <div class="wttl" style="left:126px;top:12px" id="w-day">TODAY</div>
       <div class="wbig" style="left:124px;top:34px"><span id="w-temp">--</span></div>
@@ -474,29 +563,29 @@
       <div class="wrow" style="top:90px"><span class="wsi" id="wi-moon"></span><span id="w-moon"></span></div>
       <div class="wupd" id="w-upd"></div>
     </div>
-    <div class="wb wp" id="wp0" style="left:12px;top:206px"></div>
-    <div class="wb wp" id="wp1" style="left:209px;top:206px"></div>
-    <div class="wb wp" id="wp2" style="left:406px;top:206px"></div>
-    <div class="wb wp" id="wp3" style="left:603px;top:206px"></div>
-    <div class="wb wd" id="wd0" style="left:12px;top:326px"></div>
-    <div class="wb wd" id="wd1" style="left:276px;top:326px"></div>
-    <div class="wb wd" id="wd2" style="left:540px;top:326px"></div>
+    <div class="wb wp" id="wp0" style="left:12px;top:200px"></div>
+    <div class="wb wp" id="wp1" style="left:209px;top:200px"></div>
+    <div class="wb wp" id="wp2" style="left:406px;top:200px"></div>
+    <div class="wb wp" id="wp3" style="left:603px;top:200px"></div>
+    <div class="wb wd" id="wd0" style="left:12px;top:348px"></div>
+    <div class="wb wd" id="wd1" style="left:276px;top:348px"></div>
+    <div class="wb wd" id="wd2" style="left:540px;top:348px"></div>
   </div>
 
   <div class="page" id="p4" style="display:none">
-    <div class="tile" style="left:12px;top:72px;width:376px;height:320px">
+    <div class="tile" style="left:12px;top:56px;width:376px;height:392px">
       <svg id="tacho" viewBox="0 0 376 320" style="position:absolute;inset:0;width:100%;height:100%"></svg>
     </div>
     <div class="sc tl"><i>SOG</i><b id="ec-sog">--</b></div>
     <div class="sc tr"><i>AWS</i><b id="ec-aws">--</b></div>
     <div class="sc bl"><i>WATER</i><b id="ec-wt">--</b></div>
     <div class="sc br"><i>AWA</i><b id="ec-awa">--</b></div>
-    <div class="tile et" id="et-temp" style="left:400px;top:72px"><div class="httl">TEMP</div><div class="hthr" id="e-tthr"></div><div class="ev2" id="e-temp">--</div><div class="es2" id="e-temp2"></div></div>
-    <div class="tile et" style="left:599px;top:72px"><div class="httl">HOURS</div><div class="ev2" id="e-hrs">--</div><div class="es2">engine hours</div></div>
-    <div class="tile et" style="left:400px;top:182px"><div class="httl">FUEL RATE</div><div class="ev2" id="e-lph">--</div><div class="es2" id="e-lph2"></div></div>
-    <div class="tile et" style="left:599px;top:182px"><div class="httl">DIESEL</div><div class="ev2" id="e-fuel" style="top:30px">--</div>
+    <div class="tile et" id="et-temp" style="left:400px;top:56px"><div class="httl">TEMP</div><div class="hthr" id="e-tthr"></div><div class="ev2" id="e-temp">--</div><div class="es2" id="e-temp2"></div></div>
+    <div class="tile et" style="left:599px;top:56px"><div class="httl">HOURS</div><div class="ev2" id="e-hrs">--</div><div class="es2">engine hours</div></div>
+    <div class="tile et" style="left:400px;top:188px"><div class="httl">FUEL RATE</div><div class="ev2" id="e-lph">--</div><div class="es2" id="e-lph2"></div></div>
+    <div class="tile et" style="left:599px;top:188px"><div class="httl">DIESEL</div><div class="ev2" id="e-fuel" style="top:30px">--</div>
       <div class="efl" id="e-fuel2"></div><div class="ebar"><i id="e-fbar"></i></div></div>
-    <div class="tile et" style="left:400px;top:292px;width:388px"><div class="httl">RANGE AT CURRENT RPM</div>
+    <div class="tile et" style="left:400px;top:320px;width:388px"><div class="httl">RANGE AT CURRENT RPM</div>
       <div class="ev2" id="e-rh" style="left:16px">--</div><div class="ev2" id="e-rnm" style="left:200px"></div><div class="es2" id="e-r2"></div></div>
   </div>
 
@@ -519,21 +608,21 @@
   </div>
 
   <div class="page" id="p6" style="display:none">
-    <div class="tile" style="left:12px;top:72px;width:376px;height:320px">
+    <div class="tile" style="left:12px;top:56px;width:376px;height:392px">
       <svg id="wdial" viewBox="0 0 376 320" style="position:absolute;inset:0;width:100%;height:100%"></svg>
     </div>
     <div class="sc tl"><i>SOG</i><b id="s-sog">--</b></div>
     <div class="sc tr"><i id="s-twal">TWA</i><b id="s-twa">--</b></div>
     <div class="sc br"><i id="s-twsl">TWS</i><b id="s-tws">--</b></div>
     <div class="sc bl"><i>TWD</i><b id="s-twd">--</b></div>
-    <div class="tile" id="aw-t" style="left:400px;top:72px;width:388px;height:208px">
-      <svg class="bchart" viewBox="0 0 388 208" preserveAspectRatio="none"><path class="ca" id="awarea"/><path class="cl" id="awline"/></svg>
+    <div class="tile" id="aw-t" style="left:400px;top:56px;width:388px;height:240px">
+      <svg class="bchart" viewBox="0 0 388 240" preserveAspectRatio="none"><path class="ca" id="awarea"/><path class="cl" id="awline"/></svg>
       <div class="httl">AWS</div><div class="hthr" id="aw-win"></div>
       <div class="awv" id="aw-v">--<small>kn</small></div>
       <div class="aws2" id="aw-s"></div>
     </div>
-    <div class="tile rt" id="rt-p" style="left:400px;top:288px"></div>
-    <div class="tile rt" id="rt-s" style="left:599px;top:288px"></div>
+    <div class="tile rt" id="rt-p" style="left:400px;top:304px"></div>
+    <div class="tile rt" id="rt-s" style="left:599px;top:304px"></div>
   </div>
 
   <div class="page" id="p5" style="display:none">
@@ -557,7 +646,8 @@
   </div>
 
   <div class="dots"><i id="d1" class="on"></i><i id="d2"></i><i id="d3"></i><i id="d4"></i><i id="d5"></i><i id="d6"></i><i id="d7"></i><i id="d8"></i></div>
-  <div class="ftr"><div class="msg" id="msg"></div><div class="hint" id="hint"></div></div>
+  <div id="ovl"><div id="ovl-t"></div><div id="ovl-m"></div><div id="ovl-s"></div><button id="ovl-b">ACKNOWLEDGE</button></div>
+  <div id="frame"></div>
 </div></div>
 
 <script>
@@ -590,42 +680,68 @@ function renderPvSun(e) {
   $('pvsun').style.display = $('pvw').style.display = on ? '' : 'none';
   if (!on) return;
   var k = Math.min(1, w / 1500), r0 = 30, r1 = 40 + 22 * k, g = '';
-  g += '<defs><radialGradient id="pvglow" cx="248" cy="0" r="' + (90 + 80 * k) + '" gradientUnits="userSpaceOnUse">' +
+  g += '<defs><radialGradient id="pvglow" cx="267" cy="0" r="' + (90 + 80 * k) + '" gradientUnits="userSpaceOnUse">' +
     '<stop offset="0" stop-color="#ffc400" stop-opacity="' + (on ? 0.10 + 0.14 * k : 0) + '"/><stop offset="1" stop-color="#ffc400" stop-opacity="0"/></radialGradient></defs>';
-  g += '<rect x="0" y="0" width="248" height="320" fill="url(#pvglow)"/>';
+  g += '<rect x="0" y="0" width="267" height="408" fill="url(#pvglow)"/>';
   for (var a = 100; a <= 170; a += 17.5) {
     var t = a * Math.PI / 180;
-    g += '<line class="ray" x1="' + (248 + Math.cos(t) * r0).toFixed(1) + '" y1="' + (Math.sin(t) * r0).toFixed(1) + '" x2="' + (248 + Math.cos(t) * r1).toFixed(1) + '" y2="' + (Math.sin(t) * r1).toFixed(1) + '"/>';
+    g += '<line class="ray" x1="' + (267 + Math.cos(t) * r0).toFixed(1) + '" y1="' + (Math.sin(t) * r0).toFixed(1) + '" x2="' + (267 + Math.cos(t) * r1).toFixed(1) + '" y2="' + (Math.sin(t) * r1).toFixed(1) + '"/>';
   }
-  g += '<circle class="disc" cx="248" cy="0" r="22"/>';
+  g += '<circle class="disc" cx="267" cy="0" r="22"/>';
   $('pvsun').innerHTML = g;
   $('pvsun').setAttribute('class', 'pvsun' + (on ? '' : ' off'));
   $('pvw').innerHTML = w == null ? '--<small>W</small>' : Math.round(w) + '<small>W</small>';
   $('pvw').className = 'pvw' + (on ? '' : ' off');
 }
 
-// Screen 1 links: eine Box mit Batterie (groß) und allen Tanks als Balken
+// Screen 1 links: Batterie (groß, Stromverlauf im Hintergrund) + alle Tanks als 10-Segment-Balken (B&G-Stil)
+function segBar(p, kind, st) {
+  var n = p == null ? 0 : Math.round(Math.max(0, Math.min(100, p)) / 10), c = st === 'high' || st === 'alarm' ? 'high' : st === 'warn' ? 'warn' : kind, h = '';
+  for (var i = 0; i < 10; i++) h += '<i' + (i < n ? ' class="' + c + '"' : '') + '></i>';
+  return h;
+}
 function renderSupply(s, b, f) {
   var tanks = (s && s.tanks) || [], al = b.st === 'alarm' || f.st === 'alarm' || tanks.some(function (t) { return t.st === 'high'; });
   $('tsup').className = 'tile t1 sup' + (al ? ' alarm' : '');
-  var bp = b.soc == null ? 0 : Math.max(0, Math.min(100, b.soc));
-  var h = '<div class="httl">BATTERY</div><div class="hthr">' + (b.thr != null ? '< ' + b.thr + ' %' : '') + '</div>' +
-    '<div class="sb ' + cls(b.st) + '">' + fmt(b.soc) + '<small>%</small></div>' +
-    '<div class="sva">' + fmt(b.v, 2) + ' <span>V</span><br>' + (b.a != null && b.a > 0 ? '+' : '') + fmt(b.a, 1) + ' <span>A</span></div>' +
-    '<div class="sbar" style="top:98px"><i style="width:' + bp + '%;background:' + (b.st === 'alarm' ? '#ff3030' : b.st === 'ok' ? '#00d000' : '#ffa000') + '"></i></div>' +
-    '<div class="ssep"></div>';
-  // 4 Tanks (Abstand 46 px) oder 5 mit Tagestank (36 px)
-  var nT = Math.min(5, Math.max(4, tanks.length)), step = nT > 4 ? 36 : 46, y0 = nT > 4 ? 132 : 136;
+  $('sbthr').textContent = b.thr != null ? '< ' + b.thr + ' %' : '';
+  $('sbsoc').innerHTML = fmt(b.soc) + '<small>%</small>';
+  $('sbsoc').className = 'sbv ' + cls(b.st);
+  $('sbva').innerHTML = fmt(b.v, 2) + ' V<br><span class="' + (b.a == null ? '' : b.a >= 0 ? 'ok-c' : 'warn-c') + '">' + (b.a != null && b.a > 0 ? '+' : '') + fmt(b.a, 1) + ' A</span>';
+  var bh = s && s.energy && s.energy.bat ? s.energy.bat.hist || [] : [];
+  drawChart('sbarea', 'sbline', bh, 267, 148, 96, 142, 'sym', 'sbzero');
+  // 4 Tanks (Abstand 52 px) oder 5 mit Tagestank (42 px)
+  var nT = Math.min(5, Math.max(4, tanks.length)), step = nT > 4 ? 42 : 52, y0 = 186, h = '';
   for (var i = 0; i < nT; i++) {
     var t = tanks[i] || { name: ['WATER', 'DIESEL', 'BLACK MAIN', 'BLACK GUEST'][i] || '', kind: 'water', st: 'na' };
-    var tst = t.kind === 'water' ? f.st : t.st;   // Frischwasser nutzt den echten Wasser-Alarm
-    var col = tst === 'alarm' || tst === 'high' ? '#ff3030' : tst === 'warn' ? '#ffa000' : '';
-    var p = t.pct == null ? 0 : Math.max(0, Math.min(100, t.pct)), y = y0 + i * step;
-    h += '<div class="sr" style="top:' + y + 'px"><span class="n">' + t.name + '</span><span class="v">' +
-      (t.l != null ? t.l + ' / ' + t.cap + ' l' : '') + '<b style="color:' + col + '">' + (t.pct == null ? '--' : t.pct) + ' %</b></span></div>' +
-      '<div class="sbar tb" style="top:' + (y + (nT > 4 ? 21 : 24)) + 'px"><i class="' + t.kind + '" style="width:' + p + '%' + (col ? ';background:' + col : '') + '"></i></div>';
+    var tst = t.kind === 'water' ? f.st : t.st, day = t.name === 'DAY TANK';   // Frischwasser nutzt den echten Wasser-Alarm
+    var col = tst === 'alarm' || tst === 'high' ? '#ff3b3b' : tst === 'warn' ? '#e8a317' : '', y = y0 + i * step;
+    h += '<div class="trow" style="top:' + y + 'px"><span class="n' + (day ? ' day' : '') + '">' + t.name + '</span><span class="v">' +
+      (t.l != null ? t.l + ' / ' + t.cap + ' l' : '') + '<b style="color:' + col + '">' + (t.pct == null ? '--' : t.pct + ' %') + '</b></span></div>' +
+      '<div class="seg" style="top:' + (y + 24) + 'px">' + segBar(t.pct, day ? 'day' : t.kind, tst === 'alarm' ? 'high' : tst) + '</div>';
   }
-  if ($('tsup').innerHTML !== h) $('tsup').innerHTML = h;
+  if ($('stanks').innerHTML !== h) $('stanks').innerHTML = h;
+}
+
+// Alarm-Overlay unten: Alarm bleibt bis zur Quittierung, Warnungen 10 s nach jeder Änderung (Tipp auf den Status zeigt sie wieder)
+var ovlKey = '', ovlSince = 0;
+function renderOverlay(s, ackd) {
+  var o = $('ovl'), parts, kind;
+  if (!s) { kind = 'warn'; parts = ['No connection to Node-RED']; }
+  else if (s.status === 'alarm' && !ackd) kind = 'alarm';
+  else if (s.status === 'alarm') kind = 'ack';
+  else if (s.status === 'warn') kind = 'warn';
+  else { o.className = ''; ovlKey = ''; return; }
+  if (!parts) parts = String(s.msg || '').split('  |  ');
+  var key = kind + parts.join('|');
+  if (key !== ovlKey) { ovlKey = key; ovlSince = Date.now(); }
+  var note = !!(s && s.storm && s.storm.noteKey);
+  var own = page === PG_AIS || page === PG_ANCHOR || page === PG_SOS;   // diese Screens haben eigene Knöpfe unten
+  o.className = !own && (kind === 'alarm' || !s || Date.now() - ovlSince < 10000) ? 'on ' + kind : '';
+  $('ovl-t').textContent = kind === 'alarm' ? (parts.length > 1 ? parts.length + ' ALARMS' : 'ALARM') : kind === 'ack' ? 'ACKNOWLEDGED' : 'WARNING';
+  $('ovl-m').textContent = parts[0] || '';
+  $('ovl-s').textContent = parts.slice(1).join('  ·  ');
+  $('ovl-b').style.display = kind === 'alarm' || note ? '' : 'none';
+  $('ovl-b').textContent = kind === 'alarm' ? 'ACKNOWLEDGE' : 'HIDE 4 H';
 }
 
 function render() {
@@ -636,7 +752,8 @@ function render() {
   // quittiert: rot → orange, bis der Zustand weg ist (ein neuer Alarm blinkt wieder rot)
   var ackd = !!(s && status === 'alarm' && s.acked && !blink);
   if (ackd) status = 'warn';
-  $('scr').className = (s && s.night ? 'night ' : '') + (blink && phase ? 'red' : '');
+  $('scr').className = s && s.night ? 'night' : '';
+  $('frame').className = blink && phase ? 'on' : '';
   $('dot').className = 'dot ' + status;
   $('stxt').textContent = !s ? 'OFFLINE' : ackd ? 'ACKNOWLEDGED' : status === 'ok' ? 'ALL OK' : status === 'alarm' ? 'ALARM' : 'WARNING';
   $('time').textContent = s ? s.time : '--:--';
@@ -651,16 +768,16 @@ function render() {
   // Wassertemperatur unten in der Wind-Box — verschwindet ohne Messwert (wie die Sonne)
   var wt = s && s.engine ? s.engine.wtemp : null;
   $('wtmp').style.display = wt != null ? '' : 'none';
-  if (wt != null) $('wtmpv').innerHTML = wt.toFixed(1) + '<small>°C</small>';
+  if (wt != null) $('wtmpv').innerHTML = wt.toFixed(1) + ' °C';
 
   var w = s ? s.wind : { st: 'na' };
   $('tw').className = 'tile t2' + (w.st === 'alarm' ? ' alarm' : '');
-  $('wkn').innerHTML = fmt(w.kn, 1) + '<small>kn</small>';
+  $('wkn').textContent = fmt(w.kn, 1);
   $('wkn').className = 'big ' + cls(w.st);
-  $('wsrc').textContent = w.src ? w.src + ' (avg)' : '--';
-  $('wmax').textContent = "Max 10' " + fmt(w.max, 1) + ' kn';
-  $('wthr').textContent = 'Alarm at ' + fmt(w.thr) + ' kn' + (w.win ? '  ·  ' + winLabel(w.win) : '');
-  drawChart('warea', 'wline', w.hist || [], 248, 320, 120, 312, true);
+  $('wsrc').textContent = w.src || 'WIND';
+  $('wmax').innerHTML = "MAX 10' <b>" + fmt(w.max, 1) + '</b>';
+  $('wthr').textContent = 'ALARM ' + fmt(w.thr) + ' KN' + (w.win ? '  ·  ' + winLabel(w.win).toUpperCase() : '');
+  thrLine('wthrl', drawChart('warea', 'wline', w.hist || [], 267, 408, 120, 400, true), w.thr, 267);
 
   var a = s ? s.anchor : { st: 'na' };
   $('ta').className = 'tile t3 half' + (a.st === 'alarm' ? ' alarm' : '') + (a.act ? ' act' : '');
@@ -673,12 +790,13 @@ function render() {
 
   var p = (s && s.baro) || { st: 'na', hist: [] };
   $('tp').className = 'tile t3 half h2' + (p.st === 'alarm' ? ' alarm' : '');
-  $('phpa').innerHTML = fmt(p.hpa, 1) + '<small>hPa</small>';
+  $('phpa').textContent = fmt(p.hpa, 1);
   $('phpa').className = 'hbig aw ' + cls(p.st);
-  $('pthr').textContent = p.thr != null ? '< ' + p.thr : '';
+  $('pthr').textContent = 'HPA' + (p.thr != null ? '  ·  < ' + p.thr : '');
   var win = winLabel(p.win);
-  $('pdelta').textContent = p.d != null ? (p.d > 0 ? '+' : '') + p.d.toFixed(1) + ' hPa / ' + win : '';
-  drawChart('barea', 'bline', p.hist || [], 248, 154, 40, 146, false);
+  $('pdelta').textContent = p.d != null ? (p.d > 0.3 ? '▲ ' : p.d < -0.3 ? '▼ ' : '') + (p.d > 0 ? '+' : '') + p.d.toFixed(1) + ' / ' + win.toUpperCase() : '';
+  $('pdelta').className = 'hsub ' + (p.d != null && p.d <= -2 ? 'warn-c' : '');
+  thrLine('pthrl', drawChart('barea', 'bline', p.hist || [], 266, 220, 104, 214, false), p.thr, 266);
 
   renderEnergy(s ? s.energy : null);
   renderWeather(s ? s.weather : null);
@@ -689,9 +807,7 @@ function render() {
   renderAis(s ? s.ais : null, s);
   fitBigValues();
 
-  $('msg').textContent = !s ? 'No connection to Node-RED' : s.msg;
-  $('msg').className = 'msg ' + (s ? cls(s.status === 'alarm' && !ackd ? 'alarm' : 'warn') : 'warn-c');
-  $('hint').textContent = blink ? 'Tap to acknowledge' : (s && s.storm && s.storm.noteKey ? 'Tap to acknowledge warning (4 h)' : (s && s.acked ? 'Acknowledged' : ''));
+  renderOverlay(s, ackd);
 }
 
 // ── ANCHOR UP: 1. Tipp = bestätigen, 2. Tipp innerhalb 4 s = systemweit einholen (Supabase) ──
@@ -1076,7 +1192,7 @@ function rigTile(id, label, t, st, rg) {
   $(id).className = 'tile rt' + (st === 'alarm' ? ' alarm' : st === 'warn' ? ' warn' : '');
   $(id).innerHTML = '<div class="rl">' + label + '</div>' +
     '<div class="rst" style="color:' + col + '">' + (st === 'alarm' ? 'ALARM' : st === 'warn' ? 'HIGH' : st === 'ok' ? 'OK' : '') + '</div>' +
-    '<div class="rv" style="color:' + (t == null ? '' : col) + '">' + (t == null ? '--' : t.toFixed(2)) + '<small>t</small></div>' +
+    '<div class="rv" style="color:' + (t == null || st === 'ok' ? '' : col) + '">' + (t == null ? '--' : t.toFixed(2)) + '<small>t</small></div>' +
     '<div class="rb"><i style="left:0;width:' + pct(rg.warn) + '%" class="z-g"></i>' +
       '<i style="left:' + pct(rg.warn) + '%;width:' + (pct(rg.alarm) - pct(rg.warn)) + '%" class="z-o"></i>' +
       '<i style="left:' + pct(rg.alarm) + '%;right:0" class="z-r"></i>' +
@@ -1101,7 +1217,7 @@ function renderSail(sl) {
   $('aw-v').innerHTML = (sl.aws != null ? sl.aws.toFixed(1) : '--') + '<small>kn</small>';
   $('aw-win').textContent = sl.win ? winLabel(sl.win) : '';
   $('aw-s').textContent = "Max 10' " + (sl.awsMax != null ? sl.awsMax.toFixed(1) : '--') + ' kn  ·  STW ' + (sl.stw != null ? sl.stw.toFixed(1) : '--') + ' kn';
-  drawChart('awarea', 'awline', sl.awsHist || [], 388, 208, 100, 204, true);
+  drawChart('awarea', 'awline', sl.awsHist || [], 388, 240, 110, 236, true);
   rigTile('rt-p', 'PORT LOAD', rg.port, rg.pst || 'na', rg);
   rigTile('rt-s', 'STBD LOAD', rg.sb, rg.sst || 'na', rg);
 }
@@ -1186,7 +1302,7 @@ function renderAis(a, st) {
     var cls = 'ais-t ' + (t.stale ? 'ais-stale' : 'ais-' + t.st), rot = (t.hdg != null ? t.hdg : t.cog) - up;
     if (t.sog > 0.5) {
       var vl = t.sog * 0.5144 * 1800 * ppm, vr = (t.cog - up) * Math.PI / 180;   // Kurslinie: Weg der nächsten 30 min
-      g += '<line class="ais-vec" x1="' + x.toFixed(1) + '" y1="' + y.toFixed(1) + '" x2="' + (x + Math.sin(vr) * vl).toFixed(1) + '" y2="' + (y - Math.cos(vr) * vl).toFixed(1) + '" stroke="' + (t.st === 'alarm' ? '#ff3030' : t.st === 'warn' ? '#ffa000' : '#00d000') + '"/>';
+      g += '<line class="ais-vec" x1="' + x.toFixed(1) + '" y1="' + y.toFixed(1) + '" x2="' + (x + Math.sin(vr) * vl).toFixed(1) + '" y2="' + (y - Math.cos(vr) * vl).toFixed(1) + '" stroke="' + (t.st === 'alarm' ? '#ff3030' : document.querySelector('.night') ? '#a00000' : t.st === 'warn' ? '#ffa000' : '#00d000') + '"/>';
       g += '<path class="' + cls + '" transform="translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ') rotate(' + rot + ')" d="M0 -9 L6 7 L0 4 L-6 7 Z"/>';
     } else g += '<circle class="' + cls + '" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="4"/>';
     if (aisSel === t.m) g += '<circle class="ais-sel" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="13"/>';
@@ -1229,9 +1345,13 @@ function renderAis(a, st) {
 }
 $('aisr').addEventListener('click', function (e) {
   e.stopPropagation(); if (swiped) return;
-  var r = this.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * 476, y = (e.clientY - r.top) / r.height * 320, best = null, bd = 22;
-  aisPts.forEach(function (p) { var d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = p.m; } });
-  aisSel = best; renderAis(S && S.ais, S);
+  var r = this.getBoundingClientRect(), k = Math.min(r.width / 476, r.height / 320);
+  var x = (e.clientX - r.left - (r.width - 476 * k) / 2) / k, y = (e.clientY - r.top - (r.height - 320 * k) / 2) / k;
+  // alle Ziele im Umkreis, nach Abstand; ist eines schon gewählt, nimmt jeder weitere Tipp das nächste (dichte Pulks)
+  var near = aisPts.map(function (p) { return { m: p.m, d: Math.hypot(p.x - x, p.y - y) }; }).filter(function (p) { return p.d < 34; })
+    .sort(function (a, b) { return a.d - b.d; });
+  var cur = near.findIndex(function (p) { return p.m === aisSel; });
+  aisSel = near.length ? near[(cur + 1) % near.length].m : null; renderAis(S && S.ais, S);
 });
 $('ais-info').addEventListener('click', function (e) {
   e.stopPropagation();
@@ -1256,11 +1376,13 @@ function winLabel(m) { return m >= 60 ? (m / 60) + ' h' : m + ' min'; }
 
 // Verlauf als Hintergrund-Fläche. Baro: Skala mind. 1 hPa um den Mittelwert (Rauschen nicht aufblähen).
 // Wind (zero): Skala ab 0 kn, mindestens bis 10 kn, damit Böen in echter Größe erscheinen.
-function drawChart(areaId, lineId, h, W, H, top, bot, zero) {
+function drawChart(areaId, lineId, h, W, H, top, bot, zero, zeroId) {
   var v = h.filter(function (x) { return x != null; });
-  if (v.length < 2) { $(areaId).setAttribute('d', ''); $(lineId).setAttribute('d', ''); return; }
+  if (zeroId) $(zeroId).setAttribute('d', '');
+  if (v.length < 2) { $(areaId).setAttribute('d', ''); $(lineId).setAttribute('d', ''); return null; }
   var mn = Math.min.apply(null, v), mx = Math.max.apply(null, v);
-  if (zero) { mn = 0; mx = Math.max(10, mx * 1.1); }
+  if (zero === 'sym') { var m = Math.max(1, Math.abs(mn), Math.abs(mx)) * 1.1; mn = -m; mx = m; }
+  else if (zero) { mn = 0; mx = Math.max(10, mx * 1.1); }
   else if (mx - mn < 1) { var c = (mx + mn) / 2; mn = c - 0.5; mx = c + 0.5; }
   var d = '', first = null, last = null;
   h.forEach(function (x, i) {
@@ -1269,8 +1391,17 @@ function drawChart(areaId, lineId, h, W, H, top, bot, zero) {
     d += (d ? 'L' : 'M') + px.toFixed(1) + ' ' + py.toFixed(1);
     if (first == null) first = px; last = px;
   });
+  var base = zero === 'sym' ? bot - (0 - mn) / (mx - mn) * (bot - top) : H;
   $(lineId).setAttribute('d', d);
-  $(areaId).setAttribute('d', d + 'L' + last.toFixed(1) + ' ' + H + 'L' + first.toFixed(1) + ' ' + H + 'Z');
+  $(areaId).setAttribute('d', d + 'L' + last.toFixed(1) + ' ' + base.toFixed(1) + 'L' + first.toFixed(1) + ' ' + base.toFixed(1) + 'Z');
+  if (zeroId) $(zeroId).setAttribute('d', 'M0 ' + base.toFixed(1) + 'H' + W);
+  return { mn: mn, mx: mx, top: top, bot: bot };
+}
+// Schwellwert als gestrichelte rote Linie, nur wenn er im sichtbaren Bereich liegt
+function thrLine(id, sc, thr, W) {
+  if (!sc || thr == null || thr < sc.mn || thr > sc.mx) { $(id).setAttribute('d', ''); return; }
+  var y = sc.bot - (thr - sc.mn) / (sc.mx - sc.mn) * (sc.bot - sc.top);
+  $(id).setAttribute('d', 'M0 ' + y.toFixed(1) + 'H' + W);
 }
 
 function setCls(id, base, on) { $(id).className = base + (on ? ' on' : ''); }
@@ -1309,6 +1440,7 @@ function renderEnergy(e) {
   drawChart('pvarea', 'pvline', e.pv.hist || [], 220, 172, 104, 170, true);   // Solar: unter Tagesertrag, hinter der MPPT-Liste
   drawChart('acarea', 'acline', e.ac.hist || [], 220, 110, 44, 108, true);
   drawChart('dcarea', 'dcline', e.dc.hist || [], 220, 172, 70, 170, true);
+  drawChart('ebarea', 'ebline', e.bat.hist || [], 220, 172, 110, 168, 'sym', 'ebzero');
   conn('cn-shore', 'r', shoreOn); conn('cn-ac', 'r', acOn); conn('cn-pv', 'r', solarOn); conn('cn-dc', 'r', dcOn);
   conn('cn-bat', inverting ? 'u' : 'd', charging || inverting);
 }
@@ -1317,8 +1449,10 @@ function renderEnergy(e) {
 var page = 1, wasBlink = false, swX = null, swiped = false;
 // Reihenfolge der Screens: Übersicht, Energy Flow, Tanks, Wetter, Motor, Segeln, Anker, AIS, SOS (VHF-Notruf)
 var PAGES = ['p1', 'p2', 'p3', 'p4', 'p6', 'pA', 'p5', 'pS'], NP = PAGES.length, PG_WEATHER = 3, PG_ENGINE = 4, PG_SAIL = 5, PG_AIS = 6, PG_ANCHOR = 7, PG_SOS = 8;
+var PNAMES = ['SUKI', 'ENERGY', 'WEATHER', 'ENGINE', 'SAILSTEER', 'AIS', 'ANCHOR', 'EMERGENCY'];
 function showPage(n) {
   page = n;
+  if (PNAMES[n - 1]) $('pname').textContent = PNAMES[n - 1];
   PAGES.forEach(function (id, i) {
     $(id).style.display = n === i + 1 ? '' : 'none';
     $('d' + (i + 1)).className = n === i + 1 ? 'on' : '';
@@ -1365,6 +1499,12 @@ $('scr').addEventListener('click', function () {
   x.send('{}');
 });
 
+$('logo').innerHTML = '<svg viewBox="0 0 660 143.5">' + NEEL_LOGO + '</svg>';
+$('stat').addEventListener('click', function (e) { e.stopPropagation(); ovlKey = ''; render(); });   // Warnung erneut einblenden
+$('ovl-b').addEventListener('click', function (e) {
+  e.stopPropagation();
+  var x = new XMLHttpRequest(); x.open('POST', '/esp-dash/api/ack'); x.setRequestHeader('Content-Type', 'application/json'); x.onload = poll; x.send('{}');
+});
 setInterval(poll, 1000);
 setInterval(function () { phase = !phase; render(); }, 500);
 poll();
