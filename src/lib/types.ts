@@ -32,6 +32,7 @@ export type Telemetry = {
 	env_pressure_pa: number | null;
 	tank_fw: number | null;
 	tank_dsl: number | null;
+	tank_dsl2: number | null;
 	tank_bwm: number | null;
 	tank_bwg: number | null;
 	temp_salon: number | null;

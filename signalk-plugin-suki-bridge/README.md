@@ -36,6 +36,7 @@ npm install signalk-plugin-suki-bridge
 | `propulsion.main.*` / `propulsion.port.*` | `eng_*` | rpm / s / K / V |
 | `tanks.freshWater.0.currentLevel` | `tank_fw` | ratio (0–1) |
 | `tanks.diesel.0.currentLevel` | `tank_dsl` | ratio (0–1) |
+| `tanks.{fuel,diesel}.<2nd instance>.currentLevel` | `tank_dsl2` | ratio (0–1) |
 | `electrical.chargers.0.panelPower` | `solar_total_w` | W |
 | `steering.rudderAngle` | `rudder_rad` | radians |
 | `rigging.port.tension` | `rig_port` | N |

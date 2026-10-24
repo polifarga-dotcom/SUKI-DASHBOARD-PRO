@@ -17,6 +17,15 @@
  * Standard SignalK paths are mapped to SUKI's telemetry columns.
  * Victron-specific paths (solar total) use the Victron SignalK plugin conventions.
  *
+ * v1.0.28 — Second fuel/diesel tank instance → tank_dsl2 (SUKI: 40 l Gobius
+ *   "Diesel Day Tank", tanks.fuel.4). Lowest instance stays tank_dsl.
+ *
+ * v1.0.27 — Remove dead PATH_MAP entries navigation.position.latitude/.longitude.
+ *   Those leaf paths never exist in SignalK (position is one compound object at
+ *   navigation.position, which the numeric-only handler would reject anyway) —
+ *   that, not the multiple N2K sources, is why the v1.0.26 subscription never
+ *   fired. Position comes solely from readSelfPosition() at send time.
+ *
  * v1.0.26 — Fix GPS position never resolving on boats with multiple conflicting
  *   N2K position sources and no preferred-source configured: the delta-stream
  *   subscription (streambundle.getSelfBus) silently never fired, so every
@@ -102,9 +111,7 @@ module.exports = function (app) {
   // Instance IDs (e.g. batteries.0, chargers.0) are Victron defaults; boats with
   // non-standard IDs are handled by the dynamic discovery below.
   const PATH_MAP = {
-    // Navigation (standard NMEA)
-    'navigation.position.latitude':                          'nav_lat',
-    'navigation.position.longitude':                         'nav_lon',
+    // Navigation (standard NMEA) — position is read at send time, see readSelfPosition()
     'navigation.headingTrue':                                'nav_hdg_rad',
     'navigation.headingMagnetic':                            'nav_hdg_rad',   // fallback if True unavailable
     'navigation.speedOverGround':                            'nav_sog_ms',
@@ -626,6 +633,7 @@ module.exports = function (app) {
 
         const dslSorted = sortEntries(_tankDSLByInst);
         if (dslSorted.length > 0 && payload.tank_dsl == null) payload.tank_dsl = dslSorted[0][1];
+        if (dslSorted.length > 1 && payload.tank_dsl2 == null) payload.tank_dsl2 = dslSorted[1][1];
 
         const bwSorted = sortEntries(_tankBWByInst);
         if (bwSorted.length > 0 && payload.tank_bwm == null) payload.tank_bwm = bwSorted[0][1];

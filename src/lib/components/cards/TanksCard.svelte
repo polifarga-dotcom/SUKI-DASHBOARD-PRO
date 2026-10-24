@@ -11,6 +11,9 @@
 	<div class="tanks">
 		<TankBar label="Fresh water" ratio={t?.tank_fw ?? null} warn={0.3} danger={0.15} />
 		<TankBar label="Diesel" ratio={t?.tank_dsl ?? null} warn={0.25} danger={0.1} />
+		{#if t?.tank_dsl2 != null}
+			<TankBar label="Diesel day tank" ratio={t.tank_dsl2} warn={0.25} danger={0.1} />
+		{/if}
 		<TankBar label="Blackwater (bow)" ratio={t?.tank_bwm ?? null} warn={0.7} danger={0.85} />
 		<TankBar label="Blackwater (stern)" ratio={t?.tank_bwg ?? null} warn={0.7} danger={0.85} />
 	</div>

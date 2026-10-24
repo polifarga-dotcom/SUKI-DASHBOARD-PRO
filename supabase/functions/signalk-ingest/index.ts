@@ -45,7 +45,7 @@ const ALLOWED_COLUMNS = new Set([
   // Engine — starboard / secondary (catamaran twin-engine)
   'eng_sb_rpm', 'eng_sb_run_sec', 'eng_sb_temp_k', 'eng_sb_alt_v',
   // Tanks
-  'tank_fw', 'tank_dsl', 'tank_bwm', 'tank_bwg',
+  'tank_fw', 'tank_dsl', 'tank_dsl2', 'tank_bwm', 'tank_bwg',
   // Solar (generic total — individual MPPT columns are VRM-specific)
   'solar_total_w',
   // Rudder
