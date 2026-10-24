@@ -241,6 +241,8 @@ static int16_t aisPts[30][2]; static int aisPtN = 0; static char aisPtM[30][10];
 #define RAD_BYTES (RAD_NA * RAD_NR / 2)
 static uint8_t* radBuf[2] = {nullptr, nullptr};   // [0] = Anzeige, [1] = Empfang (getauscht unter sMutex)
 static volatile uint32_t radRange = 0, radAge = 0xFFFFFFFF, radRxMs = 0;
+static volatile bool radLive = false, radSelB = false;   // vom Pi: gewählter Bereich sendet / HALO B gewählt
+static volatile int8_t radSelRequest = -1;                // Tipp auf die Statusecke: 0 = A, 1 = B an Node-RED senden
 static uint16_t* radQ = nullptr;   // Viertelkreis-Tabelle: je |dx|,|dy| Richtung im Viertel (obere 8 Bit) + Entfernungsstufe (255 = außerhalb)
 static const uint8_t PAGE_ORDER[] = {1, 2, 3, 4, 5, 6, 9, 7, 8};   // Wisch-Reihenfolge: Radar direkt hinter AIS
   // unterdrückt Blinken kurz bis zur Bestätigung von Node-RED
@@ -650,7 +652,7 @@ static void netTask(void*) {
   // WLAN-Verwaltung (SukiWifi.h): Netze + DHCP/feste IP aus dem NVS, Einstellungen per Node-RED-Settings-Seite
   sw::syncExtra = ota::syncExtra; sw::syncReply = ota::syncReply;   // Firmware-Version melden, Update-Angebot lesen
   sw::begin("mini", "SUKI-MiniDash");
-  uint32_t lastPoll = 0;
+  uint32_t lastPoll = 0, lastRad = 0;
   for (;;) {
     sw::loop();
     ota::validate(lastOkMs != 0);   // neue Firmware erst bestätigen, wenn Node-RED erreicht wurde
@@ -734,6 +736,19 @@ static void netTask(void*) {
       lastPoll = millis() - 800;
     }
 
+    if (radSelRequest >= 0) {   // HALO A/B wählen
+      HTTPClient http;
+      http.setConnectTimeout(1500);
+      http.setTimeout(2000);
+      if (http.begin(dashUrl() + "/config")) {
+        http.addHeader("Content-Type", "application/json");
+        Serial.printf("radarSel -> %d\n", http.POST(radSelRequest ? "{\"radarSel\":\"B\"}" : "{\"radarSel\":\"A\"}"));
+        http.end();
+      }
+      radSelRequest = -1;
+      lastRad = 0;   // gleich das Bild des neuen Bereichs holen
+    }
+
     if (nightRequest >= 0) {
       HTTPClient http;
       http.setConnectTimeout(1500);
@@ -778,8 +793,7 @@ static void netTask(void*) {
         http.end();
       }
     }
-    // Radar-Raster (nur auf dem Radar-Screen, 1×/s): 16 Byte Kopf + 49152 Byte, in den Empfangspuffer, dann tauschen
-    static uint32_t lastRad = 0;
+    // Radar-Raster (nur auf dem Radar-Screen, 1×/s): 20 Byte Kopf + 49152 Byte, in den Empfangspuffer, dann tauschen
     if (page == 9 && millis() - lastRad >= 1000) {
       lastRad = millis();
       if (!radBuf[0]) {
@@ -791,7 +805,7 @@ static void netTask(void*) {
       http.setTimeout(3000);
       if (radBuf[0] && radBuf[1] && http.begin(dashUrl() + "/radar")) {
         int code = http.GET();
-        if (code == 200 && http.getSize() == 16 + RAD_BYTES) {
+        if (code == 200 && http.getSize() == 20 + RAD_BYTES) {
           WiFiClient* st = http.getStreamPtr();
           auto readFull = [&](uint8_t* dst, int n) {
             int got = 0; uint32_t t1 = millis();
@@ -801,14 +815,14 @@ static void netTask(void*) {
             }
             return got == n;
           };
-          uint8_t hdr[16];
-          if (readFull(hdr, 16) && !memcmp(hdr, "RDR1", 4) && (hdr[8] | hdr[9] << 8) == RAD_NA && (hdr[10] | hdr[11] << 8) == RAD_NR &&
+          uint8_t hdr[20];
+          if (readFull(hdr, 20) && !memcmp(hdr, "RDR2", 4) && (hdr[8] | hdr[9] << 8) == RAD_NA && (hdr[10] | hdr[11] << 8) == RAD_NR &&
               readFull(radBuf[1], RAD_BYTES)) {
             xSemaphoreTake(sMutex, portMAX_DELAY);
             uint8_t* t = radBuf[0]; radBuf[0] = radBuf[1]; radBuf[1] = t;
             radRange = hdr[4] | hdr[5] << 8 | hdr[6] << 16 | (uint32_t)hdr[7] << 24;
             radAge = hdr[12] | hdr[13] << 8 | hdr[14] << 16 | (uint32_t)hdr[15] << 24;
-            radRxMs = millis();
+            radRxMs = millis(); radSelB = hdr[16] == 1; radLive = hdr[17] == 1;
             xSemaphoreGive(sMutex);
             dataRev++;
           }
@@ -2346,9 +2360,10 @@ static void radarPage(const DashState& s, const AisState& a, bool online, uint16
           radQ[uy * QW + ux] = d >= RR ? 0x00FF : (uint16_t)(min(t, 255) << 8 | min((int)(d / RR * RAD_NR), RAD_NR - 1));
         }
   }
-  uint8_t* buf; uint32_t rr, age, rx;
-  xSemaphoreTake(sMutex, portMAX_DELAY); buf = radBuf[0]; rr = radRange; age = radAge; rx = radRxMs; xSemaphoreGive(sMutex);
-  const bool ok = online && buf && rx && millis() - rx < 10000 && age < 10000 && rr > 0;
+  uint8_t* buf; uint32_t rr, rx; bool live, selB;
+  xSemaphoreTake(sMutex, portMAX_DELAY); buf = radBuf[0]; rr = radRange; rx = radRxMs; live = radLive; selB = radSelB; xSemaphoreGive(sMutex);
+  // nur zeichnen, wenn der gewählte Bereich gerade sendet (Standby/gestoppt → leer, keine Geisterechos)
+  const bool ok = online && buf && rx && millis() - rx < 5000 && live && rr > 0;
   // Echos direkt in den Streifenpuffer; Farben schwach olivgelb → amber → orange/rot, nachts nur Rot
   if (ok && radQ) {
     static const uint8_t DAY[16][3] = {{0, 0, 0}, {52, 50, 18}, {96, 90, 28}, {150, 120, 30}, {190, 140, 28}, {232, 163, 23}, {245, 180, 30}, {255, 190, 40},
@@ -2431,7 +2446,7 @@ static void radarPage(const DashState& s, const AisState& a, bool online, uint16
     fbUnclip();
   }
   aisArrow(cx, cy, 0, 1.2f, C_WHITE, C_BLACK);   // eigenes Boot, Bug oben
-  if (!ok) centerText(buf ? "NO RADAR DATA" : "WAITING FOR RADAR", cx, cy + 40, &fonts::DejaVu24, C_GREY, bg);
+  if (!ok) centerText(!rx ? "WAITING FOR RADAR" : selB ? "HALO B - STANDBY" : "HALO A - STANDBY", cx, cy + 40, &fonts::DejaVu24, C_GREY, bg);
   // Infos in den vier Ecken
   auto corner = [&](int x, int y, bool right, const char* l, const char* v, uint16_t vc) {
     fb.setFont(&fonts::DejaVu12); fb.setTextDatum(right ? textdatum_t::top_right : textdatum_t::top_left); fb.setTextColor(C_GREY, bg);
@@ -2445,7 +2460,7 @@ static void radarPage(const DashState& s, const AisState& a, bool online, uint16
   if (online) snprintf(v4, sizeof(v4), "%d", nIn); else strcpy(v4, "--");
   corner(14, MY + 12, false, "RANGE", v1, C_WHITE);
   corner(14, MY + 70, false, "RINGS", v2, C_WHITE);
-  corner(786, MY + 12, true, ok ? "HALO" : "RADAR", ok ? "TRANSMIT" : "STANDBY", ok ? C_WHITE : C_AMBER);
+  corner(786, MY + 12, true, selB ? "HALO B - TAP TO SWITCH" : "HALO A - TAP TO SWITCH", ok ? "TRANSMIT" : "STANDBY", ok ? C_WHITE : C_AMBER);
   corner(786, MY + 70, true, "HEADING", v3, C_WHITE);
   corner(14, MY + MH - 56, false, "AIS IN RANGE", v4, C_WHITE);
   fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::bottom_right); fb.setTextColor(C_DIM);
@@ -2875,6 +2890,8 @@ void loop() {
       int pi = 0; for (int i = 0; i < 9; i++) if (PAGE_ORDER[i] == page) pi = i;   // Wisch-Reihenfolge (Radar hinter AIS)
       page = PAGE_ORDER[constrain(pi + (dx < 0 ? 1 : -1), 0, 8)];
       dataRev++;  // sofort neu zeichnen
+    } else if (page == 9 && !showSettings && abs(dx) <= 120 && t0x >= 580 && t0y >= 52 && t0y < 120) {
+      radSelRequest = radSelB ? 0 : 1; radSelB = !radSelB; radLive = false; dataRev++;   // HALO A ↔ B
     } else if (page == 7 && !showSettings && t0y >= 56 && t0y <= 448 && anchorTouch(t0x, t0y)) {
       dataRev++;
     } else if (page == 6 && !showSettings && t0y >= 56 && t0y <= 448 && aisTouch(t0x, t0y)) {

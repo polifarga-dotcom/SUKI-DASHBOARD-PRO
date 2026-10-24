@@ -1396,14 +1396,25 @@ function radarFetch() {
     RAD.busy = false;
     if (x.status !== 200 || !x.response || x.response.byteLength < 16) return;
     var dv = new DataView(x.response);
+    if (x.response.byteLength < 20 || dv.getUint8(0) !== 0x52 || dv.getUint8(3) !== 0x32) return;   // 'RDR2'
     RAD.range = dv.getUint32(4, true); RAD.na = dv.getUint16(8, true); RAD.nr = dv.getUint16(10, true); RAD.age = dv.getUint32(12, true);
-    RAD.buf = new Uint8Array(x.response, 16); RAD.t = Date.now();
+    RAD.sel = dv.getUint8(16) ? 'B' : 'A'; RAD.live = !!dv.getUint8(17);
+    RAD.buf = new Uint8Array(x.response, 20); RAD.t = Date.now();
     renderRadar(S);
   };
   x.onerror = x.ontimeout = function () { RAD.busy = false; };
   x.send();
 }
 setInterval(radarFetch, 1000);
+// Tipp auf die Statusecke oben rechts: HALO A ↔ B (Einstellung radarSel in Node-RED)
+$('rcv').addEventListener('click', function (e) {
+  var r = this.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * RW, y = (e.clientY - r.top) / r.height * RH;
+  if (x < RW - 220 || y > 70) return;
+  e.stopPropagation();
+  var nx = new XMLHttpRequest(); nx.open('POST', '/esp-dash/api/config'); nx.setRequestHeader('Content-Type', 'application/json');
+  nx.onload = function () { RAD.buf = null; RAD.busy = false; radarFetch(); };
+  nx.send(JSON.stringify({ radarSel: RAD.sel === 'B' ? 'A' : 'B' }));
+});
 // je Bildpunkt die Rasterzelle (Richtung vom Bug im Uhrzeigersinn, Entfernung) — einmal berechnet
 function radarLut(na, nr) {
   var lut = new Int32Array(RW * RH).fill(-1);
@@ -1419,7 +1430,7 @@ function nmTxt(m) { var nm = m / 1852; return nm >= 10 ? Math.round(nm) + ' NM' 
 function renderRadar(s) {
   if (page !== PG_RADAR) return;
   var cv = $('rcv'), ctx = cv.getContext('2d'), night = !!document.querySelector('.night');
-  var ok = !!RAD.buf && Date.now() - RAD.t < 10000 && RAD.age < 10000;
+  var ok = !!RAD.buf && RAD.live && Date.now() - RAD.t < 5000;
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, RW, RH);
   if (ok) {
     var key = RAD.na + 'x' + RAD.nr;
@@ -1469,7 +1480,7 @@ function renderRadar(s) {
     });
   }
   ctx.fillStyle = night ? '#c00000' : '#ffffff'; ctx.beginPath(); ctx.moveTo(RCX, RCY - 10); ctx.lineTo(RCX + 6, RCY + 7); ctx.lineTo(RCX, RCY + 3); ctx.lineTo(RCX - 6, RCY + 7); ctx.closePath(); ctx.fill();
-  if (!ok) { ctx.fillStyle = night ? '#900000' : '#9a9a9a'; ctx.textAlign = 'center'; ctx.font = 'bold 20px "DejaVu Sans", sans-serif'; ctx.fillText(RAD.buf ? 'NO RADAR DATA' : 'WAITING FOR RADAR', RCX, RCY + 40); }
+  if (!ok) { ctx.fillStyle = night ? '#900000' : '#9a9a9a'; ctx.textAlign = 'center'; ctx.font = 'bold 20px "DejaVu Sans", sans-serif'; ctx.fillText(RAD.buf ? 'HALO ' + RAD.sel + ' - STANDBY' : 'WAITING FOR RADAR', RCX, RCY + 40); }
   // Infos in den vier Ecken
   var lab = night ? '#800000' : '#9a9a9a', val = night ? '#c00000' : '#ffffff';
   var corner = function (x, y, al, l, v, vc) {
@@ -1478,7 +1489,7 @@ function renderRadar(s) {
   };
   corner(14, 22, 'left', 'RANGE', ok && RAD.range ? nmTxt(RAD.range) : '--');
   corner(14, 80, 'left', 'RINGS', ok && RAD.range ? nmTxt(RAD.range / 4) : '--');
-  corner(RW - 14, 22, 'right', ok ? 'HALO' : 'RADAR', ok ? 'TRANSMIT' : 'STANDBY', ok ? null : (night ? '#d04000' : '#e8a317'));
+  corner(RW - 14, 22, 'right', 'HALO ' + (RAD.sel || 'A') + '  ·  TAP TO SWITCH', ok ? 'TRANSMIT' : 'STANDBY', ok ? null : (night ? '#d04000' : '#e8a317'));
   corner(RW - 14, 80, 'right', 'HEADING', hdgOk ? String(Math.round(up)).padStart(3, '0') + '°' : '--');
   corner(14, RH - 40, 'left', 'AIS IN RANGE', a ? String(nIn) : '--');
   ctx.textAlign = 'right'; ctx.font = '11px "DejaVu Sans", sans-serif'; ctx.fillStyle = lab;

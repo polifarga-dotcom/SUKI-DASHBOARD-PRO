@@ -430,7 +430,7 @@ const DEF = { windAlarmOn: true, windAlarmKn: 25, windHystKn: 2, windSource: 'au
     engTempAlarmOn: true, engTempWarnC: 90, engTempAlarmC: 95, engTempHystC: 2,
     engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true, fuelCurve: '800:0.8,1000:1.2,1500:2.2,2000:3.8,2500:6.2,3000:9.5',
     anchorAlarmOn: true, anchorLocalFallback: true, stormAlarmOn: true, ackMinutes: 5, staleSec: 30, testUntil: 0, night: false,
-    soundOn: true, soundNight: 'short' };
+    soundOn: true, soundNight: 'short', radarSel: 'A' };
 const RANGE = { windWinMin: [1, 360], windAlarmKn: [5, 80], windHystKn: [0, 10], windAvgSec: [2, 120], battLowSoc: [5, 95],
     battHystSoc: [0, 20], battLowVolt: [0, 60], waterLowPct: [0, 95], waterHystPct: [0, 20], baroLowHpa: [900, 1050], baroHystHpa: [0, 10], baroWinMin: [1, 360], sosPob: [1, 30], aisCruiseNm: [0.1, 5], aisOffshoreNm: [0.2, 10], aisTcpaMin: [1, 120], aisRangeNm: [0.25, 24], sailCloseFrom: [0, 90], sailCloseTo: [0, 120], bwWarnPct: [10, 100], bwHighPct: [10, 100], fuelWarnPct: [0, 90], fuelLowPct: [0, 90], dayWarnPct: [0, 95], dayLowPct: [0, 95], dayHystPct: [0, 20], rigWarnT: [0.5, 20], rigAlarmT: [0.5, 25], rigHystT: [0, 2], rigScaleT: [1, 30], engTempWarnC: [40, 130], engTempAlarmC: [40, 130], engTempHystC: [0, 10], engMaxRpm: [1000, 6000], engRedRpm: [500, 6000], engGreenFrom: [0, 6000], engGreenTo: [0, 6000], ackMinutes: [1, 120], staleSec: [5, 300] };
 const BOOL = ['night', 'soundOn', 'baroAlarmOn', 'rigAlarmOn', 'bwSwap', 'engTempAlarmOn', 'fuelUseSensor', 'windAlarmOn', 'battAlarmOn', 'waterAlarmOn', 'anchorAlarmOn', 'anchorLocalFallback', 'stormAlarmOn', 'dayAlarmOn'];
@@ -451,6 +451,7 @@ if (msg.req.method === 'POST') {
     if (['full', 'short', 'off'].indexOf(b.soundNight) >= 0) cfg.soundNight = b.soundNight;
     if (['tacho', 'classic'].indexOf(b.sailStyle) >= 0) cfg.sailStyle = b.sailStyle;
     if (['anchor', 'cruising', 'offshore'].indexOf(b.aisMode) >= 0) cfg.aisMode = b.aisMode;
+    if (['A', 'B'].indexOf(b.radarSel) >= 0) cfg.radarSel = b.radarSel;
     if (typeof b.battInstance === 'string' && /^[\\w-]{1,20}$/.test(b.battInstance)) cfg.battInstance = b.battInstance;
     if (typeof b.sosDesc === 'string') cfg.sosDesc = b.sosDesc.replace(/[^\\w ,.\\-\\/]/g, '').slice(0, 40);
     if (typeof b.fuelInstance === 'string' && /^[\\w.-]{1,30}$/.test(b.fuelInstance)) cfg.fuelInstance = b.fuelInstance;
@@ -774,8 +775,8 @@ http_out('anchor antwort', 600, 760)
 # mayara (systemd-Dienst auf dem Pi, --replay) liefert je Radar-Bereich (HALO Dual Range: A/B) einen
 # WebSocket mit Protobuf-Strahlen (2048 je Umdrehung, bis 1024 Werte, Reichweite in m).
 # Hier: 512 Richtungen × 192 Entfernungsstufen, je Zelle der stärkste Wert 0…15 (4 Bit).
-# GET /esp-dash/api/radar → 16 Byte Kopf + 49152 Byte Raster (2 Zellen je Byte, obere 4 Bit zuerst):
-#   'RDR1', uint32 Reichweite m, uint16 Richtungen, uint16 Stufen, uint32 Alter ms (alles little endian)
+# GET /esp-dash/api/radar → 20 Byte Kopf + 49152 Byte Raster (2 Zellen je Byte, obere 4 Bit zuerst):
+#   'RDR2', u32 Reichweite m, u16 Richtungen, u16 Stufen, u32 Alter ms, u8 Bereich 0 = A / 1 = B, u8 Senden, u16 frei
 MAYARA = 'ws://127.0.0.1:6502/signalk/v2/api/vessels/self/radars'
 RADAR_CFGS = []
 RADAR_FN = """\
@@ -807,6 +808,7 @@ while (pos.i < b.length) {
                 // Strahl reicht bis range m (über die Bildecken hinaus); angezeigt wird bis zur am Plotter
                 // eingestellten Reichweite (controls/range) → gleicher Zoom wie am Zeus
                 const setR = flow.get('radar_set_' + id) || range, frac = range ? Math.min(1, setR / range) : 1;
+                if (setR !== R.range || Date.now() - R.t > 3000) R.cells.fill(0);   // neue Reichweite / nach Standby: alte Echos weg
                 const ai = Math.floor((angle % SPR) * NA / SPR), row = ai * NR, L = Math.max(1, Math.round(data.length * frac));
                 if (angle % (SPR / NA) === 0) R.cells.fill(0, row, row + NR);   // erste von 4 Strahlen je Richtung
                 for (let j = 0; j < L; j++) {
@@ -837,22 +839,28 @@ for i, rid in enumerate(['nav6578A', 'nav6578B']):
 for i, rid in enumerate(['nav6578A', 'nav6578B']):
     inject(f'Radar Reichweite holen {rid}', 150, 940 + i * 40, f'Radar range {rid}', 2, [], once_delay=5)
     add(f'Radar range {rid}', 'http request', 380, 940 + i * 40, [[f'Radar Reichweite {rid}']], method='GET', ret='obj',
-        paytoqs='ignore', url=f'http://127.0.0.1:6502/signalk/v2/api/vessels/self/radars/{rid}/controls/range', tls='',
+        paytoqs='ignore', url=f'http://127.0.0.1:6502/signalk/v2/api/vessels/self/radars/{rid}/controls', tls='',
         persist=False, proxy='', insecureHTTPParser=False, authType='', senderr=False, headers=[])
-    fn(f'Radar Reichweite {rid}', f"""if (msg.statusCode === 200 && msg.payload && msg.payload.value > 0) flow.set('radar_set_{rid}', msg.payload.value);
+    fn(f'Radar Reichweite {rid}', f"""// am Plotter eingestellte Reichweite (m) und Sendestatus (power: 2 = Senden, 1 = Standby)
+const c = msg.statusCode === 200 && msg.payload;
+if (c && c.range && c.range.value > 0) flow.set('radar_set_{rid}', c.range.value);
+flow.set('radar_pw_{rid}', c && c.power ? c.power.value : 0);
 return null;""", 600, 940 + i * 40)
 http_in('GET radar', '/esp-dash/api/radar', 'get', 150, 900, 'Radar ausliefern')
 fn('Radar ausliefern', """\
-// den Bereich nehmen, der zuletzt Strahlen geliefert hat (der Zeus zeigt meist nur einen an)
+// immer nur der gewählte Bereich (HALO Dual Range A/B, Einstellung radarSel) — nicht hin- und herspringen.
+// Kopf 20 Byte: 'RDR2', u32 Reichweite m, u16 Richtungen, u16 Stufen, u32 Alter ms, u8 Bereich (0 = A, 1 = B), u8 Senden (1/0), u16 frei
 const now = Date.now(), NA = 512, NR = 192;
-let best = null;
-for (const id of ['nav6578A', 'nav6578B']) { const R = flow.get('radar_' + id); if (R && R.t && (!best || R.t > best.t)) best = R; }
-const out = Buffer.alloc(16 + NA * NR / 2);
-out.write('RDR1', 0, 'ascii');
-out.writeUInt32LE(best ? best.range : 0, 4);
+const sel = ((flow.get('cfg') || {}).radarSel) === 'B' ? 'B' : 'A', id = 'nav6578' + sel;
+const R = flow.get('radar_' + id), pw = flow.get('radar_pw_' + id);
+const live = !!(R && R.t && now - R.t < 3000 && pw === 2);   // gestoppt / Standby → leeres Bild, keine Geisterechos
+const out = Buffer.alloc(20 + NA * NR / 2);
+out.write('RDR2', 0, 'ascii');
+out.writeUInt32LE(R && R.range ? R.range : (flow.get('radar_set_' + id) || 0), 4);
 out.writeUInt16LE(NA, 8); out.writeUInt16LE(NR, 10);
-out.writeUInt32LE(best ? Math.min(0xffffffff, now - best.t) : 0xffffffff, 12);
-if (best) for (let i = 0, o = 16; i < NA * NR; i += 2, o++) out[o] = (best.cells[i] << 4) | best.cells[i + 1];
+out.writeUInt32LE(R && R.t ? Math.min(0xffffffff, now - R.t) : 0xffffffff, 12);
+out[16] = sel === 'B' ? 1 : 0; out[17] = live ? 1 : 0;
+if (live) for (let i = 0, o = 20; i < NA * NR; i += 2, o++) out[o] = (R.cells[i] << 4) | R.cells[i + 1];
 msg.payload = out;
 return msg;""", 380, 900, [['radar antwort']])
 http_out('radar antwort', 580, 900, {'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store'})
