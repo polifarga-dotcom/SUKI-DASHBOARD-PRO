@@ -883,15 +883,16 @@ static void homeLabel(int x, int y, const char* l, const char* r, int rx, uint16
   fb.drawString(l, x, y);
   if (r && *r) { fb.setTextDatum(textdatum_t::middle_right); fb.setTextColor(rc ? rc : C_DIM, bg); fb.drawString(r, rx, y); }
 }
-// 10-Segment-Balken (wie eine LED-Anzeige), 10 × 21 px
+// Durchgehender Tank-Balken 237 × 9 px: dunkle Spur, Füllung exakt nach %
 static void segBar(int x, int y, int pct, uint16_t on) {
-  int n = pct == NA_I ? 0 : (constrain(pct, 0, 100) + 5) / 10;
-  for (int i = 0; i < 10; i++) fb.fillRect(x + i * 24, y, 21, 9, i < n ? on : C_SEGOFF);
+  const int w = 237, f = pct == NA_I ? 0 : (constrain(pct, 0, 100) * w + 50) / 100;
+  if (f > 0) fb.fillRect(x, y, f, 9, on);
+  if (f < w) fb.fillRect(x + f, y, w - f, 9, C_SEGOFF);
 }
 // Feld im Alarm: dunkelrot hinterlegt + 3 px roter Innenrahmen
 static void alarmInset(int x, int y, int w, int h) { for (int i = 0; i < 3; i++) fb.drawRect(x + i, y + i, w - 2 * i, h - 2 * i, C_ACC); }
 
-// Screen 1 links (x 0 … 266, y 48 … 456): Batterie groß mit Stromverlauf, darunter alle Tanks als Segment-Balken
+// Screen 1 links (x 0 … 266, y 48 … 456): Batterie groß mit Stromverlauf, darunter alle Tanks als Balken
 static void supplyTile(const DashState& s, bool online, bool red, uint16_t bg) {
   const int x = 0, y = 48, w = 267, h = 408;
   bool hiTank = false;

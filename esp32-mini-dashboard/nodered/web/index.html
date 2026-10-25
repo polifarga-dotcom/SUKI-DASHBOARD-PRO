@@ -412,8 +412,8 @@
   .trow{position:absolute;left:14px;right:14px;display:flex;justify-content:space-between;align-items:baseline;white-space:nowrap}
   .trow .n{font-size:12px;letter-spacing:1px;color:#9a9a9a} .trow .n.day{color:#e8a317}
   .trow .v{font-size:12px;color:#6a6a6a} .trow .v b{font-size:18px;color:#fff;margin-left:8px}
-  .seg{position:absolute;left:14px;right:14px;height:9px;display:flex;gap:3px}
-  .seg i{flex:1;background:#1e1e1e} .seg i.water{background:#2f8fe0} .seg i.fuel{background:#e8a317} .seg i.day{background:#f5c76b} .seg i.black{background:#8b6f5a}
+  .seg{position:absolute;left:14px;right:14px;height:9px;background:#1e1e1e}
+  .seg i{display:block;height:100%;width:0} .seg i.water{background:#2f8fe0} .seg i.fuel{background:#e8a317} .seg i.day{background:#f5c76b} .seg i.black{background:#8b6f5a}
   .seg i.warn{background:#e8a317} .seg i.high{background:#d7262d}
   #tw .big{top:122px;font-size:104px} #tw .s3{top:246px;font-size:13px;letter-spacing:1px;color:#7a7a7a}
   .wfoot{position:absolute;left:14px;right:14px;bottom:12px;display:flex;justify-content:space-between;align-items:baseline;font-size:12px;letter-spacing:1px;color:#9a9a9a;z-index:1}
@@ -455,7 +455,7 @@
   .night .ca{fill:rgba(160,0,0,.12)} .night .cl{stroke:#600000} .night .cthr{stroke:#a00000} .night .cz{stroke:#300000}
   .night .httl,.night .trow .n,.night .wfoot,.night .eh,.night .sc i{color:#800000} .night .hthr,.night .trow .v{color:#600000}
   .night .sbv,.night .big.ok-c,.night .hbig.ok-c,.night .sbv.ok-c,.night .trow .v b,.night .wfoot .wtmp,.night .sva2,.night .ev,.night .sc b{color:#c00000}
-  .night .seg i{background:#1a0000} .night .seg i.water,.night .seg i.fuel,.night .seg i.day,.night .seg i.black{background:#a00000} .night .seg i.high{background:#ff2020}
+  .night .seg{background:#1a0000} .night .seg i.water,.night .seg i.fuel,.night .seg i.day,.night .seg i.black{background:#a00000} .night .seg i.high{background:#ff2020}
   .night .eb.on{background:#0a0000;border-color:#700000} .night .cn.on::before{background:#a00000}
   .night #ovl{background:#000;border-color:#a00000} .night #ovl::before{background:#a00000} .night #ovl-t,.night #ovl-m{color:#c00000} .night #ovl-s{color:#700000} .night #ovl-b{background:#700000;color:#000}
   .night .dots i.on{background:#900000} .night .dot.alarm{background:#ff2020}
@@ -702,11 +702,10 @@ function renderPvSun(e) {
   $('pvw').className = 'pvw' + (on ? '' : ' off');
 }
 
-// Screen 1 links: Batterie (groß, Stromverlauf im Hintergrund) + alle Tanks als 10-Segment-Balken (B&G-Stil)
+// Screen 1 links: Batterie (groß, Stromverlauf im Hintergrund) + alle Tanks als durchgehende Balken
 function segBar(p, kind, st) {
-  var n = p == null ? 0 : Math.round(Math.max(0, Math.min(100, p)) / 10), c = st === 'high' || st === 'alarm' ? 'high' : st === 'warn' ? 'warn' : kind, h = '';
-  for (var i = 0; i < 10; i++) h += '<i' + (i < n ? ' class="' + c + '"' : '') + '></i>';
-  return h;
+  var w = p == null ? 0 : Math.max(0, Math.min(100, p)), c = st === 'high' || st === 'alarm' ? 'high' : st === 'warn' ? 'warn' : kind;
+  return '<i class="' + c + '" style="width:' + w + '%"></i>';
 }
 function renderSupply(s, b, f) {
   var tanks = (s && s.tanks) || [], al = b.st === 'alarm' || f.st === 'alarm' || tanks.some(function (t) { return t.st === 'high'; });
