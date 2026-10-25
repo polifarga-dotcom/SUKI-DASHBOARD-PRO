@@ -149,6 +149,8 @@ struct DashState {
   // Motor (Screen 4)
   bool mOn = false, mTempLive = false, mEst = false;
   int mRpm = NA_I, mMax = 3000, mRed = 2500, mG0 = 1800, mG1 = 2200, mTemp = NA_I, mFuelPct = NA_I, mFuelL = NA_I, mFuelCap = NA_I, mRangeNm = NA_I;
+  bool mDay = false; int mDayPct = NA_I, mDayL = NA_I, mTotalL = NA_I; char mDaySt[8] = "na";   // Tagestank + Summe Diesel
+  bool mRangePlan = false; float mPlanLph = 4, mPlanSog = 5.5f;   // Motor aus: Reichweite mit festem Planwert
   float mHrs = NAN, mLph = NAN, mRangeH = NAN, mSog = NAN, mAws = NAN, mWtemp = NAN;
   int mAwa = NA_I, mTwarn = 90, mTalarm = 95;
   char mTst[8] = "na";
@@ -548,6 +550,9 @@ static void parseState(const char* body, size_t len) {
   n.mEst = m["est"] | false;
   n.mFuelPct = m["fuelPct"] | NA_I;
   n.mFuelL = m["fuelL"] | NA_I;
+  n.mDay = m["day"] | false; n.mDayPct = m["dayPct"] | NA_I; n.mDayL = m["dayL"] | NA_I; n.mTotalL = m["totalL"] | NA_I;
+  strlcpy(n.mDaySt, m["daySt"] | "na", sizeof(n.mDaySt));
+  n.mRangePlan = m["rangePlan"] | false; n.mPlanLph = m["planLph"] | 4.0f; n.mPlanSog = m["planSog"] | 5.5f;
   n.mFuelCap = m["fuelCap"] | NA_I;
   n.mRangeH = m["rangeH"] | NAN;
   n.mRangeNm = m["rangeNm"] | NA_I;
@@ -1532,7 +1537,7 @@ static void cornerValue(int x, int y, bool right, const char* lbl, const char* v
 static void enginePage(const DashState& s, bool online, bool red, uint16_t bg) {
   for (int i = 0; i < 2; i++) sqRect(12 + i, 56 + i, 376 - 2 * i, 392 - 2 * i, 14 - i, red ? C_ONRED : C_BORDER);
   tacho(s, online, red, bg);
-  char v[16], sub[48], u[8];
+  char v[16], sub[72], u[8];
   // Ecken am Drehzahlmesser: SOG oben links, AWS oben rechts, Wassertemperatur unten links, AWA unten rechts
   if (online && !isnan(s.mSog)) snprintf(v, sizeof(v), "%.1f", s.mSog); else strcpy(v, "--");
   cornerValue(26, 68, false, "SOG", v, "kn", red, bg);
@@ -1567,23 +1572,38 @@ static void enginePage(const DashState& s, bool online, bool red, uint16_t bg) {
   engTile(400, 188, 189, "FUEL RATE", red, bg);
   if (online && !isnan(s.mLph)) snprintf(v, sizeof(v), "%.1f", s.mLph); else strcpy(v, "--");
   engValue(416, 200, v, "l/h", !isnan(s.mLph) ? (s.mEst ? "estimated from rpm" : "sensor") : (s.mOn ? "" : "engine off"), red, bg);
+  // DIESEL: Haupttank und Tagestank untereinander (Prozent, Liter, Balken), Summe oben rechts
   engTile(599, 188, 189, "DIESEL", red, bg);
-  if (online && s.mFuelPct != NA_I) snprintf(v, sizeof(v), "%d", s.mFuelPct); else strcpy(v, "--");
-  engValue(615, 196, v, "%", "", red, bg);
-  if (online && s.mFuelL != NA_I) {
-    snprintf(sub, sizeof(sub), "%d l", s.mFuelL);
-    fb.setFont(&fonts::DejaVu18); fb.setTextDatum(textdatum_t::baseline_right); fb.setTextColor(red ? C_ONRED : C_GREY, bg);
-    fb.drawString(sub, 772, 262);
+  if (online && s.mTotalL != NA_I) {
+    snprintf(sub, sizeof(sub), "%d L TOTAL", s.mTotalL);
+    fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_right); fb.setTextColor(red ? C_ONRED : C_DIM, bg);
+    fb.drawString(sub, 772, 208);
   }
-  sqFill(615, 286, 157, 8, 4, red ? C_ONRED : C_BORDER);
-  if (online && s.mFuelPct != NA_I && s.mFuelPct > 0)
-    sqFill(615, 286, 157 * constrain(s.mFuelPct, 0, 100) / 100, 8, 4, red ? C_RED_BG : C_FUELBAR);
-  engTile(400, 320, 388, "RANGE AT CURRENT RPM", red, bg, 128);
+  auto fuelRow = [&](int y, const char* lbl, uint16_t lc, int pct, int l, uint16_t vc, uint16_t barC) {
+    fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::baseline_left); fb.setTextColor(red ? C_ONRED : lc, bg);
+    fb.drawString(lbl, 615, y);
+    if (online && l != NA_I) snprintf(sub, sizeof(sub), "%d l", l); else strcpy(sub, "");
+    fb.setTextDatum(textdatum_t::baseline_right); fb.setTextColor(red ? C_ONRED : C_GREY, bg);
+    fb.drawString(sub, 772, y);
+    if (online && pct != NA_I) snprintf(v, sizeof(v), "%d %%", pct); else strcpy(v, "--");
+    fb.setFont(&fonts::DejaVu24); fb.setTextColor(red ? C_ONRED : vc, bg);
+    fb.drawString(v, 724, y + 2);
+    sqFill(615, y + 8, 157, 6, 0, red ? C_ONRED : C_BORDER);
+    if (online && pct != NA_I && pct > 0) sqFill(615, y + 8, 157 * constrain(pct, 0, 100) / 100, 6, 0, red ? C_RED_BG : barC);
+  };
+  fuelRow(s.mDay ? 246 : 262, "MAIN", C_GREY, s.mFuelPct, s.mFuelL, C_WHITE, C_FUELBAR);
+  if (s.mDay)
+    fuelRow(286, "DAY", C_TFUEL, s.mDayPct, s.mDayL, !strcmp(s.mDaySt, "high") ? C_RED : !strcmp(s.mDaySt, "warn") ? C_AMBER : C_WHITE, C_TDAY);
+  engTile(400, 320, 388, online && s.mRangePlan ? "RANGE (PLANNING)" : "RANGE AT CURRENT RPM", red, bg, 128);
   bool rOk = online && !isnan(s.mRangeH);
   if (rOk) snprintf(v, sizeof(v), "%.1f", s.mRangeH); else strcpy(v, "--");
-  if (!rOk) strcpy(sub, "engine off");
-  else if (s.mRangeNm != NA_I) snprintf(sub, sizeof(sub), "at %.1f l/h and %.1f kn SOG", s.mLph, s.mSog);
-  else snprintf(sub, sizeof(sub), "at %.1f l/h (no SOG)", s.mLph);
+  // Reichweite rechnet Node-RED mit Haupttank + Tagestank
+  char tot[20] = "";
+  if (online && s.mTotalL != NA_I) snprintf(tot, sizeof(tot), " - %d l on board", s.mTotalL);
+  if (rOk && s.mRangePlan) snprintf(sub, sizeof(sub), "engine off - plan %.1f l/h, %.1f kn%s", s.mPlanLph, s.mPlanSog, tot);
+  else if (!rOk) snprintf(sub, sizeof(sub), "engine off%s", tot);
+  else if (s.mRangeNm != NA_I) snprintf(sub, sizeof(sub), "at %.1f l/h, %.1f kn%s", s.mLph, s.mSog, tot);
+  else snprintf(sub, sizeof(sub), "at %.1f l/h (no SOG)%s", s.mLph, tot);
   engValue(416, 334, v, "h", sub, red, bg);
   if (rOk && s.mRangeNm != NA_I) { snprintf(v, sizeof(v), "%d", s.mRangeNm); engValue(600, 334, v, "nm", "", red, bg); }
 }

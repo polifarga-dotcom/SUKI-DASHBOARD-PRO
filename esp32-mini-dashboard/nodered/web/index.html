@@ -440,6 +440,9 @@
   .cn.on::before{background:#fff} .cn.h.r.on::after{border-left-color:#fff} .cn.h.l.on::after{border-right-color:#fff} .cn.v.u.on::after{border-bottom-color:#fff} .cn.v.d.on::after{border-top-color:#fff}
   .wb{border:1px solid #2a2a2a;border-radius:0} .wp{height:140px;padding-top:14px} .wd{height:100px;padding-top:17px} .wp > div,.wd > div{margin-top:14px} .wp.now{border-color:#6a6a6a}
   .et{height:124px} .ev2{top:38px;font-size:38px} .es2{top:92px} .efl{top:52px}
+  .frow{position:absolute;left:16px;right:16px;display:flex;align-items:baseline;gap:8px;font-size:12px;letter-spacing:1px;color:#9a9a9a;white-space:nowrap}
+  .frow b{margin-left:auto;font-size:22px;color:#fff} .frow small{width:46px;text-align:right;font-size:13px;color:#9a9a9a} .frow .day{color:#e8a317}
+  .night .frow,.night .frow small{color:#800000} .night .frow b,.night .frow .day{color:#c00000} .night #e-dbar{background:#a00000 !important}
   .sc.tl,.sc.tr{top:66px} .sc.bl,.sc.br{top:400px} .sc i{color:#9a9a9a;letter-spacing:1.5px} .sc b{font-size:28px}
   .rt{height:144px} .rt .rv{top:36px;font-size:40px} .rt .rb{top:96px;border-radius:0} .rt .rs{top:112px}
   .amap{top:56px;height:392px;border-radius:0;border:1px solid #2a2a2a} #amap,#aisr{background:#000}
@@ -583,9 +586,10 @@
     <div class="tile et" id="et-temp" style="left:400px;top:56px"><div class="httl">TEMP</div><div class="hthr" id="e-tthr"></div><div class="ev2" id="e-temp">--</div><div class="es2" id="e-temp2"></div></div>
     <div class="tile et" style="left:599px;top:56px"><div class="httl">HOURS</div><div class="ev2" id="e-hrs">--</div><div class="es2">engine hours</div></div>
     <div class="tile et" style="left:400px;top:188px"><div class="httl">FUEL RATE</div><div class="ev2" id="e-lph">--</div><div class="es2" id="e-lph2"></div></div>
-    <div class="tile et" style="left:599px;top:188px"><div class="httl">DIESEL</div><div class="ev2" id="e-fuel" style="top:30px">--</div>
-      <div class="efl" id="e-fuel2"></div><div class="ebar"><i id="e-fbar"></i></div></div>
-    <div class="tile et" style="left:400px;top:320px;width:388px"><div class="httl">RANGE AT CURRENT RPM</div>
+    <div class="tile et" style="left:599px;top:188px"><div class="httl">DIESEL</div><div class="hthr" id="e-ftot"></div>
+      <div class="frow" style="top:36px"><span>MAIN</span><b id="e-fuel">--</b><small id="e-fuel2"></small></div><div class="ebar" style="top:62px;bottom:auto"><i id="e-fbar"></i></div>
+      <div class="frow" id="e-drow" style="top:76px"><span class="day">DAY</span><b id="e-day">--</b><small id="e-day2"></small></div><div class="ebar" id="e-dbarw" style="top:102px;bottom:auto"><i id="e-dbar" style="background:#f5c76b"></i></div></div>
+    <div class="tile et" style="left:400px;top:320px;width:388px"><div class="httl" id="e-rttl">RANGE AT CURRENT RPM</div>
       <div class="ev2" id="e-rh" style="left:16px">--</div><div class="ev2" id="e-rnm" style="left:200px"></div><div class="es2" id="e-r2"></div></div>
   </div>
 
@@ -962,7 +966,8 @@ function renderEngine(e) {
   e = e || {};
   if (DEMO_RPM != null) {   // nur Simulator-Vorschau, ändert nichts in Node-RED
     e = Object.assign({}, e, { on: true, rpm: DEMO_RPM, lph: 4.6, est: true, tempLive: true, temp: 78, sog: 6.4 });
-    if (e.fuelL != null) { e.rangeH = Math.round(e.fuelL / e.lph * 10) / 10; e.rangeNm = Math.round(e.rangeH * e.sog); }
+    var fl = e.totalL != null ? e.totalL : e.fuelL;   // Haupttank + Tagestank
+    if (fl != null) { e.rangeH = Math.round(fl / e.lph * 10) / 10; e.rangeNm = Math.round(e.rangeH * e.sog); }
   }
   var dt = location.search.match(/demoTemp=(\d+)/);   // nur Vorschau: Motortemperatur simulieren
   if (dt) { var tv = +dt[1]; e = Object.assign({}, e, { temp: tv, tempLive: true, tst: tv >= (e.talarm || 95) ? 'alarm' : tv >= (e.twarn || 90) ? 'warn' : 'ok' }); }
@@ -978,12 +983,23 @@ function renderEngine(e) {
   $('e-hrs').innerHTML = e.hrs != null ? e.hrs.toFixed(1) + '<small>h</small>' : '--';
   $('e-lph').innerHTML = e.lph != null ? e.lph.toFixed(1) + '<small>l/h</small>' : '--';
   $('e-lph2').textContent = e.lph != null ? (e.est ? 'estimated from rpm' : 'sensor') : (e.on ? '' : 'engine off');
-  $('e-fuel').innerHTML = e.fuelPct != null ? e.fuelPct + '<small>%</small>' : '--';
+  $('e-fuel').textContent = e.fuelPct != null ? e.fuelPct + ' %' : '--';
   $('e-fbar').style.width = (e.fuelPct || 0) + '%';
   $('e-fuel2').textContent = e.fuelL != null ? e.fuelL + ' l' : '';
+  // Tagestank (z. B. Gobius 40 l) darunter, Summe oben rechts
+  $('e-drow').style.display = $('e-dbarw').style.display = e.day ? '' : 'none';
+  $('e-day').textContent = e.dayPct != null ? e.dayPct + ' %' : '--';
+  $('e-day').style.color = e.daySt === 'high' ? '#ff3b3b' : e.daySt === 'warn' ? '#e8a317' : '';
+  $('e-dbar').style.width = (e.dayPct || 0) + '%';
+  $('e-day2').textContent = e.dayL != null ? e.dayL + ' l' : '';
+  $('e-ftot').textContent = e.totalL != null ? e.totalL + ' L TOTAL' : '';
   $('e-rh').innerHTML = e.rangeH != null ? e.rangeH.toFixed(1) + '<small>h</small>' : '--';
   $('e-rnm').innerHTML = e.rangeNm != null ? e.rangeNm + '<small>nm</small>' : '';
-  $('e-r2').textContent = e.rangeH == null ? 'engine off' : (e.rangeNm != null ? 'at ' + e.lph.toFixed(1) + ' l/h and ' + e.sog + ' kn SOG' : 'at ' + e.lph.toFixed(1) + ' l/h (no SOG)');
+  var tot = e.totalL != null ? ' · ' + e.totalL + ' l on board' : '';
+  // Motor aus: Planwert (z. B. 4 l/h bei 5,5 kn) als konservative Plangröße vor Anker
+  $('e-rttl').textContent = e.rangePlan ? 'RANGE (PLANNING)' : 'RANGE AT CURRENT RPM';
+  $('e-r2').textContent = e.rangePlan ? 'engine off - planning ' + e.planLph.toFixed(1) + ' l/h at ' + e.planSog + ' kn' + tot
+    : e.rangeH == null ? 'engine off' + tot : (e.rangeNm != null ? 'at ' + e.lph.toFixed(1) + ' l/h and ' + e.sog + ' kn SOG' : 'at ' + e.lph.toFixed(1) + ' l/h (no SOG)') + tot;
 }
 
 // ── Anker-Screen ──────────────────────────────────────────────────────────

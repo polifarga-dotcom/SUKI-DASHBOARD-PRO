@@ -17,6 +17,7 @@ const DEF = {
     engTempAlarmOn: true, engTempWarnC: 90, engTempAlarmC: 95, engTempHystC: 2,
     engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true,
     fuelCurve: '800:0.8,1000:1.2,1500:2.2,2000:3.8,2500:6.2,3000:9.5',
+    planLph: 4, planSog: 5.5,   // Reichweite bei stehendem Motor: konservativer Planwert
     baroAlarmOn: true, baroLowHpa: 995, baroHystHpa: 1, baroWinMin: 2,
     anchorAlarmOn: true, stormAlarmOn: true, anchorLocalFallback: true,
     ackMinutes: 5, staleSec: 30, testUntil: 0, night: false,
@@ -489,7 +490,13 @@ if (dt && dt.lvl != null) {
 // Reichweite bei aktuellem Verbrauch (+ SOG für Seemeilen)
 const sogLeaf = skN && skN.data && leaf(skN.data.speedOverGround);
 const sog = sogLeaf && isNum(sogLeaf.value) && ageS(sogLeaf.timestamp) < cfg.staleSec ? sogLeaf.value * MS2KN : null;
-const rangeH = running && lph && fuelL != null ? fuelL / lph : null;
+// Reichweite mit dem gesamten Diesel an Bord: Haupttank + Tagestank
+const dayL = dt && dt.lvl != null && dt.capL != null ? dt.lvl * dt.capL : null;
+const totalL = fuelL != null || dayL != null ? (fuelL || 0) + (dayL || 0) : null;
+// Motor läuft: echter Verbrauch (+ SOG); Motor steht: fester, konservativer Planwert (z. B. 4 l/h bei 5,5 kn) als Plangröße vor Anker
+const rangePlan = !running && totalL != null && cfg.planLph > 0;
+const rangeH = running && lph && totalL != null ? totalL / lph : rangePlan ? totalL / cfg.planLph : null;
+const rangeSog = rangePlan ? cfg.planSog : sog;
 const engine = {
     on: running, rpm: rpm != null ? rpm : (eId ? 0 : null), max: cfg.engMaxRpm, red: cfg.engRedRpm,
     g0: cfg.engGreenFrom, g1: cfg.engGreenTo,
@@ -498,8 +505,12 @@ const engine = {
     lph: lph != null ? Math.round(lph * 10) / 10 : null, est: est,
     fuelPct: ft && ft.lvl != null ? Math.round(ft.lvl * 100) : null, fuelL: fuelL != null ? Math.round(fuelL) : null,
     fuelCap: ft && ft.capL != null ? Math.round(ft.capL) : null,
+    day: !!dt, dayPct: day.pct != null ? Math.round(day.pct) : null, dayL: dayL != null ? Math.round(dayL) : null,
+    dayCap: dt && dt.capL != null ? Math.round(dt.capL) : null, daySt: day.st,
+    totalL: totalL != null ? Math.round(totalL) : null,
     rangeH: rangeH != null ? Math.round(rangeH * 10) / 10 : null,
-    rangeNm: rangeH != null && sog != null && sog > 0.5 ? Math.round(rangeH * sog) : null,
+    rangeNm: rangeH != null && rangeSog != null && rangeSog > 0.5 ? Math.round(rangeH * rangeSog) : null,
+    rangePlan: rangePlan, planLph: cfg.planLph, planSog: cfg.planSog,
     sog: sog != null ? r1(sog) : null,
 };
 

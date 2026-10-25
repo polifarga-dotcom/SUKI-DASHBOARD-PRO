@@ -106,6 +106,8 @@
 <div class="row"><label>Tachometer max (rpm)</label><input type="number" id="engMaxRpm" min="1000" max="6000" step="100"></div>
 <div class="row"><label>Red zone from (rpm)</label><input type="number" id="engRedRpm" min="500" max="6000" step="100"></div>
 <div class="row"><label>Green zone (rpm)<small>Economical cruising range</small></label><span><input type="number" id="engGreenFrom" min="0" max="6000" step="100" style="width:80px"> – <input type="number" id="engGreenTo" min="0" max="6000" step="100" style="width:80px"></span></div>
+<div class="row"><label>Planning consumption (l/h)<small>Range while the engine is off (e.g. at anchor)</small></label><input type="number" id="planLph" min="0.5" max="50" step="0.1"></div>
+<div class="row"><label>Planning speed (kn)<small>Used with the planning consumption for the range in NM</small></label><input type="number" id="planSog" min="1" max="20" step="0.1"></div>
 <div class="row"><label>Diesel tank (SignalK)</label><select id="fuelInstance"><option value="auto">Auto (first fuel/diesel tank)</option></select></div>
 <div class="row"><label>Use fuel-rate sensor<small>If the engine sends fuel.rate via NMEA 2000; otherwise the curve below is used</small></label><input type="checkbox" id="fuelUseSensor"></div>
 <div class="row" style="flex-wrap:wrap"><label style="flex-basis:100%">Fuel curve (rpm:l/h)<small>Comma-separated points, linear in between — take the values from your engine manual</small></label><input type="text" id="fuelCurve" style="width:100%;margin-top:8px"></div>
@@ -135,7 +137,7 @@ If no known network is reachable for 1 minute, the display opens its own setup W
 <div id="out"></div>
 </main>
 <script>
-var NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','aisCruiseNm','aisOffshoreNm','aisTcpaMin','sailCloseFrom','sailCloseTo','sosPob','bwWarnPct','bwHighPct','fuelWarnPct','fuelLowPct','dayWarnPct','dayLowPct','dayHystPct','engTempWarnC','engTempAlarmC','engTempHystC','rigWarnT','rigAlarmT','rigHystT','rigScaleT','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec'];
+var NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','aisCruiseNm','aisOffshoreNm','aisTcpaMin','sailCloseFrom','sailCloseTo','sosPob','bwWarnPct','bwHighPct','fuelWarnPct','fuelLowPct','dayWarnPct','dayLowPct','dayHystPct','engTempWarnC','engTempAlarmC','engTempHystC','rigWarnT','rigAlarmT','rigHystT','rigScaleT','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec','planLph','planSog'];
 var BOOL = ['night','soundOn','baroAlarmOn','rigAlarmOn','bwSwap','engTempAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback','stormAlarmOn','dayAlarmOn'];
 var STR = ['sailStyle','sosDesc','soundNight','fuelInstance','dayInstance','radarSel','fuelCurve','windSource','battInstance','waterInstance'];
 function $(id){return document.getElementById(id);}
