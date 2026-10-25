@@ -1878,66 +1878,46 @@
       "headers": {}
     },
     {
-      "id": "a4eaf89f46429bd5",
-      "type": "websocket in",
-      "z": "057ae48bc2fee831",
-      "name": "Radar nav6578A",
-      "x": 150,
-      "y": 820,
-      "wires": [
-        [
-          "fbbd94cfa1a0b6c4"
-        ]
-      ],
-      "server": "",
-      "client": "89e601ceed66b36e"
-    },
-    {
-      "id": "fbbd94cfa1a0b6c4",
+      "id": "00ab7b929fc701a4",
       "type": "function",
       "z": "057ae48bc2fee831",
-      "name": "Radar Raster nav6578A",
+      "name": "Radar Verbindung",
       "x": 380,
       "y": 820,
       "wires": [],
-      "func": "// Protobuf RadarMessage { repeated Spoke spokes = 2 } dekodieren und ins Rundraster eintragen\nconst NA = 512, NR = 192, SPR = 2048;\nconst id = 'nav6578A';\nlet R = flow.get('radar_' + id);\nif (!R) { R = { cells: new Uint8Array(NA * NR), range: 0, t: 0 }; flow.set('radar_' + id, R); }\nconst b = msg.payload;\nif (!Buffer.isBuffer(b)) return null;\nlet p = 0;\nconst varint = (buf, pos) => { let v = 0, m = 1, c; do { c = buf[pos.i++]; v += (c & 127) * m; m *= 128; } while (c & 128); return v; };\nconst pos = { i: 0 };\nwhile (pos.i < b.length) {\n    const key = varint(b, pos), f = key >> 3, wt = key & 7;\n    if (wt === 2) {\n        const len = varint(b, pos), end = pos.i + len;\n        if (f === 2) {   // Spoke\n            let angle = 0, range = 0, data = null;\n            while (pos.i < end) {\n                const k2 = varint(b, pos), f2 = k2 >> 3, w2 = k2 & 7;\n                if (w2 === 0) { const v = varint(b, pos); if (f2 === 1) angle = v; else if (f2 === 3) range = v; }\n                else if (w2 === 1) pos.i += 8;\n                else if (w2 === 5) pos.i += 4;\n                else if (w2 === 2) { const l2 = varint(b, pos); if (f2 === 5) data = b.subarray(pos.i, pos.i + l2); pos.i += l2; }\n                else { pos.i = end; }\n            }\n            if (data && data.length) {\n                // Strahl reicht bis range m (über die Bildecken hinaus); angezeigt wird bis zur am Plotter\n                // eingestellten Reichweite (controls/range) → gleicher Zoom wie am Zeus\n                const setR = flow.get('radar_set_' + id) || range, frac = range ? Math.min(1, setR / range) : 1;\n                if (setR !== R.range || Date.now() - R.t > 3000) R.cells.fill(0);   // neue Reichweite / nach Standby: alte Echos weg\n                const ai = Math.floor((angle % SPR) * NA / SPR), row = ai * NR, L = Math.max(1, Math.round(data.length * frac));\n                if (angle % (SPR / NA) === 0) R.cells.fill(0, row, row + NR);   // erste von 4 Strahlen je Richtung\n                for (let j = 0; j < L; j++) {\n                    let v = data[j];\n                    if (v > 18) continue;              // Nachleuchten (History) ignorieren\n                    if (v > 15) v = 15;                // Doppler (17/18) wie starkes Echo\n                    const c = row + Math.floor(j * NR / L);\n                    if (v > R.cells[c]) R.cells[c] = v;\n                }\n                R.range = setR;\n                R.t = Date.now();\n            }\n        }\n        pos.i = end;\n    } else if (wt === 0) varint(b, pos);\n    else if (wt === 1) pos.i += 8;\n    else if (wt === 5) pos.i += 4;\n    else break;\n}\nreturn null;",
+      "func": "// Verbindungsverwaltung (alle 2 s): verbinden, solange das Radar abgefragt wird; sonst trennen.\nconst now = Date.now();\nconst active = now - (flow.get('radar_seen') || 0) < 15000;\nconst sel = ((flow.get('cfg') || {}).radarSel) === 'B' ? 'B' : 'A', id = 'nav6578' + sel;\nlet C = context.get('conn');\nif (C && (!active || C.id !== id)) { try { C.ws.terminate(); } catch (e) {} C = null; context.set('conn', null); }\nif (!active) { node.status({ fill: 'grey', shape: 'ring', text: 'Ruhe (Radar-Screen nicht aktiv)' }); return null; }\nif (C && C.ws.readyState <= 1) {\n    node.status({ fill: C.ws.readyState === 1 ? 'green' : 'yellow', shape: 'dot', text: id + ' ' + C.rate + ' Pakete/s' });\n    C.rate = 0;\n    return null;\n}\n\n// Protobuf RadarMessage { repeated Spoke spokes = 2 } dekodieren und ins Rundraster eintragen\n// (je Zelle das Maximum der 4 Strahlen einer Richtung; Index-Tabelle statt Division je Wert).\nconst NA = 512, NR = 192, SPR = 2048, STEP = SPR / NA;\nfunction decode(b) {\n    const t = Date.now();\n    let R = flow.get('radar_' + id);\n    if (!R) { R = { cells: new Uint8Array(NA * NR), range: 0, t: 0 }; flow.set('radar_' + id, R); }\n    const setCfg = flow.get('radar_set_' + id) || 0, cells = R.cells, n = b.length;\n    let i = 0;\n    const vi = () => { let v = 0, m = 1, c; do { c = b[i++]; v += (c & 127) * m; m *= 128; } while (c & 128); return v; };\n    while (i < n) {\n        const key = vi(), f = key >> 3, wt = key & 7;\n        if (wt !== 2) { if (wt === 0) vi(); else if (wt === 1) i += 8; else if (wt === 5) i += 4; else break; continue; }\n        const len = vi(), end = i + len;\n        if (f !== 2) { i = end; continue; }\n        let angle = 0, range = 0, d0 = -1, dl = 0;\n        while (i < end) {\n            const k2 = vi(), f2 = k2 >> 3, w2 = k2 & 7;\n            if (w2 === 0) { const v = vi(); if (f2 === 1) angle = v; else if (f2 === 3) range = v; }\n            else if (w2 === 2) { const l2 = vi(); if (f2 === 5) { d0 = i; dl = l2; } i += l2; }\n            else if (w2 === 1) i += 8;\n            else if (w2 === 5) i += 4;\n            else i = end;\n        }\n        i = end;\n        if (d0 < 0 || !dl) continue;\n        const ai = ((angle % SPR) / STEP) | 0;\n        const first = ai !== R.ai;                       // erster von 4 Strahlen dieser Richtung\n        R.ai = ai;\n        // Strahl reicht bis range m (über die Bildecken hinaus); angezeigt wird bis zur am Plotter\n        // eingestellten Reichweite (controls/range) → gleicher Zoom wie am Zeus\n        const setR = setCfg || range, frac = range ? Math.min(1, setR / range) : 1;\n        if (setR !== R.range || t - R.t > 3000) cells.fill(0);   // neue Reichweite / nach Pause: alte Echos weg\n        const L = Math.max(1, Math.round(dl * frac));\n        if (L !== R.mapL) { R.map = new Uint16Array(L); for (let j = 0; j < L; j++) R.map[j] = (j * NR / L) | 0; R.mapL = L; }\n        const map = R.map, row = ai * NR;\n        if (first) cells.fill(0, row, row + NR);\n        for (let j = 0; j < L; j++) {\n            let v = b[d0 + j];\n            if (v === 0 || v > 18) continue;             // leer / Nachleuchten (History)\n            if (v > 15) v = 15;                          // Doppler (17/18) wie starkes Echo\n            const c = row + map[j];\n            if (v > cells[c]) cells[c] = v;\n        }\n        R.range = setR;\n        R.t = t;\n    }\n}\n\nconst ws = new WS('ws://127.0.0.1:6502/signalk/v2/api/vessels/self/radars/' + id + '/spokes', { perMessageDeflate: false });\nC = { id, ws, rate: 0 };\ncontext.set('conn', C);\nws.on('message', (data) => { C.rate++; try { decode(data); } catch (e) { node.warn('Radar: ' + e.message); } });\nws.on('error', (e) => node.status({ fill: 'red', shape: 'ring', text: 'mayara: ' + e.message }));\nws.on('close', () => { if (context.get('conn') === C) context.set('conn', null); });\nnode.status({ fill: 'yellow', shape: 'dot', text: 'verbinde ' + id });\nreturn null;",
       "outputs": 1,
       "timeout": 0,
       "noerr": 0,
       "initialize": "",
-      "finalize": "",
-      "libs": []
+      "finalize": "const C = context.get('conn');\nif (C) { try { C.ws.terminate(); } catch (e) {} }\ncontext.set('conn', null);",
+      "libs": [
+        {
+          "var": "WS",
+          "module": "ws"
+        }
+      ]
     },
     {
-      "id": "0beef3470ebfab5e",
-      "type": "websocket in",
+      "id": "cc50eca2fb01f8cf",
+      "type": "inject",
       "z": "057ae48bc2fee831",
-      "name": "Radar nav6578B",
+      "name": "Radar Takt",
       "x": 150,
-      "y": 860,
+      "y": 820,
       "wires": [
         [
-          "ab6f3331738fd934"
+          "00ab7b929fc701a4"
         ]
       ],
-      "server": "",
-      "client": "6495bed380b46571"
-    },
-    {
-      "id": "ab6f3331738fd934",
-      "type": "function",
-      "z": "057ae48bc2fee831",
-      "name": "Radar Raster nav6578B",
-      "x": 380,
-      "y": 860,
-      "wires": [],
-      "func": "// Protobuf RadarMessage { repeated Spoke spokes = 2 } dekodieren und ins Rundraster eintragen\nconst NA = 512, NR = 192, SPR = 2048;\nconst id = 'nav6578B';\nlet R = flow.get('radar_' + id);\nif (!R) { R = { cells: new Uint8Array(NA * NR), range: 0, t: 0 }; flow.set('radar_' + id, R); }\nconst b = msg.payload;\nif (!Buffer.isBuffer(b)) return null;\nlet p = 0;\nconst varint = (buf, pos) => { let v = 0, m = 1, c; do { c = buf[pos.i++]; v += (c & 127) * m; m *= 128; } while (c & 128); return v; };\nconst pos = { i: 0 };\nwhile (pos.i < b.length) {\n    const key = varint(b, pos), f = key >> 3, wt = key & 7;\n    if (wt === 2) {\n        const len = varint(b, pos), end = pos.i + len;\n        if (f === 2) {   // Spoke\n            let angle = 0, range = 0, data = null;\n            while (pos.i < end) {\n                const k2 = varint(b, pos), f2 = k2 >> 3, w2 = k2 & 7;\n                if (w2 === 0) { const v = varint(b, pos); if (f2 === 1) angle = v; else if (f2 === 3) range = v; }\n                else if (w2 === 1) pos.i += 8;\n                else if (w2 === 5) pos.i += 4;\n                else if (w2 === 2) { const l2 = varint(b, pos); if (f2 === 5) data = b.subarray(pos.i, pos.i + l2); pos.i += l2; }\n                else { pos.i = end; }\n            }\n            if (data && data.length) {\n                // Strahl reicht bis range m (über die Bildecken hinaus); angezeigt wird bis zur am Plotter\n                // eingestellten Reichweite (controls/range) → gleicher Zoom wie am Zeus\n                const setR = flow.get('radar_set_' + id) || range, frac = range ? Math.min(1, setR / range) : 1;\n                if (setR !== R.range || Date.now() - R.t > 3000) R.cells.fill(0);   // neue Reichweite / nach Standby: alte Echos weg\n                const ai = Math.floor((angle % SPR) * NA / SPR), row = ai * NR, L = Math.max(1, Math.round(data.length * frac));\n                if (angle % (SPR / NA) === 0) R.cells.fill(0, row, row + NR);   // erste von 4 Strahlen je Richtung\n                for (let j = 0; j < L; j++) {\n                    let v = data[j];\n                    if (v > 18) continue;              // Nachleuchten (History) ignorieren\n                    if (v > 15) v = 15;                // Doppler (17/18) wie starkes Echo\n                    const c = row + Math.floor(j * NR / L);\n                    if (v > R.cells[c]) R.cells[c] = v;\n                }\n                R.range = setR;\n                R.t = Date.now();\n            }\n        }\n        pos.i = end;\n    } else if (wt === 0) varint(b, pos);\n    else if (wt === 1) pos.i += 8;\n    else if (wt === 5) pos.i += 4;\n    else break;\n}\nreturn null;",
-      "outputs": 1,
-      "timeout": 0,
-      "noerr": 0,
-      "initialize": "",
-      "finalize": "",
-      "libs": []
+      "props": [],
+      "repeat": "2",
+      "crontab": "",
+      "once": true,
+      "onceDelay": "3",
+      "topic": "",
+      "payload": "",
+      "payloadType": "date"
     },
     {
       "id": "d71bab0ad61e7479",
@@ -2090,7 +2070,7 @@
           "45f5c3ae0de8a823"
         ]
       ],
-      "func": "// immer nur der gewählte Bereich (HALO Dual Range A/B, Einstellung radarSel) — nicht hin- und herspringen.\n// Kopf 20 Byte: 'RDR2', u32 Reichweite m, u16 Richtungen, u16 Stufen, u32 Alter ms, u8 Bereich (0 = A, 1 = B), u8 Senden (1/0), u16 frei\nconst now = Date.now(), NA = 512, NR = 192;\nconst sel = ((flow.get('cfg') || {}).radarSel) === 'B' ? 'B' : 'A', id = 'nav6578' + sel;\nconst R = flow.get('radar_' + id), pw = flow.get('radar_pw_' + id);\nconst live = !!(R && R.t && now - R.t < 3000 && pw === 2);   // gestoppt / Standby → leeres Bild, keine Geisterechos\nconst out = Buffer.alloc(20 + NA * NR / 2);\nout.write('RDR2', 0, 'ascii');\nout.writeUInt32LE(R && R.range ? R.range : (flow.get('radar_set_' + id) || 0), 4);\nout.writeUInt16LE(NA, 8); out.writeUInt16LE(NR, 10);\nout.writeUInt32LE(R && R.t ? Math.min(0xffffffff, now - R.t) : 0xffffffff, 12);\nout[16] = sel === 'B' ? 1 : 0; out[17] = live ? 1 : 0;\nif (live) for (let i = 0, o = 20; i < NA * NR; i += 2, o++) out[o] = (R.cells[i] << 4) | R.cells[i + 1];\nmsg.payload = out;\nreturn msg;",
+      "func": "// immer nur der gewählte Bereich (HALO Dual Range A/B, Einstellung radarSel) — nicht hin- und herspringen.\n// Kopf 20 Byte: 'RDR2', u32 Reichweite m, u16 Richtungen, u16 Stufen, u32 Alter ms, u8 Bereich (0 = A, 1 = B), u8 Senden (1/0), u16 frei\nconst now = Date.now(), NA = 512, NR = 192;\nflow.set('radar_seen', now);   // hält die mayara-Verbindung offen (Radar Verbindung)\nconst sel = ((flow.get('cfg') || {}).radarSel) === 'B' ? 'B' : 'A', id = 'nav6578' + sel;\nconst R = flow.get('radar_' + id), pw = flow.get('radar_pw_' + id);\nconst live = !!(R && R.t && now - R.t < 3000 && pw === 2);   // gestoppt / Standby → leeres Bild, keine Geisterechos\nconst out = Buffer.alloc(20 + NA * NR / 2);\nout.write('RDR2', 0, 'ascii');\nout.writeUInt32LE(R && R.range ? R.range : (flow.get('radar_set_' + id) || 0), 4);\nout.writeUInt16LE(NA, 8); out.writeUInt16LE(NR, 10);\nout.writeUInt32LE(R && R.t ? Math.min(0xffffffff, now - R.t) : 0xffffffff, 12);\nout[16] = sel === 'B' ? 1 : 0; out[17] = live ? 1 : 0;\nif (live) for (let i = 0, o = 20; i < NA * NR; i += 2, o++) out[o] = (R.cells[i] << 4) | R.cells[i + 1];\nmsg.payload = out;\nreturn msg;",
       "outputs": 1,
       "timeout": 0,
       "noerr": 0,
@@ -2244,26 +2224,6 @@
       "id": "9e7949dcefcaa6b0",
       "type": "websocket-client",
       "path": "ws://192.168.0.100:3000/signalk/v1/stream?subscribe=none",
-      "tls": "",
-      "wholemsg": "false",
-      "hb": "0",
-      "subprotocol": "",
-      "headers": []
-    },
-    {
-      "id": "89e601ceed66b36e",
-      "type": "websocket-client",
-      "path": "ws://127.0.0.1:6502/signalk/v2/api/vessels/self/radars/nav6578A/spokes",
-      "tls": "",
-      "wholemsg": "false",
-      "hb": "0",
-      "subprotocol": "",
-      "headers": []
-    },
-    {
-      "id": "6495bed380b46571",
-      "type": "websocket-client",
-      "path": "ws://127.0.0.1:6502/signalk/v2/api/vessels/self/radars/nav6578B/spokes",
       "tls": "",
       "wholemsg": "false",
       "hb": "0",
