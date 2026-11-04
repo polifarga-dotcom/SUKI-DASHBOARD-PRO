@@ -146,7 +146,7 @@ function req(method, url, body, cb){
   x.onload = function(){ var d=null; try{d=JSON.parse(x.responseText);}catch(e){} cb(x.status, d); };
   x.onerror = function(){ cb(0, null); }; x.send(body ? JSON.stringify(body) : null);
 }
-function load(){
+function load(msg){
   req('GET','/esp-dash/api/config',null,function(st,d){
     if(st!==200||!d){ $('out').textContent='Failed to load'; return; }
     var sel=$('battInstance'); sel.length=1;
@@ -170,15 +170,15 @@ function load(){
     var c=d.config;
     NUM.concat(STR).forEach(function(k){ $(k).value=c[k]; });
     BOOL.forEach(function(k){ $(k).checked=!!c[k]; });
-    $('out').textContent='';
+    $('out').textContent=msg||'';
   });
 }
 $('save').onclick=function(){
   var c={}; NUM.forEach(function(k){c[k]=parseFloat($(k).value);}); STR.forEach(function(k){c[k]=$(k).value;}); BOOL.forEach(function(k){c[k]=$(k).checked;});
-  req('POST','/esp-dash/api/config',c,function(st,d){ $('out').textContent = st===200 ? 'Saved ✓' : ('Error: '+(d&&d.error||st)); if(st===200) load(); });
+  req('POST','/esp-dash/api/config',c,function(st,d){ if(st===200) load('Saved ✓'); else $('out').textContent='Error: '+(d&&d.error||st); });
 };
 $('test').onclick=function(){ req('POST','/esp-dash/api/config',{testSeconds:30},function(st){ $('out').textContent = st===200?'Test alarm running for 30 s':'Error'; }); };
-$('reload').onclick=load;
+$('reload').onclick=function(){ load(); };
 load();
 
 // ── WiFi der Displays ──
