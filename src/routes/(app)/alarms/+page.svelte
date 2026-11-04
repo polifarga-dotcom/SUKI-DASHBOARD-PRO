@@ -181,6 +181,7 @@
 	let alarms = $state<Record<string, SensorAlarm>>({});
 	let openKey = $state<SensorKey | null>(null);
 	let saving  = $state<SensorKey | null>(null);
+	let saveError = $state<string | null>(null);
 
 	// Per-sensor edit buffers (only populated when accordion open)
 	let editEnabled:   Record<string, boolean>  = $state({});
@@ -315,6 +316,7 @@
 
 	// ── Open accordion ────────────────────────────────────────────────────────
 	function toggleRow(key: SensorKey, liveValue: number | null) {
+		saveError = null;
 		if (openKey === key) { openKey = null; return; }
 		const existing = alarms[key];
 		const def = SENSORS.find(s => s.key === key)!.def;
@@ -357,14 +359,20 @@
 			updated_at:          new Date().toISOString(),
 		};
 
-		const { data: row } = await supabase
+		const { data: row, error } = await supabase
 			.from('sensor_alarms')
 			.upsert(payload, { onConflict: 'boat_id,sensor' })
 			.select()
 			.single();
 
-		if (row) alarms = { ...alarms, [key]: row };
 		saving = null;
+		// Keep the panel open and say why — a failed save used to close it silently
+		if (error || !row) {
+			console.error('[alarms] save failed:', error);
+			saveError = `Could not save: ${error?.message ?? 'no response'}`;
+			return;
+		}
+		alarms = { ...alarms, [key]: row };
 		openKey = null;
 	}
 
@@ -504,6 +512,10 @@
 				</div>
 				{/if}
 
+				{#if saveError}
+				<div class="cfg-error">{saveError}</div>
+				{/if}
+
 				<!-- Actions -->
 				<div class="cfg-actions">
 					<button class="btn-ghost" onclick={() => { openKey = null; }}>Cancel</button>
@@ -627,6 +639,11 @@
 	}
 	.state-grace    { background: rgba(255,180,0,0.12); color: #ffb400; border: 1px solid rgba(255,180,0,0.3); }
 	.state-alarming { background: rgba(255,60,60,0.12);  color: #ff4040; border: 1px solid rgba(255,60,60,0.3); }
+
+	.cfg-error {
+		font-size: 12px; padding: 6px 10px; border-radius: 6px;
+		background: rgba(255,60,60,0.12); color: #ff4040; border: 1px solid rgba(255,60,60,0.3);
+	}
 
 	/* ── Actions ── */
 	.cfg-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
