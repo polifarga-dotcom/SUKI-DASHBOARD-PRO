@@ -56,8 +56,8 @@ const MPPT_INSTANCES: Record<number, string> = {
 // ── Temperature sensors: code Te, instances → columns ────────────────────────
 const TEMP_INSTANCES: Record<number, string> = {
   20: 'temp_salon',
-  21: 'temp_fridge',
-  22: 'temp_tech',
+  21: 'temp_tech',   // swapped 2026-11-05: 21 reads ~22 °C, 22 reads ~6 °C (fridge)
+  22: 'temp_fridge',
   23: 'temp_amasb',
   29: 'temp_amabb',
 };
@@ -65,8 +65,8 @@ const TEMP_INSTANCES: Record<number, string> = {
 // ── Humidity sensors: code Hu, same instance numbers ─────────────────────────
 const HUM_INSTANCES: Record<number, string> = {
   20: 'hum_salon',
-  21: 'hum_fridge',
-  22: 'hum_tech',
+  21: 'hum_tech',
+  22: 'hum_fridge',
   23: 'hum_amasb',
   29: 'hum_amabb',
 };
