@@ -41,6 +41,7 @@ type DiagRecord = {
   dbusPath: string;
   rawValue: number | null;
   description?: string;
+  Device?: string;
 };
 
 // ── Per-MPPT panel power: code PPV, instances → columns ──────────────────────
@@ -91,29 +92,34 @@ function mapDiagToTelemetry(
     const v = r.rawValue;
     if (v == null) continue;
 
+    // VRM renamed its codes (PPV→PVP, IL→ScI, H20→YT, H22→YY, Te→tsT, Hu→tsH), which silently
+    // froze solar, temperatures and humidity — match old codes or the stable dbusPath.
     // ── Solar MPPTs ───────────────────────────────────────────────────────────
-    if (r.code === 'PPV') {
-      const col = MPPT_INSTANCES[r.instance];
-      if (col) payload[col] = v;
+    const mppt = MPPT_INSTANCES[r.instance];
+    if (r.code === 'PPV' || (mppt && r.dbusPath === '/Yield/Power')) {
+      if (mppt) payload[mppt] = v;
       solarTotalW += v;
       hasSolar = true;
     }
-    if (r.code === 'IL' && MPPT_INSTANCES[r.instance] != null) {
-      // IL = charger current (A) per MPPT — sum for total
+    if (mppt && (r.code === 'IL' || r.dbusPath === '/Dc/0/Current')) {
+      // charger current (A) per MPPT — sum for total
       solarTotalA += v;
     }
-    if (r.code === 'H20' && MPPT_INSTANCES[r.instance] != null) {
-      // H20 = yield today in kWh (Victron uses 0.01 kWh resolution → multiply ×10 for Wh)
-      // Note: rawValue for H20 is in kWh from the diagnostics API
+    if (mppt && (r.code === 'H20' || r.dbusPath === '/History/Daily/0/Yield')) {
+      // yield today in kWh
       yieldTodayWh += v * 1000; // kWh → Wh
       hasSolar = true;
     }
-    if (r.code === 'H22' && MPPT_INSTANCES[r.instance] != null) {
-      // H22 = yield yesterday in kWh
+    if (mppt && (r.code === 'H22' || r.dbusPath === '/History/Daily/1/Yield')) {
+      // yield yesterday in kWh
       yieldYesterdayWh += v * 1000; // kWh → Wh
     }
 
     // ── Temperatures ─────────────────────────────────────────────────────────
+    // New code tsT reports °C; the columns (and the old code Te) are Kelvin. Device filter: tanks share instances 20–24.
+    if (r.code === 'tsT' && r.Device === 'Temperature sensor' && TEMP_INSTANCES[r.instance]) {
+      payload[TEMP_INSTANCES[r.instance]] = v + 273.15;
+    }
     if (r.code === 'Te') {
       const col = TEMP_INSTANCES[r.instance];
       if (col) payload[col] = v;
@@ -127,6 +133,10 @@ function mapDiagToTelemetry(
     if (r.code === 'Hu') {
       const col = HUM_INSTANCES[r.instance];
       if (col) payload[col] = v;
+    }
+    // New code tsH reports %; the columns (and the old code Hu) hold a 0–1 fraction
+    if (r.code === 'tsH' && r.Device === 'Temperature sensor' && HUM_INSTANCES[r.instance]) {
+      payload[HUM_INSTANCES[r.instance]] = v / 100;
     }
 
     // ── Inverter ─────────────────────────────────────────────────────────────

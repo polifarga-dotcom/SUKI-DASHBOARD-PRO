@@ -37,6 +37,7 @@ const ALLOWED_COLUMNS = new Set([
   'nav_lat', 'nav_lon', 'nav_hdg_rad', 'nav_cog_rad', 'nav_sog_ms', 'nav_stw_ms',
   // Environment
   'env_depth_m', 'env_aws_ms', 'env_awa_rad', 'env_tws_ms', 'env_twa_rad', 'env_pressure_pa',
+  'temp_water',
   // Battery
   'batt_main_soc', 'batt_main_v', 'batt_main_a', 'batt_main_w',
   'batt_eng_soc', 'batt_eng_v', 'batt_eng_a',
@@ -153,6 +154,10 @@ Deno.serve(async (req: Request) => {
     if (ALLOWED_COLUMNS.has(k) && typeof v === 'number' && isFinite(v)) {
       safe[k] = v;
     }
+  }
+  // Some battery monitors (e.g. SUKI's BMS, instance 239) report no power — derive it so the column doesn't freeze
+  if (safe['batt_main_w'] == null && safe['batt_main_v'] != null && safe['batt_main_a'] != null) {
+    safe['batt_main_w'] = Math.round(safe['batt_main_v'] * safe['batt_main_a'] * 10) / 10;
   }
 
   // ── Sanitize payload: string columns (Wakespeed chargingMode) ─────────────
