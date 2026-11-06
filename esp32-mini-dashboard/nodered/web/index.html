@@ -420,6 +420,11 @@
   .wfoot b{font-size:18px;margin-left:6px} #wmax b{color:#e8a317}
   .wfoot .wtmp{position:static;font-size:18px;gap:6px;color:#fff} .wfoot .wtmp svg{width:20px;height:20px;color:#4fc3f7}
   .pvw{top:34px}
+  .wdir{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
+  .wdir text{fill:#fff;font-size:18px;font-weight:bold}
+  .wdir .p{stroke:#ff3b30;fill:#ff3b30} .wdir .s{stroke:#22c55e;fill:#22c55e}
+  .night .wdir text,.night .wdir .p,.night .wdir .s{stroke:#c00000;fill:#c00000}
+  .red .wdir text,.red .wdir .p,.red .wdir .s{stroke:#fff;fill:#fff}
   #ta .hbig.aw{top:64px;font-size:48px} #ta.act .hbig.aw{top:40px;font-size:40px} #ta .hsub{top:94px} #ta .aup{top:138px;border-radius:0;border-width:1px}
   #tp .hbig.aw{top:56px;font-size:56px} #tp .hsub{top:124px;font-size:15px;font-weight:bold}
   .dots{top:466px;gap:8px} .dots i{width:6px;height:6px;border-radius:0;background:#3a3a3a} .dots i.on{width:16px;background:#fff}
@@ -495,6 +500,7 @@
     <svg class="bchart" viewBox="0 0 267 408" preserveAspectRatio="none"><path class="ca" id="warea"/><path class="cl" id="wline"/><path class="cthr" id="wthrl"/></svg>
     <svg class="pvsun" id="pvsun" viewBox="0 0 267 408" preserveAspectRatio="none"></svg>
     <div class="pvw" id="pvw"></div>
+    <svg class="wdir" id="wdir" viewBox="0 0 267 408" preserveAspectRatio="none"></svg>
     <div class="httl" id="wsrc">AWS</div><div class="hthr">KN</div>
     <div class="big" id="wkn">--</div>
     <div class="wfoot"><span id="wmax"></span>
@@ -681,6 +687,14 @@ function cls(st) { return st === 'alarm' ? 'alarm-c' : st === 'ok' ? 'ok-c' : st
 function fmt(v, d) { return v == null ? '--' : (d ? v.toFixed(d) : String(v)); }
 
 // Solarleistung als Sonne, die von der oberen rechten Ecke in die Wind-Box scheint
+// Scheinbarer Wind relativ zum Bug (oben): Kompass-Pfeil dreht sich in Windrichtung (Spitze = wohin der Wind weht), Firmware: gleiche Koordinaten
+function renderWindDir(awa) {
+  if (awa == null) { $('wdir').innerHTML = ''; return; }
+  var cx = 52, cy = 78, t = (awa - 90) * Math.PI / 180, c = -Math.cos(t), n = -Math.sin(t), k = awa < 0 ? 'p' : 's';
+  var P = function (d, q) { return (cx + c * d - n * q).toFixed(1) + ',' + (cy + n * d + c * q).toFixed(1); };
+  $('wdir').innerHTML = '<polygon class="' + k + '" points="' + P(32, 0) + ' ' + P(-28, 15) + ' ' + P(-16, 0) + ' ' + P(-28, -15) + '"/>' +
+    '<text x="94" y="83">' + Math.abs(awa) + '°' + (awa < 0 ? ' P' : awa > 0 ? ' S' : '') + '</text>';
+}
 function renderPvSun(e) {
   var w = e && e.ok && e.pv ? e.pv.w : null, on = w != null && w > 5;
   // Strahlen werden mit der Leistung länger (bis ~1500 W)
@@ -772,6 +786,7 @@ function render() {
   var f = (s && s.water) || { st: 'na' };
   renderSupply(s, b, f);
   renderPvSun(s && s.energy);
+  renderWindDir(s && s.sail ? s.sail.awa : null);
   // Wassertemperatur unten in der Wind-Box — verschwindet ohne Messwert (wie die Sonne)
   var wt = s && s.engine ? s.engine.wtemp : null;
   $('wtmp').style.display = wt != null ? '' : 'none';

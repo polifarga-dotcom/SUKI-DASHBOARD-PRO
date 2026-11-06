@@ -2618,6 +2618,19 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
       fb.setFont(&fonts::DejaVu18); fb.drawString(pb, x + w - 16 - wu, y + 82);
     }
     homeLabel(x + 14, y + 16, online && s.windSrc[0] ? s.windSrc : "WIND", sun ? "" : "KN", x + w - 14, tb);
+    // Scheinbarer Wind relativ zum Bug (oben): Kompass-Pfeil dreht sich in Windrichtung (Spitze = wohin der Wind weht)
+    if (online && s.sAwa != NA_I) {
+      const int wx = x + 52, wy = y + 78;
+      const uint16_t ac = red ? C_ONRED : s.sAwa < 0 ? C_TNDL : C_GREEN;
+      const float t = (s.sAwa - 90) * PI / 180, c = -cosf(t), n = -sinf(t);
+      auto PX = [&](float d, float q) { return (int)lroundf(wx + c * d - n * q); };
+      auto PY = [&](float d, float q) { return (int)lroundf(wy + n * d + c * q); };
+      // Pfeilform = zwei Dreiecke (Spitze → Flügel → Kerbe)
+      fb.fillTriangle(PX(32, 0), PY(32, 0), PX(-28, 15), PY(-28, 15), PX(-16, 0), PY(-16, 0), ac);
+      fb.fillTriangle(PX(32, 0), PY(32, 0), PX(-28, -15), PY(-28, -15), PX(-16, 0), PY(-16, 0), ac);
+      int xe = drawDeg(x + 94, y + 83, abs(s.sAwa), &fonts::DejaVu18, 13, red ? C_ONRED : C_WHITE, tb);
+      if (s.sAwa) { fb.setTextDatum(textdatum_t::baseline_left); fb.drawString(s.sAwa < 0 ? "P" : "S", xe + 2, y + 83); }
+    }
     gTransp = true;
     uint16_t col = !online ? C_AMBER : !strcmp(s.windSt, "ok") ? C_WHITE : stColor(s.windSt, false);
     if (online && !isnan(s.windKn)) snprintf(buf, sizeof(buf), "%.1f", s.windKn); else strcpy(buf, "--");
