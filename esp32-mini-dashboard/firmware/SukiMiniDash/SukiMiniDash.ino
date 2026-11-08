@@ -70,6 +70,7 @@ struct WxPart {   // Tagesverlauf: MORNING / MIDDAY / EVENING / NIGHT
   int max = NA_I, min = NA_I, ws = NA_I, wg = NA_I, pp = NA_I;
   float ps = NAN;
 };
+struct WxNext { char hrs[6] = "", ic[8] = ""; bool night = false; };   // Startseite: nächste 3 × 6 h
 struct EMppt { char n[15] = ""; int w = NA_I; float kwh = NAN; };          // einzelner Solarregler
 struct EBat { char n[17] = ""; int soc = NA_I; float v = NAN; };            // weitere Batterie (z. B. Starter)
 struct TankV {
@@ -124,6 +125,9 @@ struct DashState {
   WxDay today, days[3];
   WxPart parts[4];
   int nParts = 0;
+  WxNext nx[3];
+  int nNx = 0, dewTd = NA_I;
+  char dewLvl[6] = "";
   // SOS / VHF-Notruf (Screen 8)
   char sosName[12] = "SUKI", sosCs[10] = "", sosMmsi[14] = "", sosPhon[64] = "", sosLat[48] = "", sosLon[48] = "", sosUtc[16] = "", sosDesc[44] = "";
   int sosPob = 2;
@@ -586,6 +590,14 @@ static void parseState(const char* body, size_t len) {
     rd(wx["today"], n.today);
     n.nDays = 0;
     for (JsonObject o : wx["days"].as<JsonArray>()) { if (n.nDays >= 3) break; rd(o, n.days[n.nDays++]); }
+    n.nNx = 0;
+    for (JsonObject o : wx["next6"].as<JsonArray>()) {
+      if (n.nNx >= 3) break;
+      WxNext& q = n.nx[n.nNx++];
+      strlcpy(q.hrs, o["hrs"] | "", sizeof(q.hrs)); strlcpy(q.ic, o["ic"] | "", sizeof(q.ic)); q.night = o["night"] | false;
+    }
+    n.dewTd = wx["dew"]["td"] | NA_I;
+    strlcpy(n.dewLvl, wx["dew"]["lvl"] | "", sizeof(n.dewLvl));
     n.nParts = 0;
     for (JsonObject o : wx["parts"].as<JsonArray>()) {
       if (n.nParts >= 4) break;
@@ -2703,7 +2715,7 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
     bool al = online && !strcmp(s.baroSt, "alarm");
     const uint16_t tb = al ? C_ALBG : bg;
     if (al) fb.fillRect(x, y, w, h, tb);
-    if (online) { ChartScale sc = histChart(s.baroHist, s.baroN, x + 1, w - 2, y + 104, y + 214, 0, al, false, tb); thrLine(sc, s.baroThr, x + 1, w - 2); }
+    if (online) { ChartScale sc = histChart(s.baroHist, s.baroN, x + 1, w - 2, y + 104, y + 152, 0, al, false, tb); thrLine(sc, s.baroThr, x + 1, w - 2); }
     char thr[16] = "HPA";
     if (s.baroThr >= 0) snprintf(thr, sizeof(thr), "HPA - < %d", s.baroThr);
     homeLabel(x + 14, y + 16, "BARO", thr, x + w - 14, tb);
@@ -2727,6 +2739,31 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
       fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(dc); fb.drawString(buf, dx, dy);
     }
     gTransp = false;
+    // darunter: nächste 3 × 6 h als Icon + Tau an Deck heute Nacht
+    for (int i = 0; i < 4; i++) {
+      const int bx = x + 12 + i * 62, by = y + 158, bc = bx + 28;
+      fb.fillRect(bx, by, 56, 56, tb);
+      fb.drawRect(bx, by, 56, 56, red ? C_ONRED : C_BORDER);
+      bool wok = online && s.wOk;
+      if (i < 3) {
+        const WxNext* q = wok && i < s.nNx ? &s.nx[i] : nullptr;
+        centerText(q ? q->hrs : "--", bc, by + 9, &fonts::DejaVu12, red ? C_ONRED : C_GREY, tb);
+        if (q) wxIcon(q->ic, q->night, bc, by + 36, 34, red, tb);
+      } else {
+        bool d = wok && s.dewTd != NA_I;
+        centerText("DEW", bc, by + 9, &fonts::DejaVu12, red ? C_ONRED : C_GREY, tb);
+        if (d) {
+          snprintf(buf, sizeof(buf), "%d", s.dewTd);
+          fb.setFont(&fonts::DejaVu18);
+          drawDeg(bc - (fb.textWidth(buf) + 8) / 2, by + 36, s.dewTd, &fonts::DejaVu18, 13, red ? C_ONRED : C_WHITE, tb);
+          char lv[6]; int k = 0;
+          for (; s.dewLvl[k] && k < 5; k++) lv[k] = toupper(s.dewLvl[k]);
+          lv[k] = 0;
+          uint16_t lc = red ? C_ONRED : !strcmp(s.dewLvl, "wet") ? C_WRAIN : !strcmp(s.dewLvl, "damp") ? C_AMBER : C_GREEN;
+          centerText(lv, bc, by + 47, &fonts::DejaVu12, lc, tb);
+        } else centerText("--", bc, by + 32, &fonts::DejaVu18, C_GREY, tb);
+      }
+    }
     if (al) alarmInset(x, y, w, h);
   }
 

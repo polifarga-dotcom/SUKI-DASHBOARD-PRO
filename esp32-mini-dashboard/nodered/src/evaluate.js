@@ -402,6 +402,34 @@ if (wxc && wxc.data && wxc.data.daily && wxc.data.current) {
             st += len; pi = (pi + 1) % 4;
         }
     } } catch (e) { node.warn('Tagesverlauf: ' + e.message); }
+    // Startseite: nächste 3 × 6 h als Icon + Tau an Deck für den kommenden Abend/die Nacht (18–08 Uhr)
+    const next6 = []; let dew = null;
+    try { if (hh && Array.isArray(hh.time)) {
+        const loc = new Date(now).toLocaleString('sv-SE', { timeZone: tz });
+        const h = +loc.substr(11, 2), i0 = hh.time.indexOf(loc.substr(0, 10) + 'T' + loc.substr(11, 2) + ':00');
+        for (let k = 0; i0 >= 0 && k < 3; k++) {
+            const a = i0 + k * 6;
+            let code = 0, dayN = 0, n = 0;
+            for (let i = a; i < Math.min(a + 6, hh.time.length); i++) {
+                if (!isNum(hh.weather_code[i])) continue;
+                n++; code = Math.max(code, hh.weather_code[i]); if (hh.is_day[i]) dayN++;
+            }
+            const sh = (h + k * 6) % 24;
+            if (n) next6.push({ hrs: String(sh).padStart(2, '0') + '-' + String((sh + 6) % 24).padStart(2, '0'), ic: WMO(code)[0], night: dayN * 2 < n });
+        }
+        // Deck kühlt nachts unter die Lufttemperatur ab: klar + wenig Wind ~3 °C, teils bewölkt ~1.5 °C, bedeckt ~0.5 °C
+        // shortcut: grobe Faustregel statt Strahlungsmodell, bei Fehlalarmen die Abkühlwerte anpassen
+        const hd = Array.isArray(hh.dew_point_2m) && Array.isArray(hh.cloud_cover);
+        const a = i0 < 0 ? -1 : h < 8 || h >= 18 ? i0 : i0 - h + 18, b = Math.min(i0 - h + (h < 8 ? 8 : 32), hh.time.length);
+        let best = null;
+        for (let i = a; hd && a >= 0 && i < b; i++) {
+            const T = hh.temperature_2m[i], Td = hh.dew_point_2m[i], cc = hh.cloud_cover[i], ws = hh.wind_speed_10m[i];
+            if (!isNum(T) || !isNum(Td) || !isNum(cc)) continue;
+            const m = T - (cc < 30 && (ws || 0) < 8 ? 3 : cc < 70 ? 1.5 : 0.5) - Td;
+            if (!best || m < best.m) best = { m, td: Td };
+        }
+        if (best) dew = { td: r0(best.td), lvl: best.m <= 0 ? 'wet' : best.m <= 2 ? 'damp' : 'dry' };
+    } } catch (e) { node.warn('Startseite Vorhersage: ' + e.message); }
     const mp = moon[d.time[0]] ? moon[d.time[0]].phase : null;
     weather = {
         ok: true,
@@ -413,6 +441,7 @@ if (wxc && wxc.data && wxc.data.daily && wxc.data.current) {
         mp: isNum(mp) ? Math.round(mp) : null, mpn: moonName(mp),
         days: [1, 2, 3].filter((i) => i < d.time.length).map(day),
         parts: parts,
+        next6: next6, dew: dew,
     };
 }
 

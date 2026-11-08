@@ -420,6 +420,11 @@
   .wfoot b{font-size:18px;margin-left:6px} #wmax b{color:#e8a317}
   .wfoot .wtmp{position:static;font-size:18px;gap:6px;color:#fff} .wfoot .wtmp svg{width:20px;height:20px;color:#4fc3f7}
   .pvw{top:34px}
+  .nx{position:absolute;left:12px;right:12px;top:158px;height:56px;display:flex;gap:6px;z-index:1}
+  .nx div{flex:1;border:1px solid #2a2a2a;background:#000;text-align:center;font-size:10px;letter-spacing:1px;color:#9a9a9a;padding-top:3px}
+  .nx svg{width:34px;height:34px;display:block;margin:1px auto 0} .nx b{display:block;font-size:17px;color:#fff;margin-top:2px} .nx i{font-style:normal;font-size:11px;font-weight:bold}
+  .nx .dry{color:#22c55e} .nx .damp{color:#e8a317} .nx .wet{color:#2a9df4}
+  .night .nx div{border-color:#400000;color:#900000} .night .nx b,.night .nx i{color:#c00000}
   .wdir{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
   .wdir text{fill:#fff;font-size:18px;font-weight:bold}
   .wdir .p{stroke:#ff3b30;fill:#ff3b30} .wdir .s{stroke:#22c55e;fill:#22c55e}
@@ -519,6 +524,7 @@
     <div class="httl">BARO</div><div class="hthr" id="pthr">HPA</div>
     <div class="hbig aw" id="phpa">--</div>
     <div class="hsub" id="pdelta"></div>
+    <div class="nx" id="pnx"></div>
   </div>
 
   </div>
@@ -818,7 +824,13 @@ function render() {
   var win = winLabel(p.win);
   $('pdelta').textContent = p.d != null ? (p.d > 0.3 ? '▲ ' : p.d < -0.3 ? '▼ ' : '') + (p.d > 0 ? '+' : '') + p.d.toFixed(1) + ' / ' + win.toUpperCase() : '';
   $('pdelta').className = 'hsub ' + (p.d != null && p.d <= -2 ? 'warn-c' : '');
-  thrLine('pthrl', drawChart('barea', 'bline', p.hist || [], 266, 220, 104, 214, false), p.thr, 266);
+  thrLine('pthrl', drawChart('barea', 'bline', p.hist || [], 266, 220, 104, 152, false), p.thr, 266);
+  // darunter: nächste 3 × 6 h als Icon + Tau an Deck heute Nacht
+  var w = s && s.weather && s.weather.ok ? s.weather : null, nh = '';
+  for (var i = 0; i < 3; i++) { var q = w && w.next6 ? w.next6[i] : null; nh += '<div>' + (q ? q.hrs + wxIcon(q.ic, q.night) : '--') + '</div>'; }
+  var dw = w && w.dew;
+  nh += '<div>DEW<b>' + (dw ? dw.td + '°' : '--') + '</b><i class="' + (dw ? dw.lvl : '') + '">' + (dw ? dw.lvl.toUpperCase() : '') + '</i></div>';
+  if ($('pnx').innerHTML !== nh) $('pnx').innerHTML = nh;
 
   renderEnergy(s ? s.energy : null);
   renderWeather(s ? s.weather : null);

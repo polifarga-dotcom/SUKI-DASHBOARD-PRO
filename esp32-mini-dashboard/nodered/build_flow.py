@@ -331,7 +331,7 @@ msg.url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat.toFixed(3) + 
     '&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m' +
     '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,' +
     'wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset' +
-    '&hourly=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation_probability,precipitation' +
+    '&hourly=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation_probability,precipitation,dew_point_2m,cloud_cover' +
     '&wind_speed_unit=kn&timezone=auto&forecast_days=4';
 msg.requestTimeout = 15000;
 return msg;""", 360, 1080, [['Open-Meteo GET']])
