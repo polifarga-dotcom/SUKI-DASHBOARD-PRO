@@ -471,7 +471,8 @@ if (!ft) ft = fuelTanks.find((t) => t.lvl != null) || null;
 const fuelL = ft && ft.lvl != null && ft.capL != null ? ft.lvl * ft.capL : null;
 
 // Tagestank (SUKI: Gobius 40 l, tanks.fuel.4): 'auto' = der andere Fuel-/Diesel-Tank neben dem Haupttank, 'off' = ausblenden
-let dt = cfg.dayInstance === 'auto' ? fuelTanks.find((t) => t !== ft) || null
+// auto bevorzugt einen Tank mit frischen Daten — sonst gewinnt ein Geistertank (z. B. tanks.fuel.0 einer alten Quelle)
+let dt = cfg.dayInstance === 'auto' ? fuelTanks.find((t) => t !== ft && t.lvl != null) || fuelTanks.find((t) => t !== ft) || null
     : cfg.dayInstance !== 'off' ? fuelTanks.find((t) => t.id === cfg.dayInstance) || null : null;
 const day = { st: 'na', pct: null, id: dt ? dt.id : null };
 if (dt && dt.lvl != null) {
