@@ -1,0 +1,39 @@
+{
+  "name": "signalk-plugin-cyclops-ble",
+  "version": "1.2.1",
+  "description": "Signal K plugin: read Cyclops Marine smartlink rig load sensors directly via Bluetooth LE — no Cyclops gateway, no WiFi. Decodes the Mantracourt B24 advertisements passively via BlueZ.",
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-category-instruments",
+    "signalk-category-hardware",
+    "cyclops",
+    "cyclops-marine",
+    "smartlink",
+    "mantracourt",
+    "b24",
+    "load-cell",
+    "rig-tension",
+    "bluetooth",
+    "ble"
+  ],
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "signalk-plugin-id": "cyclops-ble",
+  "signalk-plugin-name": "Cyclops BLE Rig Load",
+  "signalk-plugin-description": "Reads Cyclops / Mantracourt B24 load sensors directly via Bluetooth LE and writes rigging.<name>.tension (N). Replaces the Cyclops gateway.",
+  "license": "MIT",
+  "author": "SUKI Dashboard Pro",
+  "os": [
+    "linux"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dbus-next": "^0.10.2"
+  }
+}
