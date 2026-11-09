@@ -455,6 +455,7 @@ static const char* alarmName(const char* k) {
   if (!strncmp(k, "storm", 5)) return "THUNDERSTORM";
   if (!strncmp(k, "rig", 3)) return "RIG LOAD";
   if (!strncmp(k, "ais", 3)) return "AIS TARGET";
+  if (!strncmp(k, "watch", 5)) return "WATCH CHECK";  // Wachalarm der Radar Station (watch@<letzte Bestätigung>)
   return k;
 }
 

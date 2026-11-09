@@ -195,7 +195,7 @@ function speaker(x, y, col, muted) {
 function blinkOn() { return Date.now() % 1000 < 550; }
 
 function header(d) {   // shared alarm banner logic
-  const ak = d.keys.map((k) => ALARM_NAME[k] || (k.startsWith('storm') ? 'THUNDERSTORM' : k.startsWith('rig') ? 'RIG LOAD' : k.toUpperCase()));
+  const ak = d.keys.map((k) => ALARM_NAME[k] || (k.startsWith('watch') ? 'WATCH CHECK' : k.startsWith('storm') ? 'THUNDERSTORM' : k.startsWith('rig') ? 'RIG LOAD' : k.toUpperCase()));
   return ak;
 }
 

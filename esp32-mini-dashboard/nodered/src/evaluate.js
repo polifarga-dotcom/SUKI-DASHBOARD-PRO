@@ -823,6 +823,15 @@ if (storm.on && stc && storm.fresh) {
     warns.push('Thunderstorm warnings not updated');
 }
 
+// ── Wachalarm (Totmann) der Radar Station: nur der echte Alarm, erst 1 min nach Fälligkeit ──
+// Keine Vorwarnung, damit die Crew in der Kabine nur geweckt wird, wenn die Wache wirklich nicht quittiert.
+// Schlüssel mit Zeitpunkt der letzten Bestätigung → jede neue Fälligkeit alarmiert wieder, alte Quittung zählt nicht.
+const rs = flow.get('radar_shared');
+if (rs && rs.watchOn && rs.watchMin > 0 && now - rs.t < 60000) {
+    const over = now - (rs.lastAt + rs.watchMin * 60000);
+    if (over >= 60000) alarms.push({ key: 'watch@' + rs.lastAt, text: `WATCH CHECK – no confirmation for ${Math.floor((now - rs.lastAt) / 60000)} min` });
+}
+
 // ── Test-Alarm ────────────────────────────────────────────────────────────
 if (cfg.testUntil && now < cfg.testUntil) alarms.push({ key: 'test', text: 'TEST ALARM' });
 
@@ -833,15 +842,6 @@ const kU = ack.kUntil || {};
 const isAcked = (k) => (kU[k] != null ? now < kU[k] : now < ack.until && ack.keys.indexOf(k) >= 0);
 const blink = alarms.some((a) => !isAcked(a.key));
 
-const state = {
-    v: 1,
-    ts: Math.round(now / 1000),
-    time: new Date(now).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }),
-    tz: tz,
-    utc: new Date(now).toISOString().slice(11, 16),
-    status: alarms.length ? 'alarm' : (warns.length ? 'warn' : 'ok'),
-    blink: blink,
-    night: !!cfg.night,
 // Auto-Nachtmodus: schaltet bei Sonnenuntergang/-aufgang um; manuelles Umschalten am Display gilt bis zum nächsten Wechsel
 const tdy = weather.today;
 if (cfg.nightAuto && tdy && /^\d\d:\d\d$/.test(tdy.sr) && /^\d\d:\d\d$/.test(tdy.ss)) {
@@ -855,6 +855,15 @@ if (cfg.nightAuto && tdy && /^\d\d:\d\d$/.test(tdy.sr) && /^\d\d:\d\d$/.test(tdy
     }
 } else flow.set('night_dark', undefined);
 
+const state = {
+    v: 1,
+    ts: Math.round(now / 1000),
+    time: new Date(now).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }),
+    tz: tz,
+    utc: new Date(now).toISOString().slice(11, 16),
+    status: alarms.length ? 'alarm' : (warns.length ? 'warn' : 'ok'),
+    blink: blink,
+    night: !!cfg.night,
     // Ton am Display: 'full' = Piepen im Blinktakt, 'short' = kurzer Pieps alle 2 s, 'off'
     beep: !blink || !cfg.soundOn ? 'off' : (cfg.night ? cfg.soundNight : 'full'),
     acked: alarms.length > 0 && !blink,

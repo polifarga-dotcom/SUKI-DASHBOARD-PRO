@@ -403,6 +403,14 @@ return { payload: JSON.stringify(v) };""", 380, 1200, [['Motor schreiben']])
 add('Motor schreiben', 'file', 600, 1200, filename=ENG_FILE, filenameType='str',
     appendNewline=False, createDir=True, overwriteFile='true', encoding='utf8')
 
+# ── 1e) Wachalarm der Radar Station (chart-proxy schreibt den gemeinsamen Alarmzustand, Zeiten = Pi-Uhr) ──
+inject('Wache lesen 5 s', 150, 1240, 'Wache Datei', 5, [], once_delay=2)
+add('Wache Datei', 'file in', 380, 1240, [['Wache übernehmen']], filename='/home/admin/chart-proxy-data/alarmstate.json',
+    filenameType='str', format='utf8', chunk=False, sendError=False, encoding='none', allProps=False)
+fn('Wache übernehmen', """\
+try { const v = JSON.parse(msg.payload); v.t = Date.now(); flow.set('radar_shared', v); } catch (e) {}
+return null;""", 600, 1240)
+
 # ── 2) Auswertung ────────────────────────────────────────────────────────────
 inject('Tick 1 s', 130, 280, 'Auswertung', 1, [], once_delay=3)
 fn('Auswertung', (HERE / 'src' / 'evaluate.js').read_text(), 340, 280)
