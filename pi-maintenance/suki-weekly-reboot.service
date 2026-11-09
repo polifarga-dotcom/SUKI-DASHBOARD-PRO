@@ -1,0 +1,7 @@
+[Unit]
+Description=SUKI weekly reboot (only when the boat is stationary)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/suki-weekly-reboot

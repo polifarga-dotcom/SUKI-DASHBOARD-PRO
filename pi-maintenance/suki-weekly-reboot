@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Wöchentlicher Neustart eines SUKI-Pis – nur wenn das Boot sicher still liegt.
+
+Neustart nur, wenn ALLES zutrifft, sonst Verschieben auf den nächsten Lauf (systemd-Timer, wöchentlich):
+  - Pi läuft seit mindestens 24 h (keine Neustart-Schleifen)
+  - SOG aus SignalK ist aktuell (< 2 min alt) und unter 0,5 kn
+  - Ankerwache in Node-RED ist nicht aktiv und kein Alarm steht an
+Fehlen Daten (SignalK/Node-RED nicht erreichbar), wird NICHT neu gestartet.
+Aufruf: suki-weekly-reboot [--dry-run]   Protokoll: journalctl -t suki-weekly-reboot
+"""
+import json, subprocess, sys, syslog, time, urllib.request
+from datetime import datetime, timezone
+
+SK = 'http://192.168.0.100:3000/signalk/v1/api/vessels/self/navigation/speedOverGround'
+CABIN = 'http://192.168.0.100:1880/esp-dash/api/cabin'
+MAX_SOG_KN = 0.5
+MAX_AGE_S = 120
+MIN_UPTIME_S = 24 * 3600
+
+
+def get(url):
+    with urllib.request.urlopen(url, timeout=10) as r:
+        return json.load(r)
+
+
+def reasons_to_wait(now=None):
+    """Liste der Gründe gegen einen Neustart (leer = Neustart ok)."""
+    now = now or time.time()
+    why = []
+    up = float(open('/proc/uptime').read().split()[0])
+    if up < MIN_UPTIME_S:
+        why.append(f'uptime only {up / 3600:.1f} h')
+    try:
+        sog = get(SK)
+        age = now - datetime.fromisoformat(sog['timestamp'].replace('Z', '+00:00')).timestamp()
+        kn = sog['value'] * 1.943844
+        if age > MAX_AGE_S:
+            why.append(f'SOG is stale ({age:.0f} s old)')
+        elif kn >= MAX_SOG_KN:
+            why.append(f'boat is moving (SOG {kn:.1f} kn)')
+    except Exception as e:
+        why.append(f'no SOG from SignalK ({e})')
+    try:
+        cab = get(CABIN)
+        if (cab.get('anc') or {}).get('act'):
+            why.append('anchor watch is active')
+        if cab.get('status') == 'alarm':
+            why.append('an alarm is active')
+    except Exception as e:
+        why.append(f'no state from Node-RED ({e})')
+    return why
+
+
+def main():
+    dry = '--dry-run' in sys.argv
+    why = reasons_to_wait()
+    if why:
+        msg = 'reboot postponed to next week: ' + '; '.join(why)
+    else:
+        msg = 'boat is stationary, no anchor watch, no alarm -> rebooting' + (' (dry run)' if dry else '')
+    syslog.openlog('suki-weekly-reboot')
+    syslog.syslog(msg)
+    print(msg)
+    if not why and not dry:
+        subprocess.run(['systemctl', 'reboot'], check=False)
+
+
+if __name__ == '__main__':
+    main()
