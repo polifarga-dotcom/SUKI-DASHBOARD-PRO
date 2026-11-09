@@ -1,0 +1,219 @@
+:root {
+	--bg: #070b11;
+	--radar-bg: #04070b;
+	--panel: #0d141d;
+	--panel-2: #121c28;
+	--line: #1d2a39;
+	--text: #dbe7f2;
+	--muted: #7f93a8;
+	--accent: #3fb6ff;
+	--ok: #2fc77e;
+	--warn: #f5a623;
+	--alarm: #ff4040;
+	--btn: #172331;
+	--btn-hi: #20344a;
+	--focus: #3fb6ff;
+	--on-accent: #fff;
+	--hud-strong: #fff;
+	--dopp: #ff5fc8;
+	--arpa: #43b6f0;
+	--ebl: #f2c94c;
+	--sim-bg: #7c3aed;
+	--sim-fg: #fff;
+	--chart-bg: #9fc4dd;
+	--pill-ok: #1f9d5c;
+	--pill-warn: #d98b00;
+	--pill-bad: #d42323;
+	--pill-fg: #fff;
+	--pill-bad-fg: #fff;
+	--alarm-bg: #d42323;
+	--alarm-fg: #fff;
+	--alarm-border: #ff8080;
+	--alarm-glow: #ff404066;
+	--warn-bg: #f5a623;
+	--warn-fg: #1a1000;
+	--warn-border: #ffd27a;
+	--ack-bg: #fff;
+	--ack-fg: #b00000;
+	--slider-track: #26384c;
+	--slider-fill: var(--accent);
+	--slider-thumb: #dbe7f2;
+	--slider-thumb-border: var(--accent);
+	--check-border: #4a6078;
+	--scroll-thumb: #26384c;
+	--radius: 10px;
+	color-scheme: dark;
+}
+:root[data-theme='day'] {
+	--bg: #0b1520;
+	--radar-bg: #06101a;
+	--panel: #f3f6f9;
+	--panel-2: #e6edf3;
+	--line: #cdd8e2;
+	--text: #0f1d2a;
+	--muted: #5b6e80;
+	--accent: #0f7ad1;
+	--btn: #dfe8f0;
+	--btn-hi: #c9d8e6;
+	--slider-track: #c6d3df;
+	--slider-thumb: #fff;
+	--check-border: #8a9cad;
+	--scroll-thumb: #c6d3df;
+	color-scheme: light;
+}
+:root[data-theme='night'] {
+	--bg: #000;
+	--radar-bg: #000;
+	--panel: #070000;
+	--panel-2: #0e0202;
+	--line: #2a0805;
+	--text: #c8442e;
+	--muted: #7a2416;
+	--accent: #d0402c;
+	--ok: #a8321f;
+	--warn: #d4572a;
+	--alarm: #ff3b1f;
+	--btn: #140302;
+	--btn-hi: #240604;
+	--focus: #d0402c;
+	--on-accent: #000;
+	--hud-strong: #d0402c;
+	--dopp: #e0603a;
+	--arpa: #b23a26;
+	--ebl: #d65a32;
+	--sim-bg: #3a0a05;
+	--sim-fg: #e0603a;
+	--chart-bg: #050000;
+	--pill-ok: #4a1208;
+	--pill-warn: #7a2e0c;
+	--pill-bad: #ff3b1f;
+	--pill-fg: #ff7a5a;
+	--pill-bad-fg: #000;
+	--alarm-bg: #3a0602;
+	--alarm-fg: #ff6a4a;
+	--alarm-border: #ff3b1f;
+	--alarm-glow: #ff3b1f55;
+	--warn-bg: #241002;
+	--warn-fg: #e0703a;
+	--warn-border: #b4501f;
+	--ack-bg: #ff3b1f;
+	--ack-fg: #000;
+	--slider-track: #2a0805;
+	--slider-fill: #7a2416;
+	--slider-thumb: #a8321f;
+	--slider-thumb-border: #5a1a10;
+	--check-border: #5a1a10;
+	--scroll-thumb: #2a0805;
+}
+* { box-sizing: border-box; }
+html, body {
+	margin: 0;
+	height: 100%;
+	background: var(--bg);
+	color: var(--text);
+	font: 14px/1.35 ui-sans-serif, -apple-system, 'SF Pro Text', system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+	overflow: hidden;
+	overscroll-behavior: none;
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-tap-highlight-color: transparent;
+	touch-action: none;
+}
+#app { height: 100%; }
+button {
+	font: inherit;
+	color: inherit;
+	background: var(--btn);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	padding: 6px 10px;
+	cursor: pointer;
+	min-height: 34px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	touch-action: manipulation;
+}
+button:hover { background: var(--btn-hi); }
+button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+button:disabled { opacity: .45; cursor: default; }
+/* Schieberegler: eigene Darstellung, damit nachts nichts Weißes leuchtet. --p setzt main.ts (Füllstand). */
+input[type='range'] {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 100%;
+	height: 28px;
+	background: transparent;
+	touch-action: pan-x;
+	cursor: pointer;
+}
+input[type='range']::-webkit-slider-runnable-track {
+	height: 6px;
+	border-radius: 3px;
+	background: linear-gradient(to right, var(--slider-fill) 0 var(--p, 0%), var(--slider-track) var(--p, 0%) 100%);
+}
+input[type='range']::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 22px;
+	height: 22px;
+	margin-top: -8px;
+	border-radius: 50%;
+	background: var(--slider-thumb);
+	border: 2px solid var(--slider-thumb-border);
+	box-shadow: 0 1px 3px #0006;
+}
+input[type='range']::-moz-range-track { height: 6px; border-radius: 3px; background: var(--slider-track); }
+input[type='range']::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--slider-fill); }
+input[type='range']::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--slider-thumb); border: 2px solid var(--slider-thumb-border); }
+input[type='range']:disabled { opacity: 0.45; cursor: default; }
+input[type='range']:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+
+input[type='checkbox'] {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 20px;
+	height: 20px;
+	margin: 0;
+	flex: none;
+	border-radius: 5px;
+	border: 2px solid var(--check-border);
+	background: transparent;
+	display: inline-grid;
+	place-items: center;
+	cursor: pointer;
+}
+input[type='checkbox']:checked { background: var(--accent); border-color: var(--accent); }
+input[type='checkbox']:checked::after {
+	content: '';
+	width: 5px;
+	height: 10px;
+	margin-top: -2px;
+	border: solid var(--on-accent);
+	border-width: 0 2.5px 2.5px 0;
+	transform: rotate(45deg);
+}
+input[type='checkbox']:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.scroll { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+.scroll::-webkit-scrollbar { width: 8px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 4px; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+select, input[type='number'] {
+	font: inherit;
+	color: var(--text);
+	background: var(--btn);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	padding: 5px 8px;
+	min-height: 34px;
+}
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); min-height: 32px; padding: 4px 10px; }
+.seg button:last-child { border-right: 0; }
+.scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+svg.icon { width: 18px; height: 18px; flex: none; }

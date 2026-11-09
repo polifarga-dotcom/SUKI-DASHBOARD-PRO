@@ -1,0 +1,18 @@
+[Unit]
+Description=SUKI chart-proxy (Karten-/Satellitenkacheln, Cache, Kielspur) fuer die Radar Station
+After=network-online.target signalk.service
+Wants=network-online.target
+
+[Service]
+User=admin
+WorkingDirectory=/home/admin/radar-station/chart-proxy
+ExecStart=/usr/bin/node server.mjs
+Environment=PORT=8091
+Environment=CHART_DATA=/home/admin/chart-proxy-data
+Environment=CHART_CACHE=/home/admin/chart-cache
+Restart=always
+RestartSec=5
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
