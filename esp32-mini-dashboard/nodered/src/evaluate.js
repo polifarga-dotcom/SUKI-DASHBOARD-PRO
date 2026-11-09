@@ -20,7 +20,7 @@ const DEF = {
     planLph: 4, planSog: 5.5,   // Reichweite bei stehendem Motor: konservativer Planwert
     baroAlarmOn: true, baroLowHpa: 995, baroHystHpa: 1, baroWinMin: 2,
     anchorAlarmOn: true, stormAlarmOn: true, anchorLocalFallback: true,
-    ackMinutes: 5, staleSec: 30, testUntil: 0, night: false,
+    ackMinutes: 5, staleSec: 30, testUntil: 0, night: false, nightAuto: false,
     soundOn: true, soundNight: 'short',
 };
 const cfg = Object.assign({}, DEF, flow.get('cfg') || {});
@@ -512,7 +512,7 @@ if (dt && dt.lvl != null) {
     context.set('dayLow', low);
     // Farbe immer nach Schwellen, Alarm (Blinken + Summer) nur wenn eingeschaltet
     day.st = low ? 'high' : day.pct < cfg.dayWarnPct ? 'warn' : 'ok';
-    if (low && cfg.dayAlarmOn) alarms.push({ key: 'daytank', text: `DAY TANK ${Math.round(day.pct)} % < ${cfg.dayLowPct} %` });
+    if (low && cfg.dayAlarmOn) alarms.push({ key: 'daytank', text: `DIESEL DAY TANK ${Math.round(day.pct)} % < ${cfg.dayLowPct} %` });
 } else if (dt) {
     warns.push('No day tank data');
 }
@@ -684,7 +684,7 @@ const fuelPct = ft && ft.lvl != null ? ft.lvl * 100 : null;
 const tanksScreen = [
     tankObj('WATER', 'water', water.pct, water.cap, water.st === 'alarm' ? 'high' : water.pct == null ? 'na' : 'ok'),
     tankObj('DIESEL', 'fuel', fuelPct, ft && ft.capL, fuelPct == null ? 'na' : fuelPct < cfg.fuelLowPct ? 'high' : fuelPct < cfg.fuelWarnPct ? 'warn' : 'ok'),
-    ...(dt ? [tankObj('DAY TANK', 'fuel', day.pct, dt.capL, day.st)] : []),
+    ...(dt ? [tankObj('DIESEL DAY TANK', 'fuel', day.pct, dt.capL, day.st)] : []),
     tankObj('BLACK MAIN', 'black', bw[0] && bw[0].lvl != null ? bw[0].lvl * 100 : null, bw[0] && bw[0].capL, bwSt(bw[0] && bw[0].lvl != null ? bw[0].lvl * 100 : null)),
     tankObj('BLACK GUEST', 'black', bw[1] && bw[1].lvl != null ? bw[1].lvl * 100 : null, bw[1] && bw[1].capL, bwSt(bw[1] && bw[1].lvl != null ? bw[1].lvl * 100 : null)),
 ];
@@ -842,6 +842,19 @@ const state = {
     status: alarms.length ? 'alarm' : (warns.length ? 'warn' : 'ok'),
     blink: blink,
     night: !!cfg.night,
+// Auto-Nachtmodus: schaltet bei Sonnenuntergang/-aufgang um; manuelles Umschalten am Display gilt bis zum nächsten Wechsel
+const tdy = weather.today;
+if (cfg.nightAuto && tdy && /^\d\d:\d\d$/.test(tdy.sr) && /^\d\d:\d\d$/.test(tdy.ss)) {
+    const hmNow = new Date(now).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    const dark = hmNow < tdy.sr || hmNow >= tdy.ss;
+    if (flow.get('night_dark') !== dark) {
+        flow.set('night_dark', dark);
+        cfg.night = dark;
+        const fc = flow.get('cfg') || {};
+        fc.night = dark; flow.set('cfg', fc);
+    }
+} else flow.set('night_dark', undefined);
+
     // Ton am Display: 'full' = Piepen im Blinktakt, 'short' = kurzer Pieps alle 2 s, 'off'
     beep: !blink || !cfg.soundOn ? 'off' : (cfg.night ? cfg.soundNight : 'full'),
     acked: alarms.length > 0 && !blink,

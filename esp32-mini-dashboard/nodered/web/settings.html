@@ -30,6 +30,7 @@
 
 <h2>Display</h2>
 <div class="row"><label>Night mode<small>Black/red palette to preserve night vision</small></label><input type="checkbox" id="night"></div>
+<div class="row"><label>Automatic night mode<small>Switches to night mode at sunset and back to day mode at sunrise. Manual switching on the display stays until the next sunrise/sunset.</small></label><input type="checkbox" id="nightAuto"></div>
 
 <div class="row"><label>Alarm sound<small>Buzzer on the display, stops when acknowledged</small></label><input type="checkbox" id="soundOn"></div>
 <div class="row"><label>Sound in night mode</label><select id="soundNight"><option value="full">Full (beeps with blinking)</option><option value="short">Short beep every 2 s</option><option value="off">Silent</option></select></div>
@@ -138,7 +139,7 @@ If no known network is reachable for 1 minute, the display opens its own setup W
 </main>
 <script>
 var NUM = ['windWinMin','windAlarmKn','windHystKn','windAvgSec','battLowSoc','battHystSoc','battLowVolt','waterLowPct','waterHystPct','baroLowHpa','baroHystHpa','baroWinMin','aisCruiseNm','aisOffshoreNm','aisTcpaMin','sailCloseFrom','sailCloseTo','sosPob','bwWarnPct','bwHighPct','fuelWarnPct','fuelLowPct','dayWarnPct','dayLowPct','dayHystPct','engTempWarnC','engTempAlarmC','engTempHystC','rigWarnT','rigAlarmT','rigHystT','rigScaleT','engMaxRpm','engRedRpm','engGreenFrom','engGreenTo','ackMinutes','staleSec','planLph','planSog'];
-var BOOL = ['night','soundOn','baroAlarmOn','rigAlarmOn','bwSwap','engTempAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback','stormAlarmOn','dayAlarmOn'];
+var BOOL = ['night','nightAuto','soundOn','baroAlarmOn','rigAlarmOn','bwSwap','engTempAlarmOn','fuelUseSensor','windAlarmOn','battAlarmOn','waterAlarmOn','anchorAlarmOn','anchorLocalFallback','stormAlarmOn','dayAlarmOn'];
 var STR = ['sailStyle','sosDesc','soundNight','fuelInstance','dayInstance','radarSel','fuelCurve','windSource','battInstance','waterInstance'];
 function $(id){return document.getElementById(id);}
 function req(method, url, body, cb){

@@ -74,7 +74,7 @@ struct WxNext { char hrs[6] = "", ic[8] = ""; bool night = false; };   // Starts
 struct EMppt { char n[15] = ""; int w = NA_I; float kwh = NAN; };          // einzelner Solarregler
 struct EBat { char n[17] = ""; int soc = NA_I; float v = NAN; };            // weitere Batterie (z. B. Starter)
 struct TankV {
-  char name[12] = "", kind[6] = "", st[6] = "na";
+  char name[16] = "", kind[6] = "", st[6] = "na";
   int pct = NA_I, l = NA_I, cap = NA_I;
 };
 // AIS (Screen 6): eigener globaler Block, damit DashState-Kopien auf dem Stack klein bleiben
@@ -939,7 +939,7 @@ static void supplyTile(const DashState& s, bool online, bool red, uint16_t bg) {
     const TankV& t = s.tanks[i];
     const char* st = !strcmp(t.kind, "water") ? s.waterSt : t.st;   // Frischwasser nutzt den echten Wasser-Alarm
     bool hi = online && (!strcmp(st, "alarm") || !strcmp(st, "high")), wr = online && !strcmp(st, "warn");
-    bool day = !strcmp(t.name, "DAY TANK");
+    bool day = strstr(t.name, "DAY TANK") != nullptr;
     int ty = y + 196 + i * step;
     fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(day ? C_TFUEL : C_GREY, tb);
     fb.drawString(t.name[0] ? t.name : (i < 4 ? defNames[i] : ""), x + 14, ty);

@@ -410,7 +410,7 @@
   .sva2{position:absolute;right:14px;top:36px;text-align:right;font-size:18px;font-weight:bold;line-height:26px;z-index:1}
   .tsep{position:absolute;left:0;right:0;top:148px;height:1px;background:#2a2a2a}
   .trow{position:absolute;left:14px;right:14px;display:flex;justify-content:space-between;align-items:baseline;white-space:nowrap}
-  .trow .n{font-size:12px;letter-spacing:1px;color:#9a9a9a} .trow .n.day{color:#e8a317}
+  .trow .n{font-size:12px;letter-spacing:1px;color:#9a9a9a} .trow .n.day{color:#e8a317;letter-spacing:0}
   .trow .v{font-size:12px;color:#6a6a6a} .trow .v b{font-size:18px;color:#fff;margin-left:8px}
   .seg{position:absolute;left:14px;right:14px;height:9px;background:#1e1e1e}
   .seg i{display:block;height:100%;width:0} .seg i.water{background:#2f8fe0} .seg i.fuel{background:#e8a317} .seg i.day{background:#f5c76b} .seg i.black{background:#8b6f5a}
@@ -740,7 +740,7 @@ function renderSupply(s, b, f) {
   var nT = Math.min(5, Math.max(4, tanks.length)), step = nT > 4 ? 42 : 52, y0 = 186, h = '';
   for (var i = 0; i < nT; i++) {
     var t = tanks[i] || { name: ['WATER', 'DIESEL', 'BLACK MAIN', 'BLACK GUEST'][i] || '', kind: 'water', st: 'na' };
-    var tst = t.kind === 'water' ? f.st : t.st, day = t.name === 'DAY TANK';   // Frischwasser nutzt den echten Wasser-Alarm
+    var tst = t.kind === 'water' ? f.st : t.st, day = t.name.indexOf('DAY TANK') >= 0;   // Frischwasser nutzt den echten Wasser-Alarm
     var col = tst === 'alarm' || tst === 'high' ? '#ff3b3b' : tst === 'warn' ? '#e8a317' : '', y = y0 + i * step;
     h += '<div class="trow" style="top:' + y + 'px"><span class="n' + (day ? ' day' : '') + '">' + t.name + '</span><span class="v">' +
       (t.l != null ? t.l + ' / ' + t.cap + ' l' : '') + '<b style="color:' + col + '">' + (t.pct == null ? '--' : t.pct + ' %') + '</b></span></div>' +
