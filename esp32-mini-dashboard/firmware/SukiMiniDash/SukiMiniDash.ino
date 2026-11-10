@@ -156,6 +156,7 @@ struct DashState {
   int mRpm = NA_I, mMax = 3000, mRed = 2500, mG0 = 1800, mG1 = 2200, mTemp = NA_I, mFuelPct = NA_I, mFuelL = NA_I, mFuelCap = NA_I, mRangeNm = NA_I;
   bool mDay = false; int mDayPct = NA_I, mDayL = NA_I, mTotalL = NA_I; char mDaySt[8] = "na";   // Tagestank + Summe Diesel
   bool mRangePlan = false; float mPlanLph = 4, mPlanSog = 5.5f;   // Motor aus: Reichweite mit festem Planwert
+  float mSvcLeft = NAN; int mSvcInt = 0;   // Motor-Service: Reststunden (negativ = überfällig), Intervall
   float mHrs = NAN, mLph = NAN, mRangeH = NAN, mSog = NAN, mAws = NAN, mWtemp = NAN;
   int mAwa = NA_I, mTwarn = 90, mTalarm = 95;
   char mTst[8] = "na";
@@ -206,6 +207,11 @@ static volatile uint32_t lastOkMs = 0;
 static volatile uint32_t dataRev = 0;
 static volatile bool ackRequested = false;
 static volatile int8_t nightRequest = -1;  // -1 = nichts, 0/1 = an Node-RED senden
+// Service-Zähler-Dialog (Motor-Screen, Tipp auf HOURS): Stunde mit ▲/▼ wählen, RESET schickt svcAt an Node-RED
+static bool svcDlg = false;
+static int svcVal = 0, svcMax = 0;
+static uint32_t svcDlgMs = 0;
+static volatile int svcRequest = -1;
 static uint32_t localNightMs = 0;          // lokale Vorschau bis Node-RED bestätigt
 static bool localNightVal = false;
 // ANCHOR UP: 1. Tipp = bestätigen, 2. Tipp innerhalb 4 s = systemweit einholen (Supabase silence_alarm)
@@ -552,6 +558,7 @@ static void parseState(const char* body, size_t len) {
   n.mTemp = m["temp"] | NA_I;
   n.mTempLive = m["tempLive"] | false;
   n.mHrs = m["hrs"] | NAN;
+  n.mSvcLeft = m["svcLeft"] | NAN; n.mSvcInt = m["svcInt"] | 0;
   n.mLph = m["lph"] | NAN;
   n.mEst = m["est"] | false;
   n.mFuelPct = m["fuelPct"] | NA_I;
@@ -766,6 +773,20 @@ static void netTask(void*) {
       }
       radSelRequest = -1;
       lastRad = 0;   // gleich das Bild des neuen Bereichs holen
+    }
+
+    if (svcRequest >= 0) {
+      HTTPClient http;
+      http.setConnectTimeout(1500);
+      http.setTimeout(2000);
+      if (http.begin(dashUrl() + "/config")) {
+        http.addHeader("Content-Type", "application/json");
+        char body[32]; snprintf(body, sizeof(body), "{\"svcAt\":%d}", (int)svcRequest);
+        Serial.printf("svcAt -> %d\n", http.POST(body));
+        http.end();
+      }
+      svcRequest = -1;
+      lastPoll = millis() - 800;
     }
 
     if (nightRequest >= 0) {
@@ -1549,6 +1570,32 @@ static void cornerValue(int x, int y, bool right, const char* lbl, const char* v
   if (wu) { fb.setFont(&fonts::DejaVu12); fb.setTextColor(red ? C_ONRED : C_GREY, bg); fb.drawString(unit, x0 + wv + 4, y + 36); }
 }
 
+static void btn(int x, int y, int w, int h, const char* lbl, uint16_t brd, uint16_t txt, uint16_t fill, bool red, uint16_t bg);
+// Dialog „Service-Zähler zurücksetzen“ über dem Motor-Screen (Koordinaten gleich in svcTouch)
+static void svcDialog(bool red, uint16_t bg) {
+  const uint16_t fill = red ? bg : C_HDR, brd = red ? C_ONRED : C_GREY;
+  sqFill(200, 96, 400, 288, 14, fill);
+  for (int i = 0; i < 2; i++) sqRect(200 + i, 96 + i, 400 - 2 * i, 288 - 2 * i, 14 - i, brd);
+  centerText("RESET SERVICE COUNTER?", 400, 136, &fonts::DejaVu24, red ? C_ONRED : C_WHITE, fill);
+  centerText("Service done at engine hours", 400, 170, &fonts::DejaVu18, red ? C_ONRED : C_GREY, fill);
+  char b[16]; snprintf(b, sizeof(b), "%d h", svcVal);
+  centerText(b, 400, 222, &fonts::DejaVu40, red ? C_ONRED : C_WHITE, fill);
+  btn(236, 194, 64, 56, "", C_GREY, C_WHITE, C_TPILL, red, fill);
+  btn(500, 194, 64, 56, "", C_GREY, C_WHITE, C_TPILL, red, fill);
+  uint16_t ac = red ? C_ONRED : C_WHITE;
+  fb.fillTriangle(268, 230, 257, 214, 279, 214, ac);   // ▼
+  fb.fillTriangle(532, 214, 521, 230, 543, 230, ac);   // ▲
+  btn(220, 308, 174, 56, "CANCEL", C_GREY, C_WHITE, C_TPILL, red, fill);
+  btn(406, 308, 174, 56, "RESET", C_GREEN, C_GREEN, C_TPILL, red, fill);
+}
+static void svcTouch(int x, int y) {
+  if (y >= 190 && y < 254 && x >= 226 && x < 310) svcVal = max(0, svcVal - 1);
+  else if (y >= 190 && y < 254 && x >= 490 && x < 574) svcVal = min(svcMax, svcVal + 1);
+  else if (y >= 300 && y < 372 && x >= 210 && x < 400) svcDlg = false;
+  else if (y >= 300 && y < 372 && x >= 400 && x < 590) { svcRequest = svcVal; svcDlg = false; }
+  else if (x < 200 || x >= 600 || y < 96 || y >= 384) svcDlg = false;   // Tipp daneben = abbrechen
+}
+
 static void enginePage(const DashState& s, bool online, bool red, uint16_t bg) {
   for (int i = 0; i < 2; i++) sqRect(12 + i, 56 + i, 376 - 2 * i, 392 - 2 * i, 14 - i, red ? C_ONRED : C_BORDER);
   tacho(s, online, red, bg);
@@ -1583,7 +1630,30 @@ static void enginePage(const DashState& s, bool online, bool red, uint16_t bg) {
   }
   engTile(599, 56, 189, "HOURS", red, bg);
   if (online && !isnan(s.mHrs)) snprintf(v, sizeof(v), "%.1f", s.mHrs); else strcpy(v, "--");
-  engValue(615, 68, v, "h", "engine hours", red, bg);
+  {
+    // Service-Zähler: Balken füllt sich bis zum Intervall, Farbe über die Boxbreite grün → orange, überfällig = rot
+    bool svOk = online && !isnan(s.mSvcLeft) && s.mSvcInt > 0, over = svOk && s.mSvcLeft < 0;
+    if (!svOk) strcpy(sub, online && !isnan(s.mHrs) ? "tap to set service" : "engine hours");
+    else if (!over) snprintf(sub, sizeof(sub), "service in %d h", (int)lroundf(s.mSvcLeft));
+    else snprintf(sub, sizeof(sub), "OVERDUE +%d h", (int)lroundf(-s.mSvcLeft));
+    engValue(615, 64, v, "h", "", red, bg);
+    fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_left);
+    fb.setTextColor(red ? C_ONRED : over ? C_RED : C_DIM, bg);
+    fb.drawString(sub, 615, 148);
+    if (svOk) {
+      const int bx = 615, by = 162, bw = 157, bh = 8;
+      int fw = (int)(bw * constrain((s.mSvcInt - s.mSvcLeft) / s.mSvcInt, 0.0f, 1.0f));
+      if (!red) sqFill(bx, by, bw, bh, 4, C_TPILL); else sqRect(bx, by, bw, bh, 4, C_ONRED);
+      if (red) { if (fw > 0) sqFill(bx, by, max(fw, 8), bh, 4, C_ONRED); }
+      else if (over) sqFill(bx, by, bw, bh, 4, C_RED);
+      else for (int i = 0; i < fw; i++) {
+        // Farbe hängt an der x-Position (nicht am Füllstand): links grün, am Boxende orange
+        uint32_t a = C_GREEN, b = C_AMBER; int t = i * 256 / bw;
+        uint16_t c = ((((a >> 11) * (256 - t) + (b >> 11) * t) >> 8) << 11) | (((((a >> 5) & 63) * (256 - t) + ((b >> 5) & 63) * t) >> 8) << 5) | ((((a & 31) * (256 - t) + (b & 31) * t) >> 8));
+        fb.drawFastVLine(bx + i, by, bh, c);
+      }
+    }
+  }
   engTile(400, 188, 189, "FUEL RATE", red, bg);
   if (online && !isnan(s.mLph)) snprintf(v, sizeof(v), "%.1f", s.mLph); else strcpy(v, "--");
   engValue(416, 200, v, "l/h", !isnan(s.mLph) ? (s.mEst ? "estimated from rpm" : "sensor") : (s.mOn ? "" : "engine off"), red, bg);
@@ -2779,6 +2849,7 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
     weatherPage(s, online, red, bg);
   } else if (page == 4) {
     enginePage(s, online, red, bg);
+    if (svcDlg) svcDialog(red, bg);
   } else if (page == 5) {
     sailPage(s, online, red, bg);
   } else if (page == 7) {
@@ -2952,6 +3023,11 @@ void loop() {
       offMode = false; page = 1; showSettings = false; dataRev++; t0x = -1; wasDown = down;
       return;
     }
+    if (svcDlg && page == 4 && !showSettings) {      // Service-Dialog offen: alle Tipps gehen an den Dialog
+      if (abs(dx) <= 120) svcTouch(t0x, t0y); else svcDlg = false;
+      svcDlgMs = millis(); dataRev++; t0x = -1; wasDown = down;
+      return;
+    }
     bool onAup = page == 1 && !showSettings && ancAct && abs(dx) <= 120 &&
                  t0x >= AUP_X0 - 6 && t0x <= AUP_X1 + 6 && t0y >= AUP_Y0 - 6 && t0y <= AUP_Y1 + 6;
     if (onAup) {
@@ -2973,6 +3049,11 @@ void loop() {
       dataRev++;
     } else if (page == 6 && !showSettings && t0y >= 56 && t0y <= 448 && aisTouch(t0x, t0y)) {
       dataRev++;
+    } else if (page == 4 && !showSettings && abs(dx) <= 120 && t0x >= 599 && t0x < 788 && t0y >= 56 && t0y < 180) {
+      xSemaphoreTake(sMutex, portMAX_DELAY); float h = S.mHrs; xSemaphoreGive(sMutex);   // Tipp auf HOURS → Service-Dialog
+      if (!isnan(h) && lastOkMs && millis() - lastOkMs < 10000) {
+        svcVal = (int)lroundf(h); svcMax = (int)ceilf(h); svcDlg = true; svcDlgMs = millis(); dataRev++;
+      }
     } else if (t0x < 50 && t0y < 52 && abs(dx) <= 120) {
       offMode = true; showSettings = false; dataRev++;            // Power-Knopf → Off-Screen
     } else if (t0x >= 96 && t0x < 142 && t0y < 52) {
@@ -3047,6 +3128,7 @@ void loop() {
     aSaveAt = 0; aReqPending = true; dataRev++;
   }
   if (aConfirm[0] && millis() > aConfirmUntil) { aConfirm[0] = 0; dataRev++; }
+  if (svcDlg && (page != 4 || showSettings || offMode || millis() - svcDlgMs > 30000)) { svcDlg = false; dataRev++; }
   if (aMsg[0] && millis() > aMsgUntil) { aMsg[0] = 0; dataRev++; }
   // Jedes Neuzeichnen kopiert 768 KB durch das PSRAM, aus dem auch das Panel liest → kurzes Zucken.
   // Deshalb nur so oft wie nötig: Energy-Flow-Pfeile 4×/s, Blinktakt (0,5 s) nur, wenn wirklich etwas blinkt.

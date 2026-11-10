@@ -17,6 +17,7 @@ const DEF = {
     engTempAlarmOn: true, engTempWarnC: 90, engTempAlarmC: 95, engTempHystC: 2,
     engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true,
     fuelCurve: '800:0.8,1000:1.2,1500:2.2,2000:3.8,2500:6.2,3000:9.5',
+    svcInt: 200, svcAt: 0,      // Motor-Service: Intervall (h) und Betriebsstunden beim letzten Service (0 = nicht gesetzt)
     planLph: 4, planSog: 5.5,   // Reichweite bei stehendem Motor: konservativer Planwert
     baroAlarmOn: true, baroLowHpa: 995, baroHystHpa: 1, baroWinMin: 2,
     anchorAlarmOn: true, stormAlarmOn: true, anchorLocalFallback: true,
@@ -532,6 +533,8 @@ const engine = {
     g0: cfg.engGreenFrom, g1: cfg.engGreenTo,
     temp: last.tempC != null ? Math.round(last.tempC) : null, tempLive: tempK != null,
     hrs: last.hours != null ? Math.round(last.hours * 10) / 10 : null,
+    svcInt: cfg.svcInt, svcAt: cfg.svcAt > 0 ? cfg.svcAt : null,
+    svcLeft: cfg.svcAt > 0 && last.hours != null ? Math.round((cfg.svcAt + cfg.svcInt - last.hours) * 10) / 10 : null,
     lph: lph != null ? Math.round(lph * 10) / 10 : null, est: est,
     fuelPct: ft && ft.lvl != null ? Math.round(ft.lvl * 100) : null, fuelL: fuelL != null ? Math.round(fuelL) : null,
     fuelCap: ft && ft.capL != null ? Math.round(ft.capL) : null,
