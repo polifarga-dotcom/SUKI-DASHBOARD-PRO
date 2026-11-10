@@ -15,6 +15,7 @@
 #include "display.h"
 #include "logo_vp.h"
 #include "logo_neel.h"
+#include "logo_suki.h"     // SUKI-Seitenansicht für den Off-Screen
 #include "fonts_bold.h"
 #include "secrets.h"
 #include "SukiWifi.h"   // WLAN: 2 Netze, DHCP/feste IP, Abgleich mit Node-RED, Einrichtungs-WLAN
@@ -98,7 +99,7 @@ struct DashState {
   char status[8] = "warn";
   bool blink = false, acked = false, night = false;
   char beep[6] = "off";
-  char time[8] = "--:--";
+  char time[8] = "--:--", date[16] = "";
   char utc[8] = "";
   char msg[200] = "";
   char battSt[8] = "na";
@@ -395,6 +396,7 @@ static void parseState(const char* body, size_t len) {
   strlcpy(n.beep, doc["beep"] | "off", sizeof(n.beep));
   strlcpy(n.time, doc["time"] | "--:--", sizeof(n.time));
   strlcpy(n.utc, doc["utc"] | "", sizeof(n.utc));
+  strlcpy(n.date, doc["date"] | "", sizeof(n.date));
   strlcpy(n.msg, doc["msg"] | "", sizeof(n.msg));
 
   JsonObject b = doc["batt"];
@@ -2503,10 +2505,14 @@ static void radarPage(const DashState& s, const AisState& a, bool online, uint16
 // „Off“-Screen, wenn die anderen Screens nachts zu hell sind: nur Uhrzeit lokal + UTC, sehr dunkel
 static void offPage(const DashState& s, bool online) {
   fb.fillScreen(C_BLACK);
-  uint16_t c1 = s.night ? lgfx::color565(58, 0, 0) : lgfx::color565(58, 58, 58);
-  uint16_t c2 = s.night ? lgfx::color565(38, 0, 0) : lgfx::color565(38, 38, 38);
-  centerText(online ? s.time : "--:--", 400, 228, &fonts::DejaVu40, c1, C_BLACK);
-  if (online && s.utc[0]) { char b[16]; snprintf(b, sizeof(b), "UTC %s", s.utc); centerText(b, 400, 266, &fonts::DejaVu18, c2, C_BLACK); }
+  // Variante A: Boot links in voller Höhe, große Uhr rechts, darunter Datum und UTC — gedimmt (nachts rot)
+  uint16_t c0 = s.night ? lgfx::color565(74, 0, 0) : lgfx::color565(90, 90, 90);
+  uint16_t c1 = s.night ? lgfx::color565(90, 0, 0) : lgfx::color565(90, 90, 90);
+  uint16_t c2 = s.night ? lgfx::color565(48, 0, 0) : lgfx::color565(54, 54, 54);
+  drawAlpha4(LOGO_SUKI, LOGO_SUKI_W, LOGO_SUKI_H, 60, 20, c0, C_BLACK);
+  centerText(online ? s.time : "--:--", 580, 228, &fB72, c1, C_BLACK);
+  if (online && s.date[0]) centerText(s.date, 580, 300, &fonts::DejaVu24, c2, C_BLACK);
+  if (online && s.utc[0]) { char b[16]; snprintf(b, sizeof(b), "UTC %s", s.utc); centerText(b, 580, 334, &fonts::DejaVu18, c2, C_BLACK); }
 }
 
 // Firmware-Update läuft: nur dieser Bildschirm (wenig Zeichenarbeit, solange in den Flash geschrieben wird)
@@ -2552,9 +2558,9 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
     const uint16_t hb = C_HDR;
     fb.fillRect(0, 0, 800, 48, hb);
     fb.drawFastHLine(0, 47, 800, C_BORDER);
-    // Knöpfe 40 × 40: Nacht (x 8), Settings (54), Notruf (100), Off (146) — Touch-Zonen x < 50 / 96 / 142 / 190, y < 52
+    // Knöpfe 40 × 40: Off (x 8), Settings (54), Notruf (100), Nacht (146) — Touch-Zonen x < 50 / 96 / 142 / 190, y < 52
     for (int i = 0; i < 4; i++) fb.drawRect(8 + i * 46, 4, 40, 40, (i == 1 && showSettings) || (i == 2 && page == 8) ? C_GREY : C_BORDER);
-    { uint16_t c = s.night ? C_WHITE : C_GREY; fb.fillCircle(27, 24, 10, c); fb.fillCircle(32, 19, 9, hb); }   // Mond
+    { uint16_t c = s.night ? C_WHITE : C_GREY; fb.fillCircle(166, 24, 10, c); fb.fillCircle(171, 19, 9, hb); }   // Mond
     {   // Zahnrad
       uint16_t c = showSettings ? C_WHITE : C_GREY;
       const int gx = 74, gy = 24;
@@ -2569,7 +2575,7 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
       thickArc(sx, sy, 9, 0, 360, 6, C_WHITE);
       for (int q = 0; q < 4; q++) thickArc(sx, sy, 9, q * 90 + 22.5f, q * 90 + 67.5f, 6, C_RED);
     }
-    { const int ox = 166, oy = 24; thickArc(ox, oy, 9, 310, 590, 3, C_GREY); fbWideLine(ox, oy - 12, ox, oy - 2, 1.4f, C_GREY); }   // Power
+    { const int ox = 27, oy = 24; thickArc(ox, oy, 9, 310, 590, 3, C_GREY); fbWideLine(ox, oy - 12, ox, oy - 2, 1.4f, C_GREY); }   // Power
     drawAlpha4(LOGO_NEEL, LOGO_NEEL_W, LOGO_NEEL_H, 200, 14, C_WHITE, hb);
     fb.fillRect(300, 14, 2, 20, C_ACC);
     static const char* PN[] = {"SUKI", "ENERGY", "WEATHER", "ENGINE", "SAILSTEER", "AIS", "ANCHOR", "EMERGENCY", "RADAR"};
@@ -2967,7 +2973,7 @@ void loop() {
       dataRev++;
     } else if (page == 6 && !showSettings && t0y >= 56 && t0y <= 448 && aisTouch(t0x, t0y)) {
       dataRev++;
-    } else if (t0x >= 142 && t0x < 190 && t0y < 52 && abs(dx) <= 120) {
+    } else if (t0x < 50 && t0y < 52 && abs(dx) <= 120) {
       offMode = true; showSettings = false; dataRev++;            // Power-Knopf → Off-Screen
     } else if (t0x >= 96 && t0x < 142 && t0y < 52) {
       page = 8; sosStep = 0; showSettings = false; dataRev++;    // Rettungsring → Notruf-Screen
@@ -2979,7 +2985,7 @@ void loop() {
       sosStep = (sosStep + 1) % 3; dataRev++;                     // Tipp auf den Text → nächster Schritt
     } else if (t0x >= 50 && t0x < 96 && t0y < 52) {
       showSettings = !showSettings; settingsOpenedMs = millis(); dataRev++;
-    } else if (showSettings && !(t0x < 50 && t0y < 52)) {
+    } else if (showSettings && !(t0x >= 142 && t0x < 190 && t0y < 52)) {
       showSettings = false; dataRev++;
     } else {
       xSemaphoreTake(sMutex, portMAX_DELAY);
@@ -2988,10 +2994,10 @@ void loop() {
       if (localNightMs && millis() - localNightMs < 3000) night = localNightVal;
       static uint32_t lastTapMs = 0;   // Doppeltipp auf eine freie Stelle = Tag/Nacht (wie beim Cabin Watch)
       bool dbl = lastTapMs && millis() - lastTapMs < 400;
-      lastTapMs = dbl || (t0x < 50 && t0y < 52) ? 0 : millis();
+      lastTapMs = dbl || (t0x >= 142 && t0x < 190 && t0y < 52) ? 0 : millis();
       if (t0x >= 600 && t0y < 52 && !blinking) {
         ovlRecall = true; dataRev++;                               // Tipp auf den Status → Warnung wieder einblenden
-      } else if ((t0x < 50 && t0y < 52) || (dbl && !blinking)) {
+      } else if ((t0x >= 142 && t0x < 190 && t0y < 52) || (dbl && !blinking)) {
         localNightVal = !night; localNightMs = millis();
         nightRequest = localNightVal ? 1 : 0;
       } else if (blinking) {

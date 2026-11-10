@@ -860,6 +860,7 @@ const state = {
     ts: Math.round(now / 1000),
     time: new Date(now).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }),
     tz: tz,
+    date: new Date(now).toLocaleDateString('en-GB', { timeZone: tz, weekday: 'short', day: '2-digit', month: 'short' }).replace(',', '').toUpperCase(),
     utc: new Date(now).toISOString().slice(11, 16),
     status: alarms.length ? 'alarm' : (warns.length ? 'warn' : 'ok'),
     blink: blink,
