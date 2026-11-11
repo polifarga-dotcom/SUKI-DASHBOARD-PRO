@@ -128,6 +128,7 @@ static void saveCfg() {
 static void loadCfg() {
   cfg.night = prefs.getUChar("night", 2); cfg.briDay = prefs.getUChar("briD", 80); cfg.briNight = prefs.getUChar("briN", 15);
   cfg.vol = prefs.getUChar("vol", 70); cfg.nightShort = prefs.getUChar("nShort", 1);
+  if (!prefs.getBool("nAutoFix", false)) { cfg.night = 2; prefs.putUChar("night", 2); prefs.putBool("nAutoFix", true); }   // einmalig: AUTO zurück
 }
 
 // ── Hilfen ───────────────────────────────────────────────────────────────────
@@ -142,12 +143,19 @@ static void localHM(char* out, bool utc) {
   m = ((m % 1440) + 1440) % 1440;
   sprintf(out, "%02d:%02d", m / 60, m % 60);
 }
-static bool isNight() {
-  if (cfg.night != 2) return cfg.night == 1;
+static int8_t nightOvr = -1;   // Doppeltipp im AUTO-Modus: 0/1 bis zum nächsten Sonnenauf-/-untergang, -1 = keiner
+static bool nightOvrBase = false;
+static bool autoNight() {
   char t[6]; localHM(t, false);
   const char* sr = cab.sr[0] ? cab.sr : "07:00";
   const char* ss = cab.ss[0] ? cab.ss : "19:00";
   return strcmp(t, sr) < 0 || strcmp(t, ss) >= 0;
+}
+static bool isNight() {
+  if (cfg.night != 2) return cfg.night == 1;
+  bool a = autoNight();
+  if (nightOvr >= 0 && a != nightOvrBase) nightOvr = -1;   // Sonnenauf-/-untergang beendet den Override
+  return nightOvr >= 0 ? nightOvr == 1 : a;
 }
 
 // ── Netz-Task ────────────────────────────────────────────────────────────────
@@ -206,7 +214,9 @@ static int post(const char* path, uint32_t timeout) {
 }
 
 static void netTask(void*) {
-  sw::syncExtra = ota::syncExtra; sw::syncReply = ota::syncReply;   // Firmware-Version melden, Update-Angebot lesen
+  // Laufzeit + Neustart-Grund mitmelden (Diagnose: unerwartete Neustarts)
+  sw::syncExtra = []() -> String { return ota::syncExtra() + "&up=" + String(millis() / 1000) + "&rst=" + String((int)esp_reset_reason()); };
+  sw::syncReply = ota::syncReply;   // Firmware-Version melden, Update-Angebot lesen
   sw::begin("cabin", "SUKI-CabinWatch");   // WLAN-Verwaltung (SukiWifi.h)
   static char* buf = (char*)heap_caps_malloc(4096, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   uint32_t lastPoll = 0;
@@ -345,7 +355,11 @@ static bool touchRead(int& x, int& y) {
   if (Wire.endTransmission(false) != 0) return false;
   if (Wire.requestFrom((uint8_t)FT_ADDR, (uint8_t)5) != 5) return false;
   uint8_t n = Wire.read() & 0x0F, xh = Wire.read(), xl = Wire.read(), yh = Wire.read(), yl = Wire.read();
-  if (n == 0 || n > 2) return false;
+  static uint8_t streak = 0;   // Störimpulse (einzelne Lesungen, Lift/No-Event) nicht als Tipp werten
+  uint8_t ev = xh >> 6;        // FT6336: 0 Press, 1 Lift, 2 Contact, 3 kein Event
+  if (n == 0 || n > 2 || ev == 1 || ev == 3) { streak = 0; return false; }
+  if (streak < 2) streak++;
+  if (streak < 2) return false;
   int rx = ((xh & 0x0F) << 8) | xl, ry = ((yh & 0x0F) << 8) | yl;   // Hochformat 0..319 / 0..479
   int tx = TOUCH_SWAP ? ry : rx, ty = TOUCH_SWAP ? rx : ry;
   if (TOUCH_INV_X) tx = W - 1 - tx;
@@ -460,6 +474,7 @@ static const char* alarmName(const char* k) {
 }
 
 static int page = 0;
+RTC_NOINIT_ATTR static uint32_t rtcPage;   // aktuelle Seite überlebt einen Neustart (nicht das Ausschalten): 0xCAB0xxxx
 static String ackKeys;   // lokal stummgeschaltet für genau diese Alarm-Kombination
 static String keyStr(const Cabin& d) { String s; for (int i = 0; i < d.nKeys; i++) { s += d.keys[i]; s += ','; } return s; }
 static bool effBlink(const Cabin& d) { return d.blink && !(ackKeys.length() && ackKeys == keyStr(d)); }
@@ -757,6 +772,7 @@ void setup() {
   tcaOut = 0x03; tcaWrite(0x01, tcaOut); delay(150);
   prefs.begin("cabin", false);
   loadCfg();
+  if ((rtcPage >> 16) == 0xCAB0 && (rtcPage & 0xFFFF) < 4) page = rtcPage & 0xFFFF;
   fClockF.loadFont(new lgfx::PointerWrapper(fClock, sizeof(fClock)));
   fBigF.loadFont(new lgfx::PointerWrapper(fBig, sizeof(fBig)));
   fMidF.loadFont(new lgfx::PointerWrapper(fMid, sizeof(fMid)));
@@ -802,10 +818,11 @@ void loop() {
     int dx = lx - sx;
     if (abs(dx) > 60) { page = (page + (dx < 0 ? 1 : 3)) % 4; pendTap = false; }
     else if (page == 2 || (effBlink(d) && !stale)) onTap(sx, sy, d, stale);   // sofort: Einstellungen, Alarm stumm
-    else if (pendTap && millis() - pendMs < 350) {   // Doppeltipp: Tag ↔ Nacht (überschreibt AUTO)
+    else if (pendTap && millis() - pendMs < 350) {   // Doppeltipp: Tag ↔ Nacht (bei AUTO nur bis zum nächsten Wechsel)
       pendTap = false;
-      cfg.night = isNight() ? 0 : 1;
-      saveCfg(); applyBrightness();
+      if (cfg.night == 2) { nightOvrBase = autoNight(); nightOvr = isNight() ? 0 : 1; }   // AUTO bleibt eingestellt
+      else { cfg.night = isNight() ? 0 : 1; saveCfg(); }
+      applyBrightness();
     } else { pendTap = true; pendMs = millis(); px = sx; py = sy; }
     dirty = true;
   }
@@ -852,6 +869,7 @@ void loop() {
     dirty = false;
   }
   if (dirty) {
+    rtcPage = 0xCAB00000 | page;
     lastRev = dataRev; lastPhase = phase; lastPage = page; strcpy(lastMin, hm); lastDraw = millis();
     P = night ? &NIGHT : &DAY;
     fb.fillScreen(P->bg);

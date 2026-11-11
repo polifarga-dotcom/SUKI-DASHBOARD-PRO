@@ -514,7 +514,7 @@ if (msg.req.method === 'GET' && /\\/device$/.test(msg.req.path)) {          // v
     const q = msg.req.query || {}, dev = q.dev;
     if (!DEVS[dev]) return bad('unknown device');
     stat[dev] = { ssid: q.ssid || '', ip: q.ip || '', rssi: Number(q.rssi), mac: q.mac || '', rev: Number(q.rev) || 0,
-                  mode: q.mode || '', fw: q.fw || '', fwres: q.fwres || '', ts: Date.now() };
+                  mode: q.mode || '', fw: q.fw || '', fwres: q.fwres || '', up: Number(q.up) || 0, rst: q.rst || '', ts: Date.now() };
     flow.set('wifi_status', stat);
     const d = all[dev] || {};
     msg.payload = { rev: d.rev || 0, nets: d.nets || [] };
