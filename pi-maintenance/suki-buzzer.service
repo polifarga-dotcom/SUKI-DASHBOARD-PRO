@@ -1,0 +1,13 @@
+[Unit]
+Description=SUKI alarm buzzer (GPIO17, follows Node-RED beep state)
+After=network-online.target
+
+[Service]
+User=admin
+ExecStart=/usr/local/bin/suki-buzzer
+ExecStopPost=/usr/bin/pinctrl set 17 op dl
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

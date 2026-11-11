@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+# Alarm-Summer am SignalK-Pi: aktiver Piezo (SFM-27, 3–24 V) an GPIO17 (Pin 11) + GND (Pin 9).
+# Folgt dem Alarmton, den Node-RED für das Mini Dash berechnet (state.beep: off | short | full),
+# mit demselben Takt wie die Display-Firmware. Quittieren am Display/Simulator macht ihn still.
+import json, subprocess, sys, time, urllib.request
+
+PIN = '17'
+URL = 'http://127.0.0.1:1880/esp-dash/api/state?ais=0'
+
+def out(on):
+    subprocess.run(['pinctrl', 'set', PIN, 'op', 'dh' if on else 'dl'], check=False)
+
+def pattern(mode, ms):
+    if mode == 'full':
+        return (ms // 500) % 2 == 1          # 0,5 s an / 0,5 s aus
+    if mode == 'short':
+        return ms % 2000 < 80                # kurzer Piep alle 2 s (Nacht)
+    return False
+
+if len(sys.argv) > 1 and sys.argv[1] == '--test':   # 2 s Probeton
+    out(True); time.sleep(2); out(False); sys.exit(0)
+
+mode, last, cur = 'off', -10.0, None
+out(False)
+while True:
+    now = time.monotonic()
+    if now - last >= 1:
+        last = now
+        try:
+            with urllib.request.urlopen(URL, timeout=2) as r:
+                mode = json.load(r).get('beep', 'off')
+        except Exception:
+            mode = 'off'   # shortcut: Node-RED nicht erreichbar = still; ein eigener „keine Daten“-Ton wäre ein Ausbau
+    on = pattern(mode, int(now * 1000))
+    if on != cur:
+        out(on)
+        cur = on
+    time.sleep(0.02)
