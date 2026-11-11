@@ -17,6 +17,7 @@ const DEF = {
     engTempAlarmOn: true, engTempWarnC: 90, engTempAlarmC: 95, engTempHystC: 2,
     engMaxRpm: 3000, engRedRpm: 2500, engGreenFrom: 1800, engGreenTo: 2200, fuelInstance: 'auto', fuelUseSensor: true,
     fuelCurve: '800:0.8,1000:1.2,1500:2.2,2000:3.8,2500:6.2,3000:9.5',
+    briDay: 100, briNight: 60,  // Display-Helligkeit (%), in der Firmware per Farbabdunklung
     svcInt: 200, svcAt: 0,      // Motor-Service: Intervall (h) und Betriebsstunden beim letzten Service (0 = nicht gesetzt)
     planLph: 4, planSog: 5.5,   // Reichweite bei stehendem Motor: konservativer Planwert
     baroAlarmOn: true, baroLowHpa: 995, baroHystHpa: 1, baroWinMin: 2,
@@ -868,6 +869,7 @@ const state = {
     status: alarms.length ? 'alarm' : (warns.length ? 'warn' : 'ok'),
     blink: blink,
     night: !!cfg.night,
+    bri: cfg.night ? cfg.briNight : cfg.briDay,
     // Ton am Display: 'full' = Piepen im Blinktakt, 'short' = kurzer Pieps alle 2 s, 'off'
     beep: !blink || !cfg.soundOn ? 'off' : (cfg.night ? cfg.soundNight : 'full'),
     acked: alarms.length > 0 && !blink,

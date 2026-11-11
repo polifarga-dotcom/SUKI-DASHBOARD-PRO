@@ -98,6 +98,7 @@ struct DashState {
   bool valid = false;
   char status[8] = "warn";
   bool blink = false, acked = false, night = false;
+  uint8_t bri = 100;   // Helligkeit in % (Backlight kann nur an/aus → Farben werden abgedunkelt)
   char beep[6] = "off";
   char time[8] = "--:--", date[16] = "";
   char utc[8] = "";
@@ -399,6 +400,7 @@ static void parseState(const char* body, size_t len) {
   n.blink = doc["blink"] | false;
   n.acked = doc["acked"] | false;
   n.night = doc["night"] | false;
+  n.bri = constrain((int)(doc["bri"] | 100), 10, 100);
   strlcpy(n.beep, doc["beep"] | "off", sizeof(n.beep));
   strlcpy(n.time, doc["time"] | "--:--", sizeof(n.time));
   strlcpy(n.utc, doc["utc"] | "", sizeof(n.utc));
@@ -2933,6 +2935,16 @@ static void overlayPrepare(const DashState& s, bool online) {
   ovlKind = kind == 1 || !online || millis() - ovlSince < 10000 ? kind : 0;
 }
 
+// Software-Dimmung: jeden RGB565-Pixel des Streifens mit pct/100 skalieren
+static void dimBand(uint16_t* p, int n, uint8_t pct) {
+  uint32_t f = pct * 256 / 100;
+  for (int i = 0; i < n; i++) {
+    uint32_t c = p[i];
+    if (!c) continue;
+    p[i] = ((((c >> 11) * f) >> 8) << 11) | (((((c >> 5) & 63) * f) >> 8) << 5) | (((c & 31) * f) >> 8);
+  }
+}
+
 // ganzes Bild in Streifen zeichnen und jeden fertigen Streifen ans Panel geben
 static void render(const DashState& s, bool online, bool redPhase) {
   uint32_t t0 = micros();
@@ -2941,6 +2953,7 @@ static void render(const DashState& s, bool online, bool redPhase) {
     fb.setBuffer(bandBuf - bandY * 800, 800, 480);
     fbUnclip();
     renderScene(s, online, redPhase);
+    if (s.bri < 100) dimBand(bandBuf, 800 * BAND_H, s.bri);
     // Prüfsumme: unveränderte Streifen nicht erneut ins PSRAM kopieren (weniger Speicherverkehr → weniger Zucken)
     static uint32_t bandSum[480 / BAND_H + 1];
     static bool bandValid = false;

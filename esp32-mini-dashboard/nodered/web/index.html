@@ -798,6 +798,7 @@ function render() {
   var ackd = !!(s && status === 'alarm' && s.acked && !blink);
   if (ackd) status = 'warn';
   $('scr').className = s && s.night ? 'night' : '';
+  $('scr').style.filter = s && s.bri < 100 ? 'brightness(' + s.bri / 100 + ')' : '';
   $('frame').className = blink && phase ? 'on' : '';
   $('dot').className = 'dot ' + status;
   $('stxt').textContent = !s ? 'OFFLINE' : ackd ? 'ACKNOWLEDGED' : status === 'ok' ? 'ALL OK' : status === 'alarm' ? 'ALARM' : 'WARNING';
