@@ -69,8 +69,19 @@ for topic, path, every in [('id_name', '/name', 60), ('id_mmsi', '/mmsi', 60), (
     inject(f'SK {topic}', 140, y, 'SignalK GET', every,
            [str_prop('topic', topic), str_prop('url', SK + path), num_prop('requestTimeout', 3000)])
     y += 40
-inject('Anker (Supabase)', 150, y, 'Supabase GET', 5,
+inject('Anker (Supabase)', 150, y, 'Anker-Poll drosseln', 10,
        [str_prop('topic', 'anchor'), num_prop('requestTimeout', 6000)])
+
+# Edge-Function-Aufrufe sparen (Free-Quota): Anker aktiv alle 10 s, sonst 1x/min.
+# Das Aktualitätsfenster cloudOk in src/evaluate.js muss zu diesen Takten passen.
+fn('Anker-Poll drosseln', """\
+const a = flow.get('anchor');
+const active = !!(a && a.data && a.data.anchor && a.data.anchor.active);
+const every = active ? 10000 : 60000;
+const now = Date.now();
+if (now - (context.get('last') || 0) < every - 1000) return null;
+context.set('last', now);
+return msg;""", 255, 200, wires=[['Supabase GET']])
 
 add('SignalK GET', 'http request', 360, 100, [['SK speichern']], method='GET', ret='obj',
     paytoqs='ignore', url='', tls='', persist=False, proxy='', insecureHTTPParser=False,
@@ -514,7 +525,7 @@ if (msg.req.method === 'GET' && /\\/device$/.test(msg.req.path)) {          // v
     const q = msg.req.query || {}, dev = q.dev;
     if (!DEVS[dev]) return bad('unknown device');
     stat[dev] = { ssid: q.ssid || '', ip: q.ip || '', rssi: Number(q.rssi), mac: q.mac || '', rev: Number(q.rev) || 0,
-                  mode: q.mode || '', fw: q.fw || '', fwres: q.fwres || '', up: Number(q.up) || 0, rst: q.rst || '', ts: Date.now() };
+                  mode: q.mode || '', fw: q.fw || '', fwres: q.fwres || '', up: Number(q.up) || 0, rst: q.rst || '', pg: String(q.pg || '').slice(0, 40), gh: Number(q.gh) || 0, ts: Date.now() };
     flow.set('wifi_status', stat);
     const d = all[dev] || {};
     msg.payload = { rev: d.rev || 0, nets: d.nets || [] };
@@ -666,6 +677,10 @@ for (const [k, u] of Object.entries(old.kUntil || {})) if (u > now) kUntil[k] = 
 for (const k of st.alarmKeys || []) kUntil[k] = now + (k.indexOf('storm_') === 0 ? 240 : (cfg.ackMinutes || 5)) * 60000;
 if (st.storm && st.storm.noteKey) kUntil[st.storm.noteKey] = now + 240 * 60000;   // gelbe Gewitterwarnung: Hinweis 4 h ausblenden
 flow.set('ack', { until: now + (cfg.ackMinutes || 5) * 60000, keys: st.alarmKeys || [], kUntil });
+// Quittierbare Warnungen (nur wenn kein Alarm aktiv): bleiben weg, bis ihre Ursache verschwindet (siehe evaluate.js)
+if (!(st.alarmKeys || []).length && (st.warnKeys || []).length) {
+    flow.set('warn_ack', Array.from(new Set((flow.get('warn_ack') || []).concat(st.warnKeys))));
+}
 node.status({ fill: 'blue', text: 'quittiert ' + new Date().toLocaleTimeString() });
 msg.payload = { ok: true };
 return msg;""", 360, 580, [['ack antwort']])

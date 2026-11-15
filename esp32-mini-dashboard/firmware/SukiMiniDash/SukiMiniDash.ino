@@ -144,6 +144,7 @@ struct DashState {
   char rigPst[8] = "na", rigSst[8] = "na";
   bool rigOnlyAlarm = false, engOnlyAlarm = false, stormOnlyAlarm = false;
   bool stormNote = false;   // gelbe Gewitterwarnung angezeigt, per Tipp 4 h quittierbar
+  bool warnAck = false;     // quittierbare Warnung (z. B. "No day tank data"), per Tipp quittierbar
   bool classicDial = false;
   int closeFrom = 30, closeTo = 50;  // Am-Wind-Sektoren (° AWA)   // alle aktiven Alarme sind Rigg-Alarme → Segel-Screen zeigen
   // Anker-Screen (Screen 7)
@@ -549,6 +550,7 @@ static void parseState(const char* body, size_t len) {
   }
 
   n.stormNote = !doc["storm"]["noteKey"].isNull();
+  n.warnAck = doc["wack"] | false;
 
   JsonObject m = doc["engine"];
   n.mOn = m["on"] | false;
@@ -2872,7 +2874,7 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
     fb.fillRect(ox, oy, ow, oh, ob);
     fb.drawRect(ox, oy, ow, oh, ac); fb.drawRect(ox + 1, oy + 1, ow - 2, oh - 2, ac);
     fb.fillRect(ox, oy, 8, oh, ac);
-    bool btn = ovlKind == 1 || (online && s.stormNote);
+    bool btn = ovlKind == 1 || (online && (s.stormNote || s.warnAck));
     int textR = btn ? ox + ow - 196 : ox + ow - 16;
     fb.setTextDatum(textdatum_t::middle_left);
     fb.setFont(&fonts::DejaVu12); fb.setTextColor(ac, ob); fb.drawString(ovlTitle, ox + 26, oy + 16);
@@ -2886,7 +2888,7 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
       const int bx = ox + ow - 178, by = oy + 20;
       uint16_t bc = ovlKind == 1 ? C_ACC : C_AMBER;
       fb.fillRect(bx, by, 164, 44, bc);
-      centerText(ovlKind == 1 ? "ACKNOWLEDGE" : "HIDE 4 H", bx + 82, by + 22, &fonts::DejaVu18, ovlKind == 1 ? C_WHITE : C_BLACK, bc);
+      centerText(ovlKind == 1 || !s.stormNote ? "ACKNOWLEDGE" : "HIDE 4 H", bx + 82, by + 22, &fonts::DejaVu18, ovlKind == 1 ? C_WHITE : C_BLACK, bc);
     }
   }
   // Seitenpunkte: kleine Quadrate, der aktive Screen als Balken
@@ -3083,7 +3085,7 @@ void loop() {
       showSettings = false; dataRev++;
     } else {
       xSemaphoreTake(sMutex, portMAX_DELAY);
-      bool blinking = S.blink || S.stormNote, night = S.night;   // auch gelbe Gewitterwarnung quittierbar
+      bool blinking = S.blink || S.stormNote || S.warnAck, night = S.night;   // auch gelbe Gewitterwarnung und quittierbare Warnungen
       xSemaphoreGive(sMutex);
       if (localNightMs && millis() - localNightMs < 3000) night = localNightVal;
       static uint32_t lastTapMs = 0;   // Doppeltipp auf eine freie Stelle = Tag/Nacht (wie beim Cabin Watch)

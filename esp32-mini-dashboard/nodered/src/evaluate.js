@@ -204,7 +204,9 @@ if (pLeaf && isNum(pLeaf.value) && ageS(pLeaf.timestamp) < cfg.staleSec && ageS(
 
 // ── Anker (Supabase via mfd-anchor Edge Function) ─────────────────────────
 const cloud = flow.get('anchor') || {};
-const cloudOk = cloud.t && ageS(cloud.t) < Math.max(cfg.staleSec, 30);
+// Fenster passend zum Abruftakt (Node "Anker-Poll drosseln"): Anker aktiv 10 s, sonst 60 s
+const cloudWin = Math.max(cfg.staleSec, (cloud.data && cloud.data.anchor && cloud.data.anchor.active) ? 30 : 150);
+const cloudOk = cloud.t && ageS(cloud.t) < cloudWin;
 const anc = (cloud.data && cloud.data.anchor) || null;
 const skN = flow.get('sk_nav');
 const pos = skN && skN.data && leaf(skN.data.position);
@@ -859,6 +861,14 @@ if (cfg.nightAuto && tdy && /^\d\d:\d\d$/.test(tdy.sr) && /^\d\d:\d\d$/.test(tdy
     }
 } else flow.set('night_dark', undefined);
 
+// Quittierbare Warnungen (z. B. Tagestank-Elektronik ausgeschaltet): nach dem Quittieren bleibt die Warnung weg,
+// bis ihre Ursache verschwindet — erst dann gilt sie bei erneutem Auftreten wieder.
+const WARN_ACKABLE = ['No day tank data'];
+const wAck = (flow.get('warn_ack') || []).filter((w) => warns.indexOf(w) >= 0);
+flow.set('warn_ack', wAck);
+const warnsShown = warns.filter((w) => wAck.indexOf(w) < 0);
+const warnKeys = warnsShown.filter((w) => WARN_ACKABLE.indexOf(w) >= 0);
+
 const state = {
     v: 1,
     ts: Math.round(now / 1000),
@@ -866,14 +876,16 @@ const state = {
     tz: tz,
     date: new Date(now).toLocaleDateString('en-GB', { timeZone: tz, weekday: 'short', day: '2-digit', month: 'short' }).replace(',', '').toUpperCase(),
     utc: new Date(now).toISOString().slice(11, 16),
-    status: alarms.length ? 'alarm' : (warns.length ? 'warn' : 'ok'),
+    status: alarms.length ? 'alarm' : (warnsShown.length ? 'warn' : 'ok'),
     blink: blink,
     night: !!cfg.night,
     bri: cfg.night ? cfg.briNight : cfg.briDay,
     // Ton am Display: 'full' = Piepen im Blinktakt, 'short' = kurzer Pieps alle 2 s, 'off'
     beep: !blink || !cfg.soundOn ? 'off' : (cfg.night ? cfg.soundNight : 'full'),
     acked: alarms.length > 0 && !blink,
-    msg: alarms.length ? alarms.map((a) => a.text).join('  |  ') : warns.join('  |  '),
+    msg: alarms.length ? alarms.map((a) => a.text).join('  |  ') : warnsShown.join('  |  '),
+    wack: !alarms.length && warnKeys.length > 0,   // Display zeigt dann "ACKNOWLEDGE" für die Warnung
+    warnKeys: alarms.length ? [] : warnKeys,
     batt: batt,
     energy: energy,
     weather: weather,
