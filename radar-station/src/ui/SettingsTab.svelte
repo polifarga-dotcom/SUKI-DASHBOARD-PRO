@@ -42,7 +42,7 @@
 		keyInput[id] = '';
 		if (!ok) return (keyMsg[id] = t('Saving failed'));
 		const r = await testProvider(id);
-		keyMsg[id] = r.ok ? t('Key works') : t('Test failed: {e}', { e: r.error ?? '' });
+		keyMsg[id] = r.ok ? t('Key works') : t('Test failed: {e}', { e: t(r.error ?? '') });
 	}
 	async function removeKey(id: string) {
 		await putKey(id, '');

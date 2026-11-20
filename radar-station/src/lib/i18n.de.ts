@@ -590,6 +590,7 @@ export const DE: Record<string, string> = {
 	'High resolution. Free tier 750,000 tiles/month.': 'Hochauflösend. Kostenlos bis 750.000 Kacheln/Monat.',
 	'High resolution. Free plan for personal use (loaded directly by the browser).':
 		'Hochauflösend. Kostenloser Plan für private Nutzung (direkt vom Browser geladen).',
+	'Google no longer delivers satellite tiles to Google Cloud accounts in the EU/EEA (a Google restriction, not a fault of the app or the key). Use Esri, Mapbox or MapTiler instead.': 'Google liefert Satellitenbilder nicht mehr an Google-Cloud-Konten in der EU/im EWR (Einschränkung von Google, kein Fehler der App oder des Schlüssels). Stattdessen Esri, Mapbox oder MapTiler nutzen.',
 	'High resolution. Needs a Google Cloud billing account; daily quota.': 'Hochauflösend. Braucht ein Google-Cloud-Abrechnungskonto; Tageskontingent.',
 	'European seas incl. Mediterranean, ~115 m grid.': 'Europäische Meere inkl. Mittelmeer, ~115-m-Raster.',
 	'Worldwide, ~450 m grid – overview only.': 'Weltweit, ~450-m-Raster – nur zur Übersicht.',

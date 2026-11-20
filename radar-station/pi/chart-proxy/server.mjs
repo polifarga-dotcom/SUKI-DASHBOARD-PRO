@@ -84,16 +84,24 @@ function variant(p) {
 }
 
 // ── Upstream-URL bauen ────────────────────────────────────────────────────────
-const googleSession = { token: '', exp: 0, key: '' };
+const googleSession = { token: '', exp: 0, key: '', fail: '', failAt: 0 };
 
 async function googleToken(key) {
 	if (googleSession.token && googleSession.key === key && Date.now() < googleSession.exp - 3600e3) return googleSession.token;
+	// abgelehnt (z. B. EWR-Konto ohne Satellitenkacheln): 10 min nicht erneut fragen, Googles Begründung weitergeben
+	if (googleSession.fail && googleSession.key === key && Date.now() - googleSession.failAt < 600e3) throw Object.assign(new Error(googleSession.fail), { code: 502 });
 	const r = await fetch(`https://tile.googleapis.com/v1/createSession?key=${encodeURIComponent(key)}`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ mapType: 'satellite', language: 'en-US', region: 'US' })
 	});
-	if (!r.ok) throw new Error(`Google session ${r.status}`);
+	if (!r.ok) {
+		const msg = (await r.json().catch(() => ({})))?.error?.message ?? '';
+		// fester Text (in der App übersetzt) für die EWR-Sperre, sonst Googles eigene Meldung
+		const fail = /not available for your account and region/.test(msg) ? 'Google no longer delivers satellite tiles to Google Cloud accounts in the EU/EEA (a Google restriction, not a fault of the app or the key). Use Esri, Mapbox or MapTiler instead.' : `Google session ${r.status} ${msg}`.trim().slice(0, 200);
+		Object.assign(googleSession, { fail, failAt: Date.now(), key });
+		throw Object.assign(new Error(googleSession.fail), { code: 502 });
+	}
 	const j = await r.json();
 	Object.assign(googleSession, { token: j.session, exp: Number(j.expiry) * 1000 || Date.now() + 86400e3, key });
 	return j.session;
@@ -160,7 +168,13 @@ function release() {
 const cachePath = (p, z, x, y) => path.join(CACHE, p.id, variant(p), String(z), String(x), `${y}.${p.ext}`);
 
 async function fetchUpstream(p, z, x, y) {
-	const url = await upstreamUrl(p, z, x, y);
+	let url;
+	try {
+		url = await upstreamUrl(p, z, x, y);
+	} catch (e) {
+		status[p.id] = { ok: false, err: String(e.message ?? e).slice(0, 200), t: Date.now() };
+		throw Object.assign(e, { code: e.code ?? 502 });
+	}
 	await slot();
 	try {
 		const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(20000) });
@@ -512,7 +526,7 @@ const server = http.createServer(async (req, res) => {
 			if (key && String(key).length > 1024) return json(res, 400, { error: 'key too long' });
 			if (key) keys[id] = String(key).trim();
 			else delete keys[id];
-			if (id === 'google') googleSession.token = '';
+			if (id === 'google') Object.assign(googleSession, { token: '', fail: '' });
 			await writeJson('keys.json', keys, 0o600);
 			return json(res, 200, publicProvider(byId(id)));
 		}

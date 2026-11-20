@@ -201,7 +201,7 @@
 									{/if}
 								</label>
 							{/each}
-							{#if p.status && !p.status.ok}<div class="err small">{p.status.err}</div>{/if}
+							{#if p.status && !p.status.ok}<div class="err small">{t(p.status.err ?? '')}</div>{/if}
 						{/if}
 						{#if l.id === 'anch'}
 							<div class="legend">
