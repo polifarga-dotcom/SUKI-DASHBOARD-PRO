@@ -6,6 +6,11 @@
 	import { fmtDist, D2R, R2D, NM, dec } from '../lib/geo';
 	import { t, timeFmt } from '../lib/i18n.svelte';
 	import Icon from './Icon.svelte';
+	import { nr, pushAisConfig, setAisSource } from '../data/nodered.svelte';
+	const preset = (p: AlarmPreset) => {
+		applyAlarmPreset(p);
+		pushAisConfig();
+	};
 
 	const time = (ts: number) => timeFmt(ts, true);
 	const muted = $derived(alarms.mutedUntil > Date.now());
@@ -38,20 +43,36 @@
 
 	<section>
 		<b>{t('Collision alarm (CPA / TCPA)')}</b>
-		<div class="seg">
-			{#each Object.entries(ALARM_PRESETS) as [k, p]}
-				<button class:on={settings.alarmPreset === k} onclick={() => applyAlarmPreset(k as AlarmPreset)}>{t(p.label)}</button>
-			{/each}
-			<button class:on={settings.alarmPreset === 'custom'} onclick={() => applyAlarmPreset('custom')}>{t('Custom')}</button>
+		<div class="seg presets">
+			<button class:on={nr.source === 'suki'} onclick={() => setAisSource('suki')}>{t('SUKI calculation')}</button>
+			<button class:on={nr.source === 'cortex'} onclick={() => setAisSource('cortex')}>{t('Connected to Cortex')}</button>
 		</div>
+		{#if nr.source === 'cortex'}
+			{#if nr.src === 'cortex'}
+				<div class="small">{t('AIS alarms come from the Vesper Cortex (profile {p}). Change zones and limits on the Cortex.', { p: nr.cortexProfile || '?' })}</div>
+			{:else}
+				<div class="small warnline">{t('Cortex offline – SUKI alarm active with the limits below.')}</div>
+			{/if}
+		{/if}
+		<fieldset class="plain" disabled={nr.src === 'cortex'}>
+		<div class="seg presets">
+			{#each Object.entries(ALARM_PRESETS) as [k, p]}
+				<button class:on={settings.alarmPreset === k} onclick={() => preset(k as AlarmPreset)}>{t(p.label)}</button>
+			{/each}
+			<button class:on={settings.alarmPreset === 'custom'} onclick={() => preset('custom')}>{t('Custom')}</button>
+			<button class:on={settings.alarmPreset === 'off'} onclick={() => preset('off')}>{t('Off')}</button>
+		</div>
+		<div class="small">{nr.ok ? t('AIS alarm runs on the Pi: piezo, Mini Dash and Cabin Watch use the same limits; acknowledging anywhere acknowledges everywhere.') : t('No connection to the AIS alarm on the Pi (Node-RED) – AIS collision alarms are not working.')}</div>
+		{#if settings.alarmPreset === 'off' && nr.src !== 'cortex'}<div class="small warnline">{t('AIS collision alarms are off. Distress beacons (SART, MOB, EPIRB) and radar/ARPA alarms stay active.')}</div>{/if}
 		<label class="ctl">
 			<span>{t('CPA limit')} <b class="num">{fmtDist(settings.cpaLimit)}</b></span>
-			<input type="range" min="0.05" max="5" step="0.05" value={settings.cpaLimit / NM} oninput={(e) => { settings.cpaLimit = Number((e.target as HTMLInputElement).value) * NM; settings.alarmPreset = 'custom'; }} />
+			<input type="range" min="0.05" max="5" step="0.05" value={settings.cpaLimit / NM} oninput={(e) => { settings.cpaLimit = Number((e.target as HTMLInputElement).value) * NM; settings.alarmPreset = 'custom'; pushAisConfig(); }} />
 		</label>
 		<label class="ctl">
 			<span>{t('TCPA limit')} <b class="num">{Math.round(settings.tcpaLimit / 60)} min</b></span>
-			<input type="range" min="1" max="60" step="1" value={settings.tcpaLimit / 60} oninput={(e) => { settings.tcpaLimit = Number((e.target as HTMLInputElement).value) * 60; settings.alarmPreset = 'custom'; }} />
+			<input type="range" min="1" max="60" step="1" value={settings.tcpaLimit / 60} oninput={(e) => { settings.tcpaLimit = Number((e.target as HTMLInputElement).value) * 60; settings.alarmPreset = 'custom'; pushAisConfig(); }} />
 		</label>
+		</fieldset>
 		<label class="chk"><input type="checkbox" bind:checked={settings.lostTargetAlarm} /> {t('Lost dangerous target warning')}</label>
 	</section>
 
@@ -108,6 +129,8 @@
 </div>
 
 <style>
+	.plain { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: inherit; }
+	.plain:disabled { opacity: 0.45; }
 	.wrap { height: 100%; }
 	section { padding: 10px 12px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
 	.title { display: flex; justify-content: space-between; align-items: center; }
@@ -126,4 +149,6 @@
 	.warnbox { background: var(--pill-warn); color: var(--pill-fg); border-radius: 6px; padding: 6px 8px; font-weight: 700; }
 	.log .ev { text-transform: uppercase; font-size: 10px; font-weight: 700; color: var(--muted); }
 	.log.alarm, .log.warning { border: 0; background: none; padding: 0; display: block; }
+	.presets { flex-wrap: wrap; }
+	.warnline { color: var(--warn); font-weight: 700; }
 </style>

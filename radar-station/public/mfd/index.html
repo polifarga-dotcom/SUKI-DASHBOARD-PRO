@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SUKI Alarms</title>
+<!-- Alarm- & Wache-Seite für den B&G Zeus (eingebauter Browser ≈ Chrome 69): nur ES5/XHR, keine Module.
+     Daten: Node-RED (/esp-dash/api, gemeinsamer Alarm mit Piezo, Mini Dash, Cabin Watch, Radar-App)
+     und chart-proxy (/tiles/api/shared = Wachalarm aller Geräte). Ausgeliefert von nginx :8090/mfd/. -->
+<style>
+  :root { --bg: #0b1220; --card: #141e30; --line: #24324d; --tx: #e6edf7; --mut: #8a99b4; --ok: #2fbf71; --warn: #f2a13b; --al: #e5484d; --acc: #3d8bfd; }
+  .night { --bg: #000; --card: #0a0000; --line: #2a0000; --tx: #d23030; --mut: #7a1a1a; --ok: #8a1a1a; --warn: #b02020; --al: #ff2a2a; --acc: #9a2020; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--tx); font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; -webkit-user-select: none; user-select: none; }
+  body { display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  header > * + * { margin-left: 14px; }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: 1px; flex: 1; }
+  .pill { padding: 4px 10px; border-radius: 999px; font-size: 14px; border: 1px solid var(--line); color: var(--mut); }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.bad { color: var(--al); border-color: var(--al); }
+  #clock { font-size: 22px; font-variant-numeric: tabular-nums; }
+  a.btn, button { font: inherit; color: var(--tx); background: var(--card); border: 2px solid var(--line); border-radius: 12px; padding: 14px 18px; font-size: 20px; text-decoration: none; text-align: center; cursor: pointer; }
+  button:active, a.btn:active { filter: brightness(1.4); }
+  main { flex: 1; display: flex; flex-wrap: wrap; align-items: flex-start; padding: 7px; overflow: auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; }
+  .card > * + * { margin-top: 12px; }
+  .alarms { flex: 2 1 420px; margin: 7px; }
+  .side { flex: 1 1 300px; display: flex; flex-direction: column; margin: 7px; }
+  .side > * + * { margin-top: 14px; }
+  h2 { margin: 0; font-size: 15px; letter-spacing: 1.5px; color: var(--mut); font-weight: 600; }
+  #status { font-size: 34px; font-weight: 700; }
+  #status.ok { color: var(--ok); } #status.warn { color: var(--warn); } #status.alarm { color: var(--al); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li + li { margin-top: 8px; }
+  li { padding: 12px 14px; border-radius: 10px; border-left: 6px solid var(--al); background: rgba(229, 72, 77, .12); font-size: 20px; }
+  li.acked { border-left-color: var(--mut); background: transparent; color: var(--mut); }
+  li.warn { border-left-color: var(--warn); background: rgba(242, 161, 59, .1); }
+  #ack { font-size: 30px; font-weight: 700; padding: 22px; border-color: var(--al); color: var(--al); }
+  button[disabled] { opacity: .35; }
+  #ack[disabled] { opacity: .35; border-color: var(--line); color: var(--mut); }
+  body.blink .alarms { animation: bl 1s steps(2) infinite; }
+  @keyframes bl { 50% { border-color: var(--al); box-shadow: 0 0 0 3px var(--al) inset; } }
+  .big { font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .row { display: flex; align-items: center; }
+  .row > * + * { margin-left: 10px; }
+  .row > * { flex: 1; }
+  .seg button.on { border-color: var(--acc); color: var(--acc); font-weight: 700; }
+  .mut { color: var(--mut); font-size: 15px; }
+  #watchOk { font-size: 26px; font-weight: 700; padding: 18px; border-color: var(--ok); color: var(--ok); }
+  .due #watchLeft { color: var(--al); }
+  .kv { display: flex; justify-content: space-between; font-size: 20px; }
+  .kv b { font-variant-numeric: tabular-nums; }
+  .kv.soon, .kv.soon b { color: #f2b705; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SUKI · ALARMS</h1>
+  <span id="conn" class="pill">…</span>
+  <span id="clock">--:--</span>
+  <a id="anchorLink" class="btn" href="#">Anchor</a>
+  <button id="nightBtn">Night</button>
+</header>
+<main>
+  <section class="card alarms">
+    <h2>ACTIVE ALARMS</h2>
+    <div id="status">—</div>
+    <ul id="list"></ul>
+    <button id="ack" disabled>ACKNOWLEDGE</button>
+    <div class="mut">Acknowledges on all devices: piezo, Mini Dash, Cabin Watch and Radar app.</div>
+  </section>
+  <div class="side">
+    <section class="card" id="watchCard">
+      <h2>WATCH ALARM</h2>
+      <div class="row"><div class="big" id="watchLeft">off</div></div>
+      <button id="watchOk">WATCH OK</button>
+      <div class="row seg">
+        <button id="watchToggle">On</button>
+        <button id="watchMinus">− 5 min</button>
+        <button id="watchPlus">+ 5 min</button>
+      </div>
+      <div class="mut" id="watchInfo"></div>
+    </section>
+    <section class="card">
+      <h2>AIS COLLISION ALARM</h2>
+      <div class="row seg" id="aisSrc">
+        <button data-s="suki">SUKI</button>
+        <button data-s="cortex">CORTEX</button>
+      </div>
+      <div class="row seg" id="aisModes">
+        <button data-m="anchor">OFF</button>
+        <button data-m="cruising">CRUISE</button>
+        <button data-m="offshore">OFFSHORE</button>
+      </div>
+      <div class="mut" id="aisInfo"></div>
+    </section>
+    <section class="card" id="planCard" style="display:none">
+      <h2>WATCH</h2>
+      <div class="kv"><span>On watch</span><b id="wNow">—</b></div>
+      <div class="kv" id="wNextRow"><span id="wAt">Next</span><b id="wNext">—</b></div>
+      <div class="mut" id="wNames"></div>
+    </section>
+    <section class="card">
+      <h2>PASSAGE</h2>
+      <div class="kv"><span>Day's run</span><b id="dayRun">—</b></div>
+      <div class="kv"><span>Last 24 h</span><b id="run24">—</b></div>
+      <div class="kv"><span>SOG</span><b id="sog">—</b></div>
+    </section>
+  </div>
+</main>
+<script>
+(function () {
+  'use strict';
+  var NR = '/esp-dash/api', SHARED = '/tiles/api/shared';
+  var $ = function (id) { return document.getElementById(id); };
+  var st = null, sh = null, shAt = 0, nrOk = false, nightManual = null;
+
+  function xhr(method, url, body, cb) {
+    var x = new XMLHttpRequest();
+    x.open(method, url, true);
+    x.timeout = 5000;
+    if (body != null) x.setRequestHeader('Content-Type', 'application/json');
+    x.onload = function () {
+      var j = null;
+      try { j = JSON.parse(x.responseText); } catch (e) {}
+      if (cb) cb(x.status >= 200 && x.status < 300, j);
+    };
+    x.onerror = x.ontimeout = function () { if (cb) cb(false, null); };
+    x.send(body != null ? JSON.stringify(body) : null);
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function nm(m) { return m == null ? '—' : (m / 1852).toFixed(1) + ' NM'; }
+
+  // ── Node-RED-Zustand ──
+  function pollState() {
+    xhr('GET', NR + '/state?ais=0', null, function (ok, j) {
+      nrOk = ok && !!j;
+      if (nrOk) st = j;
+      render();
+    });
+  }
+  function render() {
+    $('conn').textContent = nrOk ? 'live' : 'no connection';
+    $('conn').className = 'pill ' + (nrOk ? 'ok' : 'bad');
+    var night = nightManual != null ? nightManual : !!(st && st.night);
+    document.documentElement.className = night ? 'night' : '';
+    if (!st) return;
+    $('clock').textContent = st.time || '--:--';
+    var keys = st.alarmKeys || [], acked = st.ackedKeys || [];
+    var texts = st.msg ? String(st.msg).split('  |  ') : [];
+    var html = '';
+    if (keys.length) {
+      for (var i = 0; i < keys.length; i++) html += '<li class="' + (acked.indexOf(keys[i]) >= 0 ? 'acked' : '') + '">' + esc(texts[i] || keys[i]) + '</li>';
+    } else {
+      for (var k = 0; k < texts.length; k++) html += '<li class="warn">' + esc(texts[k]) + '</li>';
+    }
+    $('list').innerHTML = html;
+    var s = $('status');
+    s.className = st.status;
+    s.textContent = st.status === 'alarm' ? (st.blink ? 'ALARM' : 'ALARM – acknowledged') : st.status === 'warn' ? 'WARNING' : 'ALL OK';
+    $('ack').disabled = !(st.blink || st.wack);
+    document.body.className = nrOk && st.blink ? 'blink' : '';
+    // AIS-Modus
+    var a = st.ais || {}, btns = $('aisModes').getElementsByTagName('button');
+    var cxOn = a.src === 'cortex';
+    for (var b = 0; b < btns.length; b++) { btns[b].className = !cxOn && btns[b].getAttribute('data-m') === a.mode ? 'on' : ''; btns[b].disabled = cxOn; }
+    var sb = $('aisSrc').getElementsByTagName('button');
+    for (var c = 0; c < sb.length; c++) sb[c].className = sb[c].getAttribute('data-s') === (a.cortex ? 'cortex' : 'suki') ? 'on' : '';
+    var cnt = ' · ' + (a.n || 0) + ' targets' + (a.alarms ? ' · ' + a.alarms + ' alarm' : '');
+    $('aisInfo').textContent = cxOn ? 'Alarms from Vesper Cortex, profile ' + (a.cortex.profile || '?') + cnt :
+      (a.cortex ? 'Cortex offline – SUKI alarm active. ' : '') +
+      (a.mode === 'anchor' ? 'AIS collision alarm is off.' : 'Alarm below ' + (a.thr != null ? a.thr : '?') + ' NM' + cnt);
+    $('sog').textContent = a.ownSog != null ? a.ownSog.toFixed(1) + ' kn' : '—';
+  }
+  $('ack').onclick = function () {
+    $('ack').disabled = true;
+    xhr('POST', NR + '/ack', {}, function () { pollState(); });
+    // Wachalarm gilt mit dem Quittieren auch als bestätigt (wie in der Radar-App)
+    var keys = (st && st.alarmKeys) || [];
+    for (var i = 0; i < keys.length; i++) if (keys[i].indexOf('watch@') === 0) { watchPut({ lastAgo: 0 }); break; }
+  };
+  var srcBtns = $('aisSrc').getElementsByTagName('button');
+  for (var j = 0; j < srcBtns.length; j++) srcBtns[j].onclick = function () {
+    xhr('POST', NR + '/config', { aisSource: this.getAttribute('data-s') }, function () { setTimeout(pollState, 1200); });
+  };
+  var aisBtns = $('aisModes').getElementsByTagName('button');
+  for (var i = 0; i < aisBtns.length; i++) aisBtns[i].onclick = function () {
+    xhr('POST', NR + '/config', { aisMode: this.getAttribute('data-m') }, function () { setTimeout(pollState, 1200); });
+  };
+
+  // ── Wachalarm (gemeinsam mit Radar-App, Cabin Watch, Mini Dash, Shelly-Taster) ──
+  function pollShared() {
+    xhr('GET', SHARED, null, function (ok, j) { if (ok && j) { sh = j; shAt = Date.now(); } renderWatch(); });
+  }
+  function watchPut(change) {
+    if (!sh) return;
+    var b = { sound: sh.sound, untilIn: Math.max(0, sh.untilIn - (Date.now() - shAt)), watchOn: sh.watchOn, watchMin: sh.watchMin, lastAgo: sh.lastAgo + (Date.now() - shAt) };
+    for (var k in change) b[k] = change[k];
+    xhr('PUT', SHARED, b, function (ok, j) { if (ok && j) { sh = j; shAt = Date.now(); } renderWatch(); });
+  }
+  function renderWatch() {
+    var card = $('watchCard');
+    if (!sh) { $('watchLeft').textContent = '—'; $('watchInfo').textContent = 'No connection to the Radar Station.'; return; }
+    var since = sh.lastAgo + (Date.now() - shAt), left = sh.watchMin * 60000 - since;
+    $('watchToggle').textContent = sh.watchOn ? 'Off' : 'On';
+    $('watchOk').disabled = !sh.watchOn;
+    card.className = 'card' + (sh.watchOn && left <= 0 ? ' due' : '');
+    if (!sh.watchOn) { $('watchLeft').textContent = 'off'; $('watchInfo').textContent = 'Interval ' + sh.watchMin + ' min'; return; }
+    var s = Math.max(0, Math.round(Math.abs(left) / 1000));
+    $('watchLeft').textContent = (left < 0 ? 'OVERDUE ' : '') + Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+    $('watchInfo').textContent = 'Confirm every ' + sh.watchMin + ' min';
+  }
+  $('watchOk').onclick = function () { watchPut({ lastAgo: 0 }); };
+  $('watchToggle').onclick = function () { if (sh) watchPut({ watchOn: !sh.watchOn, lastAgo: 0 }); };
+  $('watchMinus').onclick = function () { if (sh) watchPut({ watchMin: Math.max(1, sh.watchMin - 5) }); };
+  $('watchPlus').onclick = function () { if (sh) watchPut({ watchMin: Math.min(60, sh.watchMin + 5) }); };
+
+  // ── Etmal aus der Kielspur des Pi ──
+  function pollRun() {
+    var mid = new Date(); mid.setHours(0, 0, 0, 0);
+    xhr('GET', '/tiles/api/track/dist?since=' + mid.getTime(), null, function (ok, j) { $('dayRun').textContent = ok && j ? nm(j.dist) : '—'; });
+    xhr('GET', '/tiles/api/track/dist?since=' + (Date.now() - 86400000), null, function (ok, j) { $('run24').textContent = ok && j ? nm(j.dist) : '—'; });
+  }
+
+  // Anker-App (Zeus-Kachel) läuft auf Node-RED :1880
+  $('anchorLink').href = 'http://' + location.hostname + ':1880/mfd-anchor/';
+  $('nightBtn').onclick = function () {
+    var cur = document.documentElement.className === 'night';
+    nightManual = !cur;
+    render();
+  };
+
+  pollState(); pollShared(); pollRun();
+  setInterval(pollState, 1500);
+  setInterval(pollShared, 5000);
+  setInterval(renderWatch, 1000);
+  setInterval(pollRun, 60000);
+  // Wachplan: nur Anzeige (geändert wird er ausschließlich in der Radar-App)
+  // Plan läuft in UTC; Wechselzeit in Ortszeit (GPS-Zone aus Node-RED)
+  function locHM(at, fb) {
+    try { return new Date(at).toLocaleTimeString('en-GB', { timeZone: st && st.tz || 'UTC', hour: '2-digit', minute: '2-digit' }); } catch (e) { return fb; }
+  }
+  function pollWatchPlan() {
+    xhr('GET', '/tiles/api/watch/now', null, function (ok, j) {
+      $('planCard').style.display = ok && j && j.on ? '' : 'none';
+      if (!ok || !j || !j.on) return;
+      $('wNow').textContent = j.now ? j.now.label : '—';
+      $('wNext').textContent = j.next ? j.next.label : '—';
+      $('wAt').textContent = j.at != null ? 'Change ' + locHM(j.at, j.atText) + (j.inMin != null ? ' (' + j.inMin + ' min)' : '') : 'Next';
+      $('wNextRow').className = 'kv' + (j.soon ? ' soon' : '');
+      $('wNames').textContent = j.now && j.now.names.join(', ') !== j.now.label ? j.now.names.join(', ') : '';
+    });
+  }
+  pollWatchPlan();
+  setInterval(pollWatchPlan, 15000);
+})();
+</script>
+</body>
+</html>

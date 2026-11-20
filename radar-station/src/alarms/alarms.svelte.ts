@@ -9,6 +9,7 @@ import { squallEncounter, pruneSqualls } from '../collision/squall';
 import type { Situation } from '../collision/cpa';
 import { playAlarm, playWarning } from './audio';
 import { t, t as tr } from '../lib/i18n.svelte';
+import { nr, nrAck } from '../data/nodered.svelte';
 
 export type Level = 'alarm' | 'warning';
 
@@ -78,6 +79,8 @@ const SQUALL_TCPA = 20 * 60;
 const NO_HOLD = new Set<Category>(['system', 'watch']);
 
 const wasDangerous = new Map<string, number>();
+/** lokal quittierte Node-RED-Alarme, bis die nächste Abfrage die Quittung bestätigt */
+const nrAckPending = new Map<string, number>();
 /** Alarm bleibt so lange nach Wegfall der Bedingung stehen (kein Flackern an der Grenze) */
 const HOLD_MS = 20000;
 /** quittierte Alarme, die in dieser Zeit wiederkommen, bleiben quittiert */
@@ -131,6 +134,9 @@ export function inGuard(t: Target, z: number): boolean {
 /** Einmal pro Sekunde aufrufen */
 export function evaluateAlarms(now = Date.now()) {
 	const want = new Map<string, Omit<Alarm, 'since' | 'acked' | 'seen'>>();
+	// AIS-Kollisionsalarme kommen aus Node-RED (siehe unten); „AIS-Alarme aus“ schaltet zusätzlich AIS-Zonenalarme ab.
+	// Notsignale (SART/MOB/EPIRB) bleiben immer.
+	const aisOff = settings.alarmPreset === 'off' && nr.src !== 'cortex'; // Cortex-Modus: dessen Profil entscheidet
 
 	for (const t of targets.list) {
 		if (t.kind === 'arpa' && (t as any).fusedTo) continue;
@@ -139,11 +145,12 @@ export function evaluateAlarms(now = Date.now()) {
 			want.set('sart:' + t.key, { id: 'sart:' + t.key, level: 'alarm', category: 'sart', title: `${kind} ${t.label}`, detail: tr('Distress signal {d} away, bearing {b}°.', { d: fmtDist(t.range), b: Math.round((t.bearing * 180) / Math.PI) }), advice: tr('Possible person or vessel in distress – check and report (VHF 16).'), targetKey: t.key });
 			continue;
 		}
-		if (t.danger === 'dangerous' && !t.lost) {
+		if (aisOff && t.kind === 'ais') continue;
+		if ((t.kind === 'arpa' || t.sim) && t.danger === 'dangerous' && !t.lost) { // AIS: Node-RED; Simulator-Ziele kennt Node-RED nicht
 			wasDangerous.set(t.key, now);
 			want.set('cpa:' + t.key, { id: 'cpa:' + t.key, level: 'alarm', category: 'collision', title: t.label, detail: collisionText(t), advice: ADVICE[t.situation] ? tr(ADVICE[t.situation]) : '', targetKey: t.key });
 		}
-		if (t.lost && settings.lostTargetAlarm && now - (wasDangerous.get(t.key) ?? 0) < 10 * 60 * 1000) {
+		if ((t.kind === 'arpa' || t.sim) && t.lost && settings.lostTargetAlarm && now - (wasDangerous.get(t.key) ?? 0) < 10 * 60 * 1000) {
 			want.set('lost:' + t.key, { id: 'lost:' + t.key, level: 'warning', category: 'lost', title: t.label, detail: tr('A dangerous target stopped reporting. Last seen {d} away.', { d: fmtDist(t.range) }), advice: tr('Look out visually and on radar.'), targetKey: t.key });
 		}
 		if (settings.aisGuard && !t.lost && !t.moored) {
@@ -153,6 +160,21 @@ export function evaluateAlarms(now = Date.now()) {
 		}
 	}
 	for (const [k, t] of wasDangerous) if (now - t > 15 * 60 * 1000) wasDangerous.delete(k);
+
+	// AIS-Kollisionsalarme aus Node-RED (gleiche Alarme wie Piezo, Mini Dash, Cabin Watch)
+	for (const n of nr.aisAlarms) {
+		const tg = targets.list.find((x) => x.kind === 'ais' && x.vessel?.mmsi === n.mmsi);
+		const id = 'nr:' + n.key;
+		want.set(id, {
+			id,
+			level: 'alarm',
+			category: 'collision',
+			title: tg?.label ?? n.name,
+			detail: t('Passes {d} from you in {t}.', { d: fmtDist(n.cpa), t: mins(n.tcpa) }),
+			advice: tg && ADVICE[tg.situation] ? tr(ADVICE[tg.situation]) : '',
+			targetKey: tg?.key
+		});
+	}
 
 	// Radar-Echos in Guard Zones (Zählung im Spoke-Worker)
 	const rid = settings.radarId;
@@ -238,6 +260,8 @@ export function evaluateAlarms(now = Date.now()) {
 		if (isTransmitting(rid) && now - r.lastSpoke > 8000 && now - appStart > 10000) sys('sys:spokes', 'warning', 'No radar image', tr('The radar is transmitting but no picture arrives.'));
 		if (tx && (own.hdg == null || now - own.hdgT > 10000)) sys('sys:hdg', 'warning', 'No heading', tr('Radar picture is not stabilised, ARPA tracking is degraded.'));
 	} else if (radar.error) sys('sys:radar', 'warning', 'Radar server offline', tr('No connection to the radar server on the Pi.'));
+	if (settings.alarmPreset !== 'off' && now - Math.max(nr.t, appStart) > 3 * SYS_GRACE)
+		sys('sys:nr', 'warning', 'AIS alarm offline', tr('No connection to the AIS alarm on the Pi (Node-RED) – AIS collision alarms are not working.'));
 
 	// Abgleich aktiv ↔ gewünscht
 	const next: Alarm[] = [];
@@ -259,6 +283,12 @@ export function evaluateAlarms(now = Date.now()) {
 		if (!acked) log(a, 'raised');
 	}
 	for (const [k, t] of ackedAt) if (now - t > ACK_MEMORY_MS) ackedAt.delete(k);
+	// Quittung der Node-RED-Alarme gilt so, wie Node-RED sie meldet (läuft dort nach ackMinutes ab)
+	for (const [k, t] of nrAckPending) if (now - t > 5000) nrAckPending.delete(k);
+	for (const a of next) {
+		const n = a.id.startsWith('nr:') && nr.aisAlarms.find((x) => 'nr:' + x.key === a.id);
+		if (n) a.acked = n.acked || nrAckPending.has(a.id);
+	}
 	next.sort((a, b) => (a.level === b.level ? b.since - a.since : a.level === 'alarm' ? -1 : 1));
 	alarms.active = next;
 
@@ -283,6 +313,14 @@ export function ackAlarm(id: string) {
 		log(a, 'acked');
 	}
 	if (a?.category === 'watch') confirmWatch();
+	if (a?.id.startsWith('nr:')) ackNr();
+}
+
+/** Node-RED quittiert alle dort aktiven Alarme auf einmal (wie die Taste am Mini Dash) */
+function ackNr() {
+	const now = Date.now();
+	for (const a of alarms.active) if (a.id.startsWith('nr:')) nrAckPending.set(a.id, now);
+	nrAck();
 }
 
 export function ackAll() {
@@ -293,6 +331,7 @@ export function ackAll() {
 		}
 		if (a.category === 'watch') confirmWatch();
 	}
+	if (alarms.active.some((a) => a.id.startsWith('nr:'))) ackNr();
 }
 
 export function muteFor(min: number) {
