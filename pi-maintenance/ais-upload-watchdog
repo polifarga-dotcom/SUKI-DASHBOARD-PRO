@@ -1,0 +1,66 @@
+#!/bin/bash
+# AIS-Upload-Wächter: zählt per iptables-Regel die UDP-Pakete an MarineTraffic (stellvertretend
+# für alle AIS-Server des Signal K Plugins ais-forwarder). Kommen 30 min lang keine neuen Pakete,
+# obwohl Signal K frische eigene Position hat, wird Signal K einmal neu gestartet und eine
+# Telegram-Nachricht geschickt; sobald wieder gesendet wird, folgt eine Entwarnung.
+#   ais-upload-watchdog            Prüfung (systemd-Timer, alle 5 min)
+#   ais-upload-watchdog --status   Zähler und Zustand anzeigen
+#   ais-upload-watchdog --test     Telegram-Testnachricht senden
+set -u
+[ -f /etc/default/ais-upload-watchdog ] && . /etc/default/ais-upload-watchdog
+DEST=${DEST:-5.9.207.224}; PORT=${PORT:-13975}
+STALL_SEC=${STALL_SEC:-1800}
+API=${API:-http://localhost:3000/signalk/v1/api/vessels/self/navigation/position}
+TG_TOKEN=${TG_TOKEN:-}; TG_CHAT=${TG_CHAT:-}
+STATE=/var/lib/ais-upload-watchdog.state   # bleibt über Neustarts: pro Ausfall nur eine Meldung
+TAG=ais-upload-watchdog
+
+log() { logger -t $TAG "$*"; [ -t 1 ] && echo "$*"; }
+tg() {
+  if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then log "telegram not configured: $1"; return 1; fi
+  local id ok=0
+  for id in ${TG_CHAT//,/ }; do
+    curl -fsS -m 15 "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+      --data-urlencode "chat_id=$id" --data-urlencode "text=$1" >/dev/null && ok=1
+  done
+  [ $ok = 1 ] || log "telegram send failed"
+}
+
+[ "${1:-}" = "--test" ] && { tg "SUKI Pi: Testnachricht vom AIS-Upload-Wächter"; exit $?; }
+
+# Zählregel (ohne Ziel = zählt nur) anlegen, falls sie fehlt, z.B. nach einem Neustart
+RULE=(OUTPUT -p udp -d "$DEST" --dport "$PORT" -m comment --comment "$TAG")
+iptables -C "${RULE[@]}" 2>/dev/null || iptables -I "${RULE[@]}"
+pkts=$(iptables -L OUTPUT -v -n -x | awk -v t="$TAG" 'index($0,t){print $1; exit}')
+pkts=${pkts:-0}
+
+now=$(date +%s)
+last_pkts=-1; last_change=$now; alerted=0
+[ -f "$STATE" ] && . "$STATE"
+save() { printf 'last_pkts=%s\nlast_change=%s\nalerted=%s\n' "$pkts" "$last_change" "$alerted" > "$STATE"; }
+
+if [ "${1:-}" = "--status" ]; then
+  echo "packets to $DEST:$PORT: $pkts (last increase $(( now - last_change )) s ago, alerted=$alerted)"; exit 0
+fi
+
+[ "$pkts" -lt "$last_pkts" ] && last_pkts=0   # Zähler nach Pi-Neustart wieder bei 0: nur echte Zunahme zählt
+if [ "$pkts" -gt "$last_pkts" ]; then
+  last_change=$now
+  if [ "$alerted" = 1 ]; then
+    alerted=0; log "upload resumed"; tg "SUKI Pi: AIS-Upload läuft wieder (MarineTraffic & Co. bekommen Daten)."
+  fi
+  save; exit 0
+fi
+
+stall=$(( now - last_change ))
+if [ "$stall" -ge "$STALL_SEC" ] && [ "$alerted" = 0 ]; then
+  # Ohne frische eigene Position (Instrumente aus) gibt es nichts zu senden: kein Fehler
+  ts=$(curl -fsS -m 10 "$API" | jq -r '.timestamp // empty' 2>/dev/null)
+  if [ -n "$ts" ] && [ $(( now - $(date -d "$ts" +%s) )) -lt 300 ]; then
+    alerted=1
+    log "no AIS upload for $(( stall / 60 )) min - restarting signalk"
+    systemctl restart signalk
+    tg "SUKI Pi: Seit $(( stall / 60 )) min keine AIS-Daten an MarineTraffic & Co. gesendet. Signal K wurde neu gestartet. Entwarnung folgt, sobald wieder gesendet wird."
+  fi
+fi
+save

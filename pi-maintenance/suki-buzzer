@@ -20,7 +20,7 @@ def pattern(mode, ms):
 if len(sys.argv) > 1 and sys.argv[1] == '--test':   # 2 s Probeton
     out(True); time.sleep(2); out(False); sys.exit(0)
 
-mode, last, cur = 'off', -10.0, None
+mode, last, cur, logged = 'off', -10.0, None, 'off'
 out(False)
 while True:
     now = time.monotonic()
@@ -28,9 +28,13 @@ while True:
         last = now
         try:
             with urllib.request.urlopen(URL, timeout=2) as r:
-                mode = json.load(r).get('beep', 'off')
-        except Exception:
-            mode = 'off'   # shortcut: Node-RED nicht erreichbar = still; ein eigener „keine Daten“-Ton wäre ein Ausbau
+                st = json.load(r)
+            mode, msg = st.get('beep', 'off'), st.get('msg', '')
+        except Exception as e:
+            mode, msg = 'off', 'node-red error: %s' % e   # shortcut: Node-RED nicht erreichbar = still; ein eigener „keine Daten“-Ton wäre ein Ausbau
+        if mode != logged:   # jeden Wechsel ins Journal, damit sich jeder Piep zuordnen lässt
+            print('beep %s  %s' % (mode, msg), flush=True)
+            logged = mode
     on = pattern(mode, int(now * 1000))
     if on != cur:
         out(on)

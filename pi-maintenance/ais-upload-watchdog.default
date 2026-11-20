@@ -1,0 +1,4 @@
+# Telegram-Zugang für den AIS-Upload-Wächter (nur root lesbar)
+# Bot-Token von @SukiProBot bzw. eigenem Bot, Chat-ID(s) kommagetrennt
+TG_TOKEN=""
+TG_CHAT=""

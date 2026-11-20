@@ -1,0 +1,7 @@
+[Unit]
+Description=AIS upload watchdog (alerts via Telegram when ais-forwarder stops sending)
+After=signalk.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ais-upload-watchdog

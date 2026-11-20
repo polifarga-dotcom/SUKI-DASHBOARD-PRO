@@ -34,3 +34,17 @@ ssh admin@192.168.0.100 'sudo install -m 755 /tmp/suki-buzzer /usr/local/bin/ &&
 ```
 
 Probeton (2 s): `sudo systemctl stop suki-buzzer; suki-buzzer --test; sudo systemctl start suki-buzzer`
+
+## AIS-Upload-Wächter
+
+`ais-upload-watchdog` (Timer alle 5 min) zählt per iptables-Regel die UDP-Pakete an MarineTraffic
+(5.9.207.224:13975). Kommt 30 min lang nichts, obwohl Signal K eine frische eigene Position hat,
+wird Signal K einmal neu gestartet und per Telegram gemeldet; Entwarnung, sobald wieder gesendet wird.
+
+```bash
+scp ais-upload-watchdog ais-upload-watchdog.service ais-upload-watchdog.timer ais-upload-watchdog.default admin@192.168.0.100:/tmp/
+ssh admin@192.168.0.100 'sudo install -m 755 /tmp/ais-upload-watchdog /usr/local/bin/ && sudo install -m 644 /tmp/ais-upload-watchdog.{service,timer} /etc/systemd/system/ && sudo install -m 600 /tmp/ais-upload-watchdog.default /etc/default/ais-upload-watchdog && sudo systemctl daemon-reload && sudo systemctl enable --now ais-upload-watchdog.timer'
+```
+
+Telegram: `TG_TOKEN` und `TG_CHAT` in `/etc/default/ais-upload-watchdog` eintragen, dann
+`sudo ais-upload-watchdog --test`. Zustand: `sudo ais-upload-watchdog --status`, Log: `journalctl -t ais-upload-watchdog`.
