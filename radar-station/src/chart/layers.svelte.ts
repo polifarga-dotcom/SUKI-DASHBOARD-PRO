@@ -21,6 +21,8 @@ export interface ProviderInfo {
 	prefetch: boolean;
 	prefetchMax: number;
 	needsKey: boolean;
+	/** teilt den Schlüssel dieses Anbieters */
+	keyFrom?: string;
 	keySet: boolean;
 	keyLabel?: string;
 	keyUrl?: string;
@@ -39,6 +41,12 @@ export interface LayerCfg {
 	/** Ausrichtungs-Versatz in m (Ost, Nord) */
 	dx: number;
 	dy: number;
+	/** Wetter: Symbole (statisch), Strömungslinien (animiert) oder beides */
+	mode?: 'static' | 'animated' | 'both';
+	/** Wetter (Wind): Isobaren */
+	isobars?: boolean;
+	/** veraltet (bis 2026-11-20): animiert zusätzlich → mode 'both' */
+	flow?: boolean;
 }
 
 export interface ChartCfg {
@@ -56,8 +64,8 @@ export const providers = $state({ list: [] as ProviderInfo[], loaded: false, err
 
 const KEY = 'suki-radar-chart-v1';
 
-const DEFAULT_ORDER = ['emodnet', 'gebco', 'eox', 'copernicus', 'esri', 'mapbox', 'maptiler', 'google', 'gibs', 'coral'];
-const DEFAULT_OPACITY: Record<string, number> = { emodnet: 0.5, gebco: 0.5, coral: 0.6 };
+const DEFAULT_ORDER = ['emodnet', 'gebco', 'eox', 'copernicus', 'esri', 'mapbox', 'maptiler', 'google', 'gibs', 'coral', 'anch', 'coast'];
+const DEFAULT_OPACITY: Record<string, number> = { emodnet: 0.5, gebco: 0.5, coral: 0.6, anch: 1, coast: 1 };
 
 function defaults(): ChartCfg {
 	return {
@@ -76,8 +84,13 @@ function load(): ChartCfg {
 		const raw = localStorage.getItem(KEY);
 		if (raw) {
 			const c = { ...defaults(), ...JSON.parse(raw) } as ChartCfg;
+			for (const l of c.layers)
+				if (l.flow) {
+					l.mode = 'both';
+					delete l.flow;
+				}
 			// neue Anbieter ergänzen
-			for (const id of DEFAULT_ORDER) if (!c.layers.some((l) => l.id === id)) c.layers.push({ id, on: false, opacity: 0.25, dx: 0, dy: 0 });
+			for (const id of DEFAULT_ORDER) if (!c.layers.some((l) => l.id === id)) c.layers.push({ id, on: false, opacity: DEFAULT_OPACITY[id] ?? 0.25, dx: 0, dy: 0 });
 			return c;
 		}
 	} catch {
@@ -118,14 +131,17 @@ export const provider = (id: string) => providers.list.find((p) => p.id === id);
 
 /** Ist die Ebene nutzbar (Schlüssel vorhanden)? */
 export const usable = (id: string) => {
-	if (id === 'coral') return true;
+	if (id === 'coral' || id === 'anch' || id === 'coast' || id.startsWith('wx:')) return true;
 	const p = provider(id);
 	return !!p && (!p.needsKey || p.keySet);
 };
 
+/** eine Stelle nach oben/unten – innerhalb der eigenen Gruppe (Wetter bzw. Karten-Ebenen) */
 export function moveLayer(id: string, dir: 1 | -1) {
+	const wxg = (x: string) => x.startsWith('wx:');
 	const i = chartCfg.layers.findIndex((l) => l.id === id);
-	const j = i + dir;
+	let j = i + dir;
+	while (j >= 0 && j < chartCfg.layers.length && wxg(chartCfg.layers[j].id) !== wxg(id)) j += dir;
 	if (i < 0 || j < 0 || j >= chartCfg.layers.length) return;
 	const a = chartCfg.layers;
 	[a[i], a[j]] = [a[j], a[i]];
@@ -183,6 +199,11 @@ export function activeAttributions(): string[] {
 	const out: string[] = [];
 	for (const id of ids) {
 		if (id === 'coral') out.push('Allen Coral Atlas');
+		else if (id === 'anch') out.push('Anchorages © OpenStreetMap contributors (ODbL)');
+		else if (id === 'coast') out.push('Coastline © OpenStreetMap contributors (ODbL), Natural Earth');
+		else if (id.startsWith('wx:')) {
+			if (!out.includes('Weather: Open-Meteo.com (CC BY 4.0)')) out.push('Weather: Open-Meteo.com (CC BY 4.0)');
+		}
 		else {
 			const p = provider(id);
 			if (p) out.push(p.attribution);

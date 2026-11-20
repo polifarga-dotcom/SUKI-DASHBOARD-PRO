@@ -33,7 +33,7 @@
 		reconnectMayara();
 	}
 	// Kartenanbieter-Schlüssel (zentral auf dem Pi)
-	const keyed = $derived(providers.list.filter((p) => p.needsKey));
+	const keyed = $derived(providers.list.filter((p) => p.needsKey && !p.keyFrom));
 	let keyInput: Record<string, string> = $state({});
 	let keyMsg: Record<string, string> = $state({});
 	async function saveKey(id: string) {
@@ -116,6 +116,15 @@
 		<label class="chk"><input type="checkbox" bind:checked={settings.rings} /> {t('Range rings')}</label>
 		<label class="chk"><input type="checkbox" bind:checked={settings.compass} /> {t('Bearing scale')}</label>
 		<label class="chk"><input type="checkbox" bind:checked={settings.headingLine} /> {t('Heading line')}</label>
+	</section>
+
+	<section>
+		<b>{t('GPS antenna position')}</b>
+		<div class="muted small">{t('Where the GPS antenna sits relative to the radar antenna (centre of the radar picture). Chart and AIS targets are shifted so they line up with the radar echoes.')}</div>
+		<div class="two">
+			<label class="ctl"><span>{t('Forward (+) / aft (−)')} <b class="num">{dec(settings.gpsFwd || 0, 1)} m</b></span><input type="number" min="-30" max="30" step="0.1" bind:value={settings.gpsFwd} /></label>
+			<label class="ctl"><span>{t('Starboard (+) / port (−)')} <b class="num">{dec(settings.gpsStbd || 0, 1)} m</b></span><input type="number" min="-15" max="15" step="0.1" bind:value={settings.gpsStbd} /></label>
+		</div>
 	</section>
 
 	<section>

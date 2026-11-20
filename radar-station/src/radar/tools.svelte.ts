@@ -44,7 +44,8 @@ export const tools = $state({
 	/** Ebene, die ausgerichtet wird, und erster Tap (Merkmal im Satellitenbild) */
 	align: null as null | { layer: string; first: LatLon | null },
 	/** Messwerkzeug: Punkte A/B (Lat/Lon) */
-	measure: null as null | { a: LatLon; b: LatLon | null },
+	/** Messstrecke: beliebig viele Punkte */
+	measure: null as null | LatLon[],
 	/** sichtbarer Kartenausschnitt [West, Süd, Ost, Nord] (für Revier-Download) */
 	viewBBox: null as null | [number, number, number, number],
 	/** wird hochgezählt, wenn die App aus dem Hintergrund zurückkommt (Verbindungen erneuern) */

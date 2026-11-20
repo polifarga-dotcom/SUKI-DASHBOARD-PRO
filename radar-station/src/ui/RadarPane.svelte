@@ -13,11 +13,17 @@
 	import { alarms } from '../alarms/alarms.svelte';
 	import { tools, addMarker, markSquall, removeSquall } from '../radar/tools.svelte';
 	import { squallPos } from '../collision/squall';
-	import { bearingOf, fmtDeg, fmtDist, fmtLat, fmtLon, fmtRange, fmtSpeed, fmtTime, fromLocal, toLocal, isNauticalRange, norm2pi, numStr, ringStep, NM, type LatLon } from '../lib/geo';
+	import { bearingOf, fmtDeg, fmtDist, fmtLat, fmtLon, fmtRange, fmtSpeed, fmtTime, fromLocal, toLocal, routeLength, isNauticalRange, norm2pi, numStr, ringStep, NM, type LatLon } from '../lib/geo';
 	import { unlockAudio } from '../alarms/audio';
 	import type { SpokeBatch } from '../radar/spokeDecoder';
 	import { t as tr } from '../lib/i18n.svelte';
 	import Icon from './Icon.svelte';
+	import WxTimeBar from './WxTimeBar.svelte';
+	import WxPopup from './WxPopup.svelte';
+	import AnchPopup from './AnchPopup.svelte';
+	import { anch, osmItems, newOwn, type OsmAnch, type OwnAnch } from '../chart/anchorages.svelte';
+	import { coast } from '../chart/coast.svelte';
+	import { wx, ensureWx, activeWx } from '../chart/weather.svelte';
 	import { countryOf, shipTypeText, navStateText } from '../lib/ais';
 
 	let { radarId, pane = 0, label = '' }: { radarId: string; pane?: number; label?: string } = $props();
@@ -60,7 +66,7 @@
 		prevRadarZoom = rz;
 	});
 
-	const LOCAL_STEPS = [29, 57, 115, 231, 463, 926, 1389, 1852, 2778, 3704, 5556, 7408, 11112, 14816, 22224, 29632, 44448, 66672, 88896, 118528, 177792];
+	const LOCAL_STEPS = [29, 57, 115, 231, 463, 926, 1389, 1852, 2778, 3704, 5556, 7408, 11112, 14816, 22224, 29632, 44448, 66672, 88896, 118528, 177792, 355584, 711168, 1422336]; // bis 768 sm (Wetterübersicht)
 	const steps = $derived.by(() => {
 		if (!radarZoom) return LOCAL_STEPS;
 		const all = caps?.supportedRanges ?? [57, 115, 231, 463, 926, 1389, 1852, 2778, 3704, 5556, 7408, 11112, 14816, 22224, 29632, 44448, 66672];
@@ -194,7 +200,30 @@
 	$effect(() => {
 		JSON.stringify(chartCfg);
 		providers.list;
+		wx.models;
 		chart?.sync();
+	});
+	// Wetter: fehlende Felder laden (Ebene an, Gebiet geändert, Schiff weitergefahren) und neu zeichnen
+	$effect(() => {
+		JSON.stringify(chartCfg.layers);
+		settings.wxRadius;
+		wx.models;
+		tools.viewBBox;
+		if (pane === 0) ensureWx(own.pos, tools.viewBBox);
+	});
+	$effect(() => {
+		anch.version;
+		chart?.refreshAnch();
+	});
+	$effect(() => {
+		coast.version;
+		chart?.refreshCoast();
+	});
+	$effect(() => {
+		wx.version;
+		wx.time;
+		settings.wxGustFill;
+		chart?.refreshWeather();
 	});
 	const attribution = $derived.by(() => {
 		JSON.stringify(chartCfg);
@@ -385,7 +414,34 @@
 		tap(p.x, p.y);
 	}
 
+	/** Wetterwerte am angetippten Punkt */
+	let wxPop = $state<{ sx: number; sy: number; pos: LatLon } | null>(null);
+	/** Ankerplatz-Infofenster (bleibt beim Tippen auf freie Karte offen, damit Eingaben nicht verloren gehen) */
+	let anchPop = $state<{ sx: number; sy: number; osm?: OsmAnch; own?: OwnAnch; create?: OwnAnch; key: number } | null>(null);
+
+	/** Ankerplatz unter dem Tipp (≤ 22 px), eigene vor OSM */
+	function pickAnch(sx: number, sy: number): { osm?: OsmAnch; own?: OwnAnch } | null {
+		if (!lastView || !own.pos || !chartCfg.layers.some((l) => l.id === 'anch' && l.on) || !settings.chart) return null;
+		let best: { osm?: OsmAnch; own?: OwnAnch } | null = null;
+		let bd = 22;
+		const near = (p: LatLon) => {
+			const [x, y] = toScreen(lastView!, ...toLocal(own.pos!, p));
+			return Math.hypot(x - sx, y - sy);
+		};
+		for (const a of anch.own) {
+			const d = near(a);
+			if (d < bd) [bd, best] = [d, { own: a }];
+		}
+		if (best) return best;
+		for (const a of osmItems()) {
+			const d = near(a);
+			if (d < bd) [bd, best] = [d, { osm: a }];
+		}
+		return best;
+	}
+
 	function tap(sx: number, sy: number) {
+		wxPop = null;
 		if (!lastView) return;
 		const [x, y] = fromScreen(lastView, sx, sy);
 		const mode = tools.tapMode;
@@ -424,8 +480,7 @@
 		if (mode === 'measure') {
 			if (!own.pos) return;
 			const geo = fromLocal(own.pos, x, y);
-			if (!tools.measure || tools.measure.b) tools.measure = { a: geo, b: null };
-			else tools.measure.b = geo;
+			tools.measure = [...(tools.measure ?? []), geo];
 			return;
 		}
 		if (mode === 'mark') {
@@ -438,9 +493,12 @@
 			ui.selected = k;
 			settings.sidePanel = true;
 			settings.sideTab = 'targets';
+		} else if (pane === 0 && pickAnch(sx, sy)) {
+			anchPop = { sx, sy, ...pickAnch(sx, sy)!, key: Date.now() };
 		} else {
 			ui.selected = null;
 			tools.cursor = own.pos ? fromLocal(own.pos, x, y) : null;
+			if (tools.cursor && pane === 0 && settings.chart && activeWx().length) wxPop = { sx, sy, pos: tools.cursor };
 		}
 	}
 
@@ -543,7 +601,11 @@
 					? tr('Now tap where this feature really is (chart, buoy, own boat)')
 					: tr('Tap a distinctive feature in the satellite image (pier end, reef edge)');
 			case 'measure':
-				return !tools.measure || tools.measure.b ? tr('Tap the start point') : tr('Tap the end point');
+				return !tools.measure?.length
+					? tr('Tap the start point')
+					: tools.measure.length < 3
+						? tr('Tap the next point · total {d}', { d: fmtDist(routeLength(tools.measure)) })
+						: tr('Tap the next point · total {d} ({n} legs)', { d: fmtDist(routeLength(tools.measure)), n: tools.measure.length - 1 });
 			default:
 				return tr('Tap on the screen to place a marker');
 		}
@@ -660,7 +722,7 @@
 
 	<div class="hud br" onpointerdown={(e) => e.stopPropagation()} role="toolbar" tabindex="-1">
 		<div class="col">
-			{#if panAnchor}<button class="big home" data-act="center-ship" onclick={() => (panAnchor = null)} title={tr('Back to own ship (C)')} aria-label={tr('Back to own ship (C)')}><Icon name="home" size={22} /></button>{/if}
+			{#if panAnchor}<button class="big home" data-act="center-ship" onclick={() => (panAnchor = null)} title={tr('Back to own ship (C)')} aria-label={tr('Back to own ship (C)')}><Icon name="recenter" size={22} /></button>{/if}
 			<button class="big" data-act="range-in" onclick={() => stepRange(-1)} aria-label={tr('Range in')} title={tr('Range in (−)')}><Icon name="plus" size={22} /></button>
 			<button class="big" data-act="range-out" onclick={() => stepRange(1)} aria-label={tr('Range out')} title={tr('Range out (+)')}><Icon name="minus" size={22} /></button>
 		</div>
@@ -674,9 +736,13 @@
 		{/if}
 	</div>
 
+	{#if wxPop}<WxPopup {...wxPop} onclose={() => (wxPop = null)} />{/if}
+	{#if anchPop}{#key anchPop.key}<AnchPopup osm={anchPop.osm} own={anchPop.own} create={anchPop.create} sx={anchPop.sx} sy={anchPop.sy} onclose={() => (anchPop = null)} />{/key}{/if}
+
 	{#if tools.tapMode !== 'select' && pane === 0}
-		<div class="modehint">
+		<div class="modehint" onpointerdown={(e) => e.stopPropagation()} role="status">
 			{hint}
+			{#if tools.tapMode === 'measure' && tools.measure?.length}<button class="mini" onclick={() => (tools.measure = tools.measure!.length > 1 ? tools.measure!.slice(0, -1) : null)}>{tr('Undo point')}</button>{/if}
 			<button class="mini" onclick={() => { tools.tapMode = 'select'; tools.align = null; tools.measure = null; }}>{tools.tapMode === 'measure' ? tr('Done') : tr('Cancel')}</button>
 		</div>
 	{/if}
@@ -701,6 +767,7 @@
 
 	{#if imageryLine && pane === 0}<div class="imgmeta">{imageryLine}</div>{/if}
 	{#if attribution}<div class="attrib">{attribution}</div>{/if}
+	{#if settings.chart && pane === 0}<WxTimeBar />{/if}
 
 	{#if tip}
 		<div class="tip {tip.t.lost ? 'lost' : tip.t.danger}" style="left:{tip.left}px; top:{tip.top}px" role="tooltip">
@@ -720,6 +787,7 @@
 			<button onclick={() => { acquireAt(m.x, m.y); tools.menu = null; }} disabled={!R}><Icon name="target" /> {tr('Acquire target')}</button>
 			<button onclick={() => { setEbl(m.x, m.y); tools.menu = null; }}><Icon name="ruler" /> {tr('EBL/VRM {n} here', { n: tools.activeEbl + 1 })}</button>
 			<button onclick={() => { if (own.pos) addMarker(fromLocal(own.pos, m.x, m.y)); tools.menu = null; }}><Icon name="flag" /> {tr('Place marker')}</button>
+			<button onclick={() => { if (own.pos) anchPop = { sx: m.sx, sy: m.sy, create: newOwn(fromLocal(own.pos, m.x, m.y)), key: Date.now() }; tools.menu = null; }} disabled={!own.pos}><Icon name="anchor" /> {tr('Save anchorage here')}</button>
 			<button onclick={() => { if (own.pos) markSquall(fromLocal(own.pos, m.x, m.y)); tools.menu = null; }} disabled={!own.pos} title={tr('Mark the centre of a rain cell; mark it again after a few minutes to get its track.')}><Icon name="cloud" /> {tr('Mark squall')}</button>
 			{#if sq}<button onclick={() => { removeSquall(sq.id); tools.menu = null; }}><Icon name="trash" /> {tr('Remove squall')}</button>{/if}
 			<button onclick={() => { const k = pick(m.sx, m.sy); if (k) { ui.selected = k; settings.sidePanel = true; settings.sideTab = 'targets'; } tools.menu = null; }}><Icon name="list" /> {tr('Target info')}</button>

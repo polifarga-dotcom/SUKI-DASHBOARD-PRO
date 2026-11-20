@@ -26,6 +26,13 @@ export function toLocal(o: LatLon, p: LatLon): [number, number] {
 	return [x, y];
 }
 
+/** Länge einer Strecke über mehrere Punkte (Summe der Teilstrecken, m) */
+export function routeLength(pts: LatLon[]) {
+	let d = 0;
+	for (let i = 1; i < pts.length; i++) d += Math.hypot(...toLocal(pts[i - 1], pts[i]));
+	return d;
+}
+
 export function fromLocal(o: LatLon, x: number, y: number): LatLon {
 	const lat0 = o.lat * D2R;
 	return { lat: o.lat + (y / EARTH_R) * R2D, lon: o.lon + (x / (EARTH_R * Math.cos(lat0))) * R2D };
@@ -118,4 +125,14 @@ export function gcDist(a: LatLon, b: LatLon): number {
 export function gcBearing(a: LatLon, b: LatLon): number {
 	const p1 = a.lat * D2R, p2 = b.lat * D2R, dl = (b.lon - a.lon) * D2R;
 	return norm2pi(Math.atan2(Math.sin(dl) * Math.cos(p2), Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl)));
+}
+
+/**
+ * GPS-Antenne → Radarantenne (Bildmitte): die GPS-Antenne sitzt `fwd` m voraus und `stbd` m an Steuerbord
+ * der Radarantenne; zurückrechnen mit der Vorausrichtung `hdg` (rad, wahr).
+ */
+export function antennaToRadar(gps: LatLon, hdg: number, fwd: number, stbd: number): LatLon {
+	const e = fwd * Math.sin(hdg) + stbd * Math.cos(hdg);
+	const n = fwd * Math.cos(hdg) - stbd * Math.sin(hdg);
+	return fromLocal(gps, -e, -n);
 }

@@ -1,6 +1,7 @@
 // SignalK-Client: Eigenes Schiff + AIS-Ziele (vessels.*, atons.*).
 // Hochfrequente Daten liegen in normalen Objekten (Render-Loop liest direkt), die UI aktualisiert per `version`.
-import type { LatLon } from '../lib/geo';
+import { antennaToRadar, type LatLon } from '../lib/geo';
+import { settings } from '../lib/settings.svelte';
 
 export type AisClass = 'A' | 'B' | 'ATON' | 'BASE' | 'SART' | 'UNKNOWN';
 
@@ -133,12 +134,23 @@ function num(v: unknown): number | null {
 	return typeof v === 'number' && isFinite(v) ? v : null;
 }
 
+/** Rohposition der GPS-Antenne; own.pos ist die Position der Radarantenne (Mitte des Radarbilds) */
+let gpsPos: LatLon | null = null;
+function placeOwn() {
+	if (!gpsPos) return;
+	const f = settings.gpsFwd || 0;
+	const s = settings.gpsStbd || 0;
+	// ohne Vorausrichtung lässt sich der Versatz nicht drehen → unkorrigiert
+	own.pos = (f || s) && own.hdg != null ? antennaToRadar(gpsPos, own.hdg, f, s) : gpsPos;
+}
+
 function applyOwn(path: string, value: any, t: number) {
 	switch (path) {
 		case 'navigation.position':
 			if (value && num(value.latitude) != null && num(value.longitude) != null) {
-				own.pos = { lat: value.latitude, lon: value.longitude };
+				gpsPos = { lat: value.latitude, lon: value.longitude };
 				own.posT = t;
+				placeOwn();
 			}
 			break;
 		case 'navigation.courseOverGroundTrue':
@@ -151,6 +163,7 @@ function applyOwn(path: string, value: any, t: number) {
 			if (num(value) != null) {
 				own.hdg = value;
 				own.hdgT = t;
+				placeOwn();
 			}
 			break;
 		case 'navigation.headingMagnetic':

@@ -10,6 +10,11 @@ import { R2D, fromLocal, type LatLon } from '../lib/geo';
 import type { View } from '../radar/view';
 import { chartCfg, provider, usable } from './layers.svelte';
 import { createCoralLayer } from './coralLayer';
+import { createAnchLayer, type AnchLayer } from './anchorages.svelte';
+import { createCoastLayer, type CoastLayer } from './coast.svelte';
+import { createWeatherLayer, type WeatherLayer } from './weatherLayer';
+import { FlowLayer } from './flowLayer';
+import { wxModel } from './weather.svelte';
 
 const MAX_Z = 21;
 
@@ -63,15 +68,19 @@ export class ChartLayer {
 		const want: { id: string; z: number; opacity: number; dx: number; dy: number }[] = [];
 		if (chartCfg.base !== 'none' && usable(chartCfg.base)) want.push({ id: chartCfg.base, z: 1, opacity: chartCfg.baseOpacity, dx: 0, dy: 0 });
 		chartCfg.layers.forEach((l, i) => {
-			if (l.on && usable(l.id) && l.id !== chartCfg.base) want.push({ id: l.id, z: 10 + i, opacity: l.opacity, dx: l.dx, dy: l.dy });
+			if (l.on && usable(l.id) && l.id !== chartCfg.base) want.push({ id: l.id, z: l.id === 'coast' ? 90 : 10 + i, opacity: l.opacity, dx: l.dx, dy: l.dy });
+			if (l.on && (l.mode === 'animated' || l.mode === 'both') && l.id.startsWith('wx:')) want.push({ id: 'flow:' + l.id, z: 10 + i, opacity: l.opacity, dx: 0, dy: 0 });
 		});
 		if (chartCfg.seamarks) want.push({ id: 'seamark', z: 100, opacity: chartCfg.seamarkOpacity, dx: 0, dy: 0 });
 
 		const keep = new Set<string>();
 		for (const w of want) {
 			const p = provider(w.id);
-			if (!p && w.id !== 'coral') continue;
-			const sig = w.id === 'coral' ? `coral:${chartCfg.rev}` : `${p!.mode}:${p!.directUrl ?? ''}:${JSON.stringify(p!.values)}:${chartCfg.rev}`;
+			const wxl = w.id.startsWith('wx:');
+			const flow = w.id.startsWith('flow:');
+			if (!p && w.id !== 'coral' && w.id !== 'anch' && w.id !== 'coast' && !wxl && !flow) continue;
+			const lc = wxl ? chartCfg.layers.find((l) => l.id === w.id) : undefined;
+			const sig = wxl ? `${w.id}:${lc?.mode ?? 'static'}:${!!lc?.isobars}` : flow || w.id === 'anch' || w.id === 'coast' ? w.id : w.id === 'coral' ? `coral:${chartCfg.rev}` : `${p!.mode}:${p!.directUrl ?? ''}:${JSON.stringify(p!.values)}:${chartCfg.rev}`;
 			let e = this.entries.get(w.id);
 			if (e && e.sig !== sig) {
 				this.map.removeLayer(e.layer);
@@ -79,8 +88,15 @@ export class ChartLayer {
 				e = undefined;
 			}
 			if (!e) {
-				const layer =
-					w.id === 'coral'
+				const layer = flow
+					? (new FlowLayer(w.id.slice(5), wxModel(w.id.slice(5))?.kind ?? 'wind') as unknown as L.GridLayer)
+					: wxl
+					? createWeatherLayer(w.id, { maxZoom: MAX_Z }, { symbols: lc?.mode !== 'animated', isobars: !!lc?.isobars })
+					: w.id === 'anch'
+						? (createAnchLayer({ maxZoom: MAX_Z }) as unknown as L.GridLayer)
+						: w.id === 'coast'
+						? (createCoastLayer({ maxZoom: MAX_Z }) as unknown as L.GridLayer)
+						: w.id === 'coral'
 						? createCoralLayer({ maxZoom: MAX_Z })
 						: L.tileLayer(p!.mode === 'direct' ? p!.directUrl! : `/tiles/t/${w.id}/{z}/{x}/{y}?r=${chartCfg.rev}`, {
 								maxZoom: MAX_Z,
@@ -106,8 +122,24 @@ export class ChartLayer {
 		this.applyOffsets();
 	}
 
+	/** Wetter-Ebenen neu zeichnen (neue Daten oder andere Vorhersagezeit) */
+	refreshWeather() {
+		for (const [id, e] of this.entries) if (id.startsWith('wx:') || id.startsWith('flow:')) (e.layer as unknown as WeatherLayer).refresh();
+	}
+
+	/** Ankerplätze neu zeichnen (neue Zellen / eigene Plätze) */
+	refreshAnch() {
+		(this.entries.get('anch')?.layer as unknown as AnchLayer | undefined)?.refresh();
+	}
+
+	/** Küstenlinie neu zeichnen (neue Zellen / Natural Earth geladen) */
+	refreshCoast() {
+		(this.entries.get('coast')?.layer as unknown as CoastLayer | undefined)?.refresh();
+	}
+
 	private applyOffsets() {
-		for (const e of this.entries.values()) {
+		for (const [id, e] of this.entries) {
+			if (id.startsWith('flow:')) continue; // Position setzt die Ebene selbst (Leaflet-Transform)
 			const c = e.layer.getContainer();
 			if (!c) continue;
 			const t = e.dx || e.dy ? `translate(${(e.dx / this.mpp).toFixed(1)}px, ${(-e.dy / this.mpp).toFixed(1)}px)` : '';

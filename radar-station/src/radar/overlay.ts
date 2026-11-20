@@ -1,6 +1,6 @@
 // Canvas2D-Overlay über dem Radarbild: Ringe, Kompassrose, Headingline, Eigenschiff, AIS/ARPA, Vektoren,
 // Tracks, CPA-Punkte, EBL/VRM, Guard Zones, Marker, Cursor.
-import { D2R, bearingOf, fmtDeg, fmtDist, norm2pi, numStr, ringStep, toLocal, NM, KN, dec, type LatLon } from '../lib/geo';
+import { routeLength, D2R, bearingOf, fmtDeg, fmtDist, norm2pi, numStr, ringStep, toLocal, NM, KN, dec, type LatLon } from '../lib/geo';
 import type { Settings, Theme } from '../lib/settings.svelte';
 import type { OwnShip } from '../data/signalk.svelte';
 import type { Target } from '../collision/targets.svelte';
@@ -24,7 +24,7 @@ export interface OverlayInput {
 	/** Ziele mit aktivem Alarm (true = noch nicht quittiert → pulsiert) */
 	alarmKeys: Map<string, boolean>;
 	track: [number, number, number][];
-	measure: { a: LatLon; b: LatLon | null } | null;
+	measure: LatLon[] | null;
 	alignFirst: LatLon | null;
 	now: number;
 	label: string; // z. B. „A“ im Dual-Range-Modus
@@ -550,28 +550,31 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, I: OverlayInput) {
 	ctx.restore();
 
 	// ── Messstrecke ──
-	if (own.pos && I.measure) {
-		const pa = toScreen(v, ...toLocal(own.pos, I.measure.a));
+	if (own.pos && I.measure?.length) {
+		const m = I.measure;
+		const ps = m.map((p) => toScreen(v, ...toLocal(own.pos!, p)));
 		ctx.strokeStyle = C.ebl;
 		ctx.fillStyle = C.ebl;
 		ctx.lineWidth = 2;
-		if (I.measure.b) {
-			const pb = toScreen(v, ...toLocal(own.pos, I.measure.b));
-			ctx.setLineDash([10, 5]);
-			ctx.beginPath();
-			ctx.moveTo(pa[0], pa[1]);
-			ctx.lineTo(pb[0], pb[1]);
-			ctx.stroke();
-			ctx.setLineDash([]);
-			ctx.beginPath();
-			ctx.arc(pb[0], pb[1], 4, 0, Math.PI * 2);
-			ctx.fill();
-			const [dx, dy] = toLocal(I.measure.a, I.measure.b);
-			label(ctx, C, font(12, 700), `${fmtDeg(bearingOf(dx, dy))}T · ${fmtDist(Math.hypot(dx, dy))}`, (pa[0] + pb[0]) / 2 + 8, (pa[1] + pb[1]) / 2 - 8, C.ebl);
-		}
+		ctx.setLineDash([10, 5]);
 		ctx.beginPath();
-		ctx.arc(pa[0], pa[1], 4, 0, Math.PI * 2);
-		ctx.fill();
+		ps.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+		ctx.stroke();
+		ctx.setLineDash([]);
+		for (const [x, y] of ps) {
+			ctx.beginPath();
+			ctx.arc(x, y, 4, 0, Math.PI * 2);
+			ctx.fill();
+		}
+		// je Teilstrecke Kurs + Distanz, am letzten Punkt die Summe
+		for (let i = 1; i < m.length; i++) {
+			const [dx, dy] = toLocal(m[i - 1], m[i]);
+			label(ctx, C, font(12, 700), `${fmtDeg(bearingOf(dx, dy))}T · ${fmtDist(Math.hypot(dx, dy))}`, (ps[i - 1][0] + ps[i][0]) / 2 + 8, (ps[i - 1][1] + ps[i][1]) / 2 - 8, C.ebl);
+		}
+		if (m.length > 2) {
+			const [x, y] = ps[ps.length - 1];
+			label(ctx, C, font(13, 800), `Σ ${fmtDist(routeLength(m))}`, x + 10, y + 16, C.ebl);
+		}
 	}
 
 	// ── Ausrichten: erster Punkt ──

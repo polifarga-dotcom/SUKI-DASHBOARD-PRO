@@ -26,17 +26,35 @@
 	import { t } from '../lib/i18n.svelte';
 	import { dec } from '../lib/geo';
 	import Icon from './Icon.svelte';
+	import { wx, wxModel, wxId, isWx, wxAbout, wxRunText, wxRegion, wxErrorText, loadUsage, wxKm } from '../chart/weather.svelte';
+	import { SCALES, UNIT, type WxKind } from '../chart/wxField';
+	import { anch, ANCH_COLOR } from '../chart/anchorages.svelte';
+	import { coast } from '../chart/coast.svelte';
 
 	let open = $state<string | null>(null);
 	let presetName = $state('');
 	let coralVersion = $state(0);
 
 	const KIND: Record<string, string> = { satellite: 'Satellite', depth: 'Depth', overlay: 'Overlay', base: 'Map' };
-	const name = (id: string) => (id === 'coral' ? 'Allen Coral Atlas' : (provider(id)?.name ?? id));
-	const kind = (id: string) => (id === 'coral' ? 'Reef' : KIND[provider(id)?.kind ?? ''] ?? '');
+	const name = (id: string) => (id === 'coral' ? 'Allen Coral Atlas' : id === 'anch' ? t('Anchorages (OSM + own)') : id === 'coast' ? t('Coastline (outline only)') : (provider(id)?.name ?? id));
+	const kind = (id: string) => (id === 'coral' ? 'Reef' : id === 'anch' ? 'Anchorage' : id === 'coast' ? 'Overlay' : KIND[provider(id)?.kind ?? ''] ?? '');
 	const pct = (v: number) => `${Math.round(v * 100)} %`;
 	// Anzeige oben → unten (oberste Ebene zuerst)
-	const shown = $derived([...chartCfg.layers].reverse());
+	const allLayers = $derived([...chartCfg.layers].reverse().filter((l) => !isWx(l.id)));
+	const shown = $derived(settings.layerFavOnly ? allLayers.filter((l) => settings.wxFavs.includes(l.id)) : allLayers);
+	const favCount = (ls: { id: string }[]) => ls.filter((l) => settings.wxFavs.includes(l.id)).length;
+	const wxAll = $derived([...chartCfg.layers].reverse().filter((l) => isWx(l.id) && wxModel(l.id)));
+	const wxShown = $derived(settings.wxFavOnly ? wxAll.filter((l) => settings.wxFavs.includes(l.id)) : wxAll);
+	const toggleFav = (id: string, on: boolean) => (settings.wxFavs = on ? [...settings.wxFavs, id] : settings.wxFavs.filter((x) => x !== id));
+	const WX_KIND: Record<WxKind, string> = { wind: 'Wind', wave: 'Waves', current: 'Current' };
+	const scaleCss = (k: WxKind) => {
+		const st = SCALES[k];
+		return `linear-gradient(90deg, ${st.map(([, c], i) => `rgb(${c.join(',')}) ${(i / (st.length - 1)) * 100}%`).join(', ')})`;
+	};
+	const ago = (ms: number) => {
+		const m = Math.round((Date.now() - ms) / 60000);
+		return m < 60 ? `${m} min` : `${Math.round(m / 60)} h`;
+	};
 	const bases = $derived(providers.list.filter((p) => p.kind === 'base' || (p.kind === 'satellite' && p.mode !== 'direct')));
 
 	function startAlign(id: string) {
@@ -74,6 +92,7 @@
 
 	onMount(() => {
 		refreshJobs();
+		loadUsage();
 		const iv = setInterval(() => {
 			if (jobs.some((j) => j.state === 'running')) refreshJobs();
 			coralVersion++;
@@ -103,6 +122,12 @@
 		return CORAL_CLASSES.filter(([c]) => coralState.classes.has(c));
 	});
 </script>
+
+{#snippet star(id: string)}
+	<button class="fav plain" class:faved={settings.wxFavs.includes(id)} title={t('Favourite')} aria-label={t('Favourite')} aria-pressed={settings.wxFavs.includes(id)} onclick={() => toggleFav(id, !settings.wxFavs.includes(id))}>
+		<Icon name="star" size={18} />
+	</button>
+{/snippet}
 
 <div class="wrap scroll">
 	<section>
@@ -136,12 +161,18 @@
 			</div>
 			{#if chartCfg.seamarks}<input type="range" min="0" max="1" step="0.05" bind:value={chartCfg.seamarkOpacity} aria-label={t('Opacity')} />{/if}
 		</div>
+		<div class="seg">
+			<button class:on={!settings.layerFavOnly} onclick={() => (settings.layerFavOnly = false)}>{t('All layers')}</button>
+			<button class:on={settings.layerFavOnly} onclick={() => (settings.layerFavOnly = true)}><Icon name="star" size={14} /> {t('Favourites only ({n})', { n: favCount(allLayers) })}</button>
+		</div>
+		{#if settings.layerFavOnly && !shown.length}<div class="muted small">{t('No favourites yet – tap the star next to a layer under “All layers”.')}</div>{/if}
 		{#each shown as l (l.id)}
 			{@const p = provider(l.id)}
 			{@const ok = usable(l.id)}
 			<div class="layer" class:off={!l.on}>
 				<div class="lrow">
 					<input type="checkbox" bind:checked={l.on} disabled={!ok} aria-label={name(l.id)} />
+					{@render star(l.id)}
 					<button class="lname plain" onclick={() => (open = open === l.id ? null : l.id)}>
 						{name(l.id)} <span class="badge">{t(kind(l.id))}</span>
 						{#if p?.resolution}<span class="resv">{t(p.resolution)}</span>{/if}
@@ -172,6 +203,22 @@
 							{/each}
 							{#if p.status && !p.status.ok}<div class="err small">{p.status.err}</div>{/if}
 						{/if}
+						{#if l.id === 'anch'}
+							<div class="legend">
+								<span><i style="background:{ANCH_COLOR.anchorage}"></i>{t('Anchorage')}</span>
+								<span><i style="background:{ANCH_COLOR.mooring}"></i>{t('Mooring buoy')}</span>
+								<span><i style="background:{ANCH_COLOR.marina}"></i>{t('Marina')}</span>
+								<span><i style="background:{ANCH_COLOR.own}"></i>{t('My anchorages')} ({anch.own.length})</span>
+							</div>
+							<div class="muted small">{t('From OpenStreetMap: often official anchorage areas, cruising anchorages only where someone mapped them. Tap a symbol for details; long-press / right-click the chart → “Save anchorage here” for your own.')}</div>
+							<div class="muted small">{anch.tooWide ? t('Zoom in to load anchorages (area too large).') : anch.loading ? t('loading…') : t('{n} OSM entries loaded', { n: anch.count })}</div>
+							{#if anch.error}<div class="err small">{t('OpenStreetMap server busy or offline – retrying in 2 min.')} ({anch.error})</div>{/if}
+						{/if}
+						{#if l.id === 'coast'}
+							<div class="muted small">{t('White coastline with dark edge, always drawn above the weather. Far out: Natural Earth (about 1 km accurate); zoomed in: OpenStreetMap coastline (harbour accurate), stored on the Pi.')}</div>
+							<div class="muted small">{!coast.ne ? t('loading…') : coast.tooWide ? t('Overview: Natural Earth') : coast.loading ? t('loading…') : t('{n} OSM coastline pieces loaded', { n: coast.count })}</div>
+							{#if coast.error}<div class="err small">{t('OpenStreetMap server busy or offline – retrying in 2 min.')} ({coast.error})</div>{/if}
+						{/if}
 						{#if l.id === 'coral'}
 							<div class="legend">
 								{#each coralLegend as [c, col]}<span><i style="background:{col}"></i>{t(c)}</span>{:else}<span class="muted small">{t('No reef data imported yet.')}</span>{/each}
@@ -184,6 +231,72 @@
 							<button class="mini" onclick={() => startAlign(l.id)} disabled={!l.on}>{t('Align')}</button>
 							{#if l.dx || l.dy}<button class="mini" onclick={() => ((l.dx = 0), (l.dy = 0))}>{t('Reset')}</button>{/if}
 						</div>
+					</div>
+				{/if}
+			</div>
+		{/each}
+	</section>
+
+	<section>
+		<b>{t('Weather')}</b>
+		<div class="muted small">{t('Forecast models from Open-Meteo, fetched by the Pi and kept for offline use. Several can be stacked; a time slider appears on the radar screen.')}</div>
+		{#if wx.usage}
+			{@const u = wx.usage}
+			<div class="muted small num" class:err={u.used.day > u.limits.day * 0.8 || u.used.hour > u.limits.hour * 0.8}>
+				{t('Open-Meteo used: hour {h} / {H} · today {d} / {D}', { h: u.used.hour.toLocaleString(), H: u.limits.hour.toLocaleString(), d: u.used.day.toLocaleString(), D: u.limits.day.toLocaleString() })}
+			</div>
+			<div class="muted small">{t('Every grid point counts (one weather picture ≈ 225). The Pi only fetches again when the weather service has published a new model run; until then everything comes from its store.')}</div>
+		{/if}
+		<label class="ctl">
+			<span>{t('Area around the boat')}</span>
+			<select bind:value={settings.wxRadius}>
+				{#each [25, 50, 100, 200, 400] as r}<option value={r}>± {r} nm</option>{/each}
+			</select>
+		</label>
+		<label class="chk"><input type="checkbox" bind:checked={settings.wxGustFill} /> {t('Colour wind by gusts')}</label>
+		<div class="muted small">{t('Each active model costs about 260 of the 10 000 free requests per day and is refreshed every 6 h.')}</div>
+		<div class="seg">
+			<button class:on={!settings.wxFavOnly} onclick={() => (settings.wxFavOnly = false)}>{t('All models')}</button>
+			<button class:on={settings.wxFavOnly} onclick={() => (settings.wxFavOnly = true)}><Icon name="star" size={14} /> {t('Favourites only ({n})', { n: favCount(wxAll) })}</button>
+		</div>
+		{#if settings.wxFavOnly && !wxShown.length}<div class="muted small">{t('No favourites yet – tap the star next to a model under “All models”.')}</div>{/if}
+		{#each wxShown as l (l.id)}
+			{@const m = wxModel(l.id)!}
+			{@const st = wx.status[wxId(l.id)]}
+			<div class="layer" class:off={!l.on}>
+				<div class="lrow">
+					<input type="checkbox" bind:checked={l.on} aria-label={m.name} />
+					{@render star(l.id)}
+					<button class="lname plain" title={wxAbout(m)} onclick={() => (open = open === l.id ? null : l.id)}>
+						{m.name} <span class="badge">{t(WX_KIND[m.kind])}</span>{#if wxKm(m)}<span class="resv">{wxKm(m)}</span>{/if}
+						{#if l.on && st?.loading}<span class="muted small">{t('loading…')}</span>{/if}
+						{#if l.on && wxErrorText(l.id, true)}<span class="err small">{wxErrorText(l.id, true)}</span>{/if}
+					</button>
+					<span class="num pctv">{pct(l.opacity)}</span>
+					<button class="mini" onclick={() => moveLayer(l.id, 1)} aria-label={t('Move up')}>▲</button>
+					<button class="mini" onclick={() => moveLayer(l.id, -1)} aria-label={t('Move down')}>▼</button>
+				</div>
+				{#if wxRegion(m)}<div class="muted small">{wxRegion(m)}</div>{/if}
+				{#if l.on && wxRunText(l.id)}<div class="muted small num">{wxRunText(l.id)}</div>{/if}
+				{#if l.on}<input type="range" min="0" max="1" step="0.05" bind:value={l.opacity} aria-label={t('Opacity')} />{/if}
+				{#if open === l.id}
+					<div class="details">
+						<div class="muted small">{t(m.info)}</div>
+						{#if wxAbout(m)}<div class="small">{wxAbout(m)}</div>{/if}
+						<label class="ctl">
+							<span>{t('Display')}</span>
+							<select value={l.mode ?? 'static'} onchange={(e) => (l.mode = (e.target as HTMLSelectElement).value as 'static' | 'animated' | 'both')}>
+								<option value="static">{t(m.kind === 'wind' ? 'Static (barbs)' : 'Static (arrows)')}</option>
+								<option value="animated">{t('Animated (streamlines)')}</option>
+								<option value="both">{t('Both')}</option>
+							</select>
+						</label>
+						{#if m.kind === 'wind'}<label class="chk"><input type="checkbox" bind:checked={l.isobars} /> {t('Isobars (air pressure, 2 hPa)')}</label>{/if}
+						<div class="wxscale" style="background:{scaleCss(m.kind)}"></div>
+						<div class="wxaxis small num">{#each SCALES[m.kind] as [v]}<span>{v}</span>{/each}<span>{UNIT[m.kind]}</span></div>
+						<div class="muted small">{t(m.kind === 'wind' ? 'Wind barbs: half = 5 kn, full = 10 kn, flag = 50 kn; the staff points to where the wind comes from.' : m.kind === 'wave' ? 'Arrows: direction the waves travel; colour = significant wave height.' : 'Arrows: direction the current flows; length and colour = speed.')}</div>
+						{#if st?.fetched}<div class="muted small">{t('Model data from {t} ago', { t: ago(st.fetched) })}</div>{/if}
+						{#if wxErrorText(l.id)}<div class="err small">{wxErrorText(l.id)}</div>{/if}
 					</div>
 				{/if}
 			</div>
@@ -291,4 +404,9 @@
 	.cache { display: flex; flex-direction: column; gap: 4px; }
 	.filebtn { display: inline-flex; gap: 6px; align-items: center; align-self: flex-start; background: var(--btn); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
 	.filebtn input { display: none; }
+	.wxscale { height: 10px; border-radius: 3px; }
+	.fav { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; padding: 0; color: var(--muted); cursor: pointer; }
+	.fav.faved { color: #f2b705; }
+	.fav.faved :global(svg path) { fill: currentColor; }
+	.wxaxis { display: flex; justify-content: space-between; color: var(--muted); }
 </style>
