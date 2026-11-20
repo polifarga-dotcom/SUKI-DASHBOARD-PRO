@@ -1,0 +1,13 @@
+[Unit]
+Description=SUKI Cortex-Bridge (Vesper Cortex AIS-Alarme lesend → Node-RED, 127.0.0.1:8095)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=admin
+ExecStart=/usr/bin/node /home/admin/cortex-bridge/cortex-bridge.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
