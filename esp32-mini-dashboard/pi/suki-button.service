@@ -1,0 +1,13 @@
+[Unit]
+Description=SUKI Funk-Taster (Shelly BLU Button über Bluetooth → Node-RED)
+After=bluetooth.target network-online.target
+Wants=bluetooth.target
+
+[Service]
+User=admin
+ExecStart=/usr/local/bin/suki-button
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
