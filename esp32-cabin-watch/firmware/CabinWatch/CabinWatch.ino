@@ -108,6 +108,7 @@ struct Cabin {
   bool hasBoff; int16_t boff[2]; int16_t track[60][2]; uint8_t nTrack;
   char wSt[8]; float wKn, wMax, wThr; char wSrc[6]; int wWin; float hist[60]; uint8_t nHist;
   char bSt[8]; float soc; char rSt[8]; float hpa, baroD;
+  bool hasW, wSoon; char wNow[24], wNx[24], wAt[6];   // Wachplan (nur Anzeige)
 };
 static Cabin cab, rx;
 static SemaphoreHandle_t mtx;
@@ -116,6 +117,9 @@ static volatile bool wifiUp = false;
 static volatile uint32_t epochBase = 0, epochMs = 0;
 static volatile int tzOffMin = 0;
 static volatile bool ackRequested = false, anchorUpRequested = false;
+// Diagnose Seitenwechsel: letzter Wechsel (Ursache, von-nach, Uptime, Druckdauer, Samples) + verworfene Kurz-Berührungen
+static char pgLog[40] = "";
+static uint32_t ghostCnt = 0, ackMs = 0;
 static volatile int aupResult = 0;   // 0 nichts, 1 ok, -1 Fehler
 static uint32_t aupArmedMs = 0, aupMsgUntil = 0;
 
@@ -182,6 +186,8 @@ static void parseCabin(const char* body, size_t len) {
   for (JsonVariantConst v : w["hist"].as<JsonArrayConst>()) if (n.nHist < 60) n.hist[n.nHist++] = v | 0.0f;
   cpy(n.bSt, sizeof(n.bSt), doc["batt"]["st"]); n.soc = num(doc["batt"]["soc"]);
   cpy(n.rSt, sizeof(n.rSt), doc["baro"]["st"]); n.hpa = num(doc["baro"]["hpa"]); n.baroD = num(doc["baro"]["d"]);
+  JsonObjectConst wp = doc["wp"];
+  if (!wp.isNull()) { n.hasW = true; n.wSoon = wp["soon"] | false; cpy(n.wNow, sizeof(n.wNow), wp["now"]); cpy(n.wNx, sizeof(n.wNx), wp["nx"]); cpy(n.wAt, sizeof(n.wAt), wp["at"]); }
   // Uhr: Epoche + Zeitzonen-Versatz aus "time" (lokal) vs. "utc" → läuft auch ohne Daten weiter
   uint32_t ts = doc["ts"] | 0;
   int lh, lm, uh, um;
@@ -215,7 +221,7 @@ static int post(const char* path, uint32_t timeout) {
 
 static void netTask(void*) {
   // Laufzeit + Neustart-Grund mitmelden (Diagnose: unerwartete Neustarts)
-  sw::syncExtra = []() -> String { return ota::syncExtra() + "&up=" + String(millis() / 1000) + "&rst=" + String((int)esp_reset_reason()); };
+  sw::syncExtra = []() -> String { return ota::syncExtra() + "&up=" + String(millis() / 1000) + "&rst=" + String((int)esp_reset_reason()) + "&pg=" + pgLog + "&gh=" + String(ghostCnt); };
   sw::syncReply = ota::syncReply;   // Firmware-Version melden, Update-Angebot lesen
   sw::begin("cabin", "SUKI-CabinWatch");   // WLAN-Verwaltung (SukiWifi.h)
   static char* buf = (char*)heap_caps_malloc(4096, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -537,9 +543,17 @@ static void drawHome(const Cabin& d, bool stale, bool blink) {
     const char* txt = stale ? "NO DATA" : ok ? "ALL OK" : "NOTICE";
     uint32_t c = stale ? P->warn : ok ? P->ok : P->warn;
     fb.fillCircle(318, 30, 6, c); T(txt, 332, 36, &fB17F, c);
-    T(d.date, 318, 70, &fR13F, P->dim);
-    localHM(t, true); sprintf(s, "UTC %s", t);
-    T(s, 318, 98, &fB24F, P->dim);
+    if (d.hasW && !stale && d.wAt[0]) {   // Wachplan statt UTC: wer hat Wache bis wann, darunter der Nächste (gelb 10 min vorher)
+      T(d.date, 318, 58, &fR13F, P->dim);
+      snprintf(s, sizeof(s), "%s til %s", d.wNow[0] ? d.wNow : "-", d.wAt);
+      T(s, 318, 80, fitF(s, 154, {&fB17F, &fB13F, &fR11F}), P->txt);
+      snprintf(s, sizeof(s), "Next: %s", d.wNx[0] ? d.wNx : "-");
+      T(s, 318, 101, fitF(s, 154, {&fB13F, &fR11F}), d.wSoon ? P->warn : P->dim);
+    } else {
+      T(d.date, 318, 70, &fR13F, P->dim);
+      localHM(t, true); sprintf(s, "UTC %s", t);
+      T(s, 318, 98, &fB24F, P->dim);
+    }
   }
   // Anker-Kachel
   const int ax = 8, ay = 118, aw = 228, ah = 172;
@@ -720,7 +734,7 @@ static void applyBrightness() { lcd.setBrightness(map(isNight() ? cfg.briNight :
 
 static void onTap(int x, int y, const Cabin& d, bool stale) {
   if (effBlink(d) && !stale && (page != 2 || y < 42)) {   // jeder Tipp schaltet den Alarm stumm
-    ackKeys = keyStr(d); ackRequested = true; return;
+    ackKeys = keyStr(d); ackRequested = true; ackMs = millis(); return;
   }
   if (page == 3) return;   // Netzwerk-Seite: nur Anzeige
   if (page == 0) { if (x < 240 && y > 118 && y < 292) page = 1; return; }
@@ -811,11 +825,20 @@ void loop() {
   Cabin d;
   xSemaphoreTake(mtx, portMAX_DELAY); memcpy(&d, &cab, sizeof(d)); xSemaphoreGive(mtx);
   bool stale = isStale();
-  if (t && !down) { down = true; sx = lx = tx; sy = ly = ty; }
-  else if (t) { lx = tx; ly = ty; }
+  static uint32_t downMs = 0; static int nS = 0;
+  static char gCause = '-'; static int gDur = 0, gN = 0;
+  int pagePrev = page;
+  if (t && !down) { down = true; sx = lx = tx; sy = ly = ty; downMs = millis(); nS = 1; }
+  else if (t) { lx = tx; ly = ty; nS++; }
+  else if (down && (nS < 3 || millis() - ackMs < 2000)) {
+    // Störimpuls (< 3 gültige Lesungen nach dem Streak-Filter, ~60 ms) oder direkt nach dem Stummschalten: keine Bedienung
+    down = false; ghostCnt++;
+    Serial.printf("touch ignored: %d samples, %lu ms\n", nS, (unsigned long)(millis() - downMs));
+  }
   else if (down) {
     down = false;
     int dx = lx - sx;
+    gDur = millis() - downMs; gN = nS; gCause = abs(dx) > 60 ? 's' : 't';
     if (abs(dx) > 60) { page = (page + (dx < 0 ? 1 : 3)) % 4; pendTap = false; }
     else if (page == 2 || (effBlink(d) && !stale)) onTap(sx, sy, d, stale);   // sofort: Einstellungen, Alarm stumm
     else if (pendTap && millis() - pendMs < 350) {   // Doppeltipp: Tag ↔ Nacht (bei AUTO nur bis zum nächsten Wechsel)
@@ -827,6 +850,10 @@ void loop() {
     dirty = true;
   }
   if (pendTap && millis() - pendMs >= 350) { pendTap = false; onTap(px, py, d, stale); dirty = true; }
+  if (page != pagePrev) {
+    snprintf(pgLog, sizeof(pgLog), "%c%d-%dt%lud%dn%d", gCause, pagePrev, page, (unsigned long)(millis() / 1000), gDur, gN);
+    Serial.printf("page change %s\n", pgLog);
+  }
   if (ackKeys.length() && ackKeys != keyStr(d)) ackKeys = "";   // neue Alarm-Kombination → wieder laut
   if (aupResult) { aupMsgUntil = millis() + 4000; aupResult = 0; dirty = true; }
   { static bool wasAp = false; bool ap = sw::apActive() && !sw::connected();

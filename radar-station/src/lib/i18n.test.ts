@@ -29,7 +29,7 @@ for (const f of files(SRC)) {
 		for (const q of block[1].matchAll(/:\s*'([^']+)'/g)) keys.add(q[1]);
 	// Alarm-Voreinstellungen (label: 'Harbor' }) – Instrumenten-Kürzel (label: 'AWS', name: …) bleiben international
 	for (const q of s.matchAll(/label: '([^']+)' \}/g)) keys.add(q[1]);
-	for (const q of s.matchAll(/\['(?:targets|radar|alarms|settings)', '\w+', '([^']+)'\]/g)) keys.add(q[1]);
+	for (const q of s.matchAll(/\['(?:targets|radar|alarms|watch|settings)', '\w+', '([^']+)'\]/g)) keys.add(q[1]);
 	for (const q of s.matchAll(/\['(?:base|advanced|targets|trails|installation|info)', '([^']+)'\]/g)) keys.add(q[1]);
 }
 

@@ -629,7 +629,7 @@
       <div class="mnote" id="ais-note"></div>
     </div>
     <div class="apanel">
-      <div class="aismodes"><button data-m="anchor">ANCHOR</button><button data-m="cruising">CRUISE</button><button data-m="offshore">OFFSHORE</button></div>
+      <div class="aismodes"><button data-m="anchor">OFF</button><button data-m="cruising">CRUISE</button><button data-m="offshore">OFFSHORE</button></div>
       <div class="aisinfo" id="ais-info"></div>
       <button class="aisack" id="ais-ack" style="display:none">ACKNOWLEDGE ALARM</button>
     </div>
@@ -663,6 +663,10 @@
     <canvas id="rcv" width="800" height="408" style="position:absolute;left:0;top:48px;width:800px;height:408px"></canvas>
   </div>
 
+  <div class="page" id="pW" style="display:none">
+    <canvas id="wcv" width="800" height="408" style="position:absolute;left:0;top:48px;width:800px;height:408px"></canvas>
+  </div>
+
   <div class="page" id="p5" style="display:none">
     <div class="amap"><svg id="amap" viewBox="0 0 476 320"></svg>
       <div class="mbtns"><button id="mz-in">+</button><button id="mz-out">−</button><button id="mz-fit" title="Reset zoom">
@@ -683,7 +687,7 @@
     </div>
   </div>
 
-  <div class="dots"><i id="d1" class="on"></i><i id="d2"></i><i id="d3"></i><i id="d4"></i><i id="d5"></i><i id="d6"></i><i id="d7"></i><i id="d8"></i><i id="d9"></i></div>
+  <div class="dots"><i id="d1" class="on"></i><i id="d2"></i><i id="d3"></i><i id="d4"></i><i id="d5"></i><i id="d6"></i><i id="d7"></i><i id="d8"></i><i id="d9"></i><i id="d10"></i></div>
   <div id="ovl"><div id="ovl-t"></div><div id="ovl-m"></div><div id="ovl-s"></div><button id="ovl-b">ACKNOWLEDGE</button></div>
   <div id="frame"></div>
 </div></div>
@@ -804,7 +808,11 @@ function render() {
   $('stxt').textContent = !s ? 'OFFLINE' : ackd ? 'ACKNOWLEDGED' : status === 'ok' ? 'ALL OK' : status === 'alarm' ? 'ALARM' : 'WARNING';
   $('time').textContent = s ? s.time : '--:--';
   $('off-t').textContent = s ? s.time : '--:--'; $('off-d').textContent = s && s.date ? s.date : ''; $('off-u').textContent = s && s.utc ? 'UTC ' + s.utc : '';
-  $('utc').textContent = s && s.utc ? 'UTC ' + s.utc : '';
+  var wpl = s && s.wplan, ue = $('utc');   // Wachplan statt UTC, wie in der Firmware
+  ue.textContent = wpl && wpl.at ? '' : s && s.utc ? 'UTC ' + s.utc : '';
+  ue.style.cssText = wpl && wpl.at ? 'display:inline-block;vertical-align:middle;line-height:15px' : '';
+  if (wpl && wpl.at) [[(wpl.now || '-') + ' til ' + wpl.at, '#fff'], ['Next: ' + (wpl.nx || '-'), wpl.soon ? '#e8a317' : '#7a7a7a']].forEach(function (l) {
+    var d = document.createElement('div'); d.textContent = l[0]; d.style.color = l[1]; ue.appendChild(d); });
 
   var b = s ? s.batt : { st: 'na' };
 
@@ -859,6 +867,7 @@ function render() {
   renderSos(s ? s.sos : null);
   renderAis(s ? s.ais : null, s);
   renderRadar(s);
+  renderWatchCal(s);
   fitBigValues();
 
   renderOverlay(s, ackd);
@@ -1398,7 +1407,7 @@ function renderAis(a, st) {
   $('aisr').innerHTML = g;
   $('ais-note').textContent = a.own ? a.n + ' targets · range ' + aisRange + ' NM' + (a.alarms ? ' · ' + a.alarms + ' alarm' : '') : 'No own position';
   [].forEach.call(document.querySelectorAll('.aismodes button'), function (b) {
-    b.textContent = { anchor: 'ANCHOR', cruising: 'CRUISE ' + a.cn, offshore: 'OFFSHORE ' + a.on }[b.dataset.m];
+    b.textContent = { anchor: 'OFF', cruising: 'CRUISE ' + a.cn, offshore: 'OFFSHORE ' + a.on }[b.dataset.m];
     b.className = (b.dataset.m === a.mode ? 'on ' : '') + b.dataset.m;
   });
   // rechte Seite: ausgewähltes Ziel oder Liste der nächsten/gefährlichsten
@@ -1497,6 +1506,37 @@ function radarLut(na, nr) {
   return lut;
 }
 function nmTxt(m) { var nm = m / 1852; return nm >= 10 ? Math.round(nm) + ' NM' : nm >= 1 ? (Math.round(nm * 10) / 10) + ' NM' : (Math.round(nm * 100) / 100) + ' NM'; }
+// Wachkalender wie in der Firmware (watchPage): heute + 2 Tage Ortszeit, Linie = jetzt
+function renderWatchCal(s) {
+  if (page !== PG_WATCH) return;
+  var cv = $('wcv'), ctx = cv.getContext('2d'), night = !!(s && s.night), c = s && s.wcal, OY = 48;
+  var GX = 50, GY = 82 - OY, GH = 368, CW = 244, GAP = 6, sc = GH / 1440, grey = night ? '#960000' : '#9a9a9a', line = night ? '#400000' : '#2a2a2a';
+  ctx.clearRect(0, 0, 800, 408); ctx.font = '12px DejaVu Sans, sans-serif';
+  if (!c || !c.ev || !c.ev.length) { ctx.fillStyle = grey; ctx.textAlign = 'center'; ctx.font = '18px DejaVu Sans, sans-serif'; ctx.fillText('NO WATCH PLAN RUNNING', 400, 250 - OY); return; }
+  ctx.textBaseline = 'middle';
+  for (var h = 0; h <= 24; h += 3) {
+    var y = GY + Math.floor(h * 60 * sc);
+    ctx.fillStyle = line; ctx.fillRect(GX, y, 3 * CW + 2 * GAP, 1);
+    if (h < 24) { ctx.fillStyle = grey; ctx.textAlign = 'right'; ctx.fillText(('0' + h).slice(-2), GX - 8, y + 1); }
+  }
+  ctx.textAlign = 'center';
+  for (var d = 0; d < 3; d++) { ctx.fillStyle = d ? grey : (night ? '#c00000' : '#fff'); ctx.fillText(c.days[d] || '', GX + d * (CW + GAP) + CW / 2, 66 - OY); }
+  var lanes = c.lanes || 1, lw = Math.floor(CW / lanes), hm = function (m) { return ('0' + Math.floor(m / 60) % 24).slice(-2) + ':' + ('0' + m % 60).slice(-2); };
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  c.ev.forEach(function (w) {
+    var x = GX + w[0] * (CW + GAP) + w[5] * lw + 1, y = GY + Math.floor(w[1] * sc) + 1, hh = Math.floor((w[2] - w[1]) * sc) - 2;
+    if (hh < 2) return;
+    ctx.fillStyle = night ? line : w[3]; ctx.fillRect(x, y, lw - 2, hh);
+    if (hh < 15) return;
+    ctx.save(); ctx.beginPath(); ctx.rect(x + 4, y, lw - 10, hh); ctx.clip();
+    var rs = function (m) { return m == null || m < 0 ? '?' : Math.floor(m / 60) + 'h' + (m % 60 ? ('0' + m % 60).slice(-2) : ''); };
+    ctx.fillStyle = night ? '#c00000' : '#000'; ctx.fillText(w[4] + '  ' + hm(w[1]) + '-' + hm(w[2]), x + 4, y + 2);
+    if (hh >= 44) { ctx.fillText('from ' + rs(w[6]) + ' rest', x + 4, y + 16); ctx.fillText('then ' + rs(w[7]) + ' rest', x + 4, y + 30); }
+    else if (hh >= 30) ctx.fillText('from ' + rs(w[6]) + ', then ' + rs(w[7]) + ' rest', x + 4, y + 16);
+    ctx.restore();
+  });
+  if (c.nowMin >= 0 && c.nowMin < 1440) { ctx.fillStyle = night ? '#700000' : '#d7262d'; ctx.fillRect(GX - 4, GY + Math.floor(c.nowMin * sc) - 1, CW + 4, 3); }
+}
 function renderRadar(s) {
   if (page !== PG_RADAR) return;
   var cv = $('rcv'), ctx = cv.getContext('2d'), night = !!document.querySelector('.night');
@@ -1642,8 +1682,8 @@ function renderEnergy(e) {
 // ── Screens: wischen, Pfeiltasten oder Punkte; neuer Alarm → zurück zu Screen 1 ──
 var page = 1, wasBlink = false, swX = null, swiped = false;
 // Reihenfolge der Screens: Übersicht, Energy Flow, Tanks, Wetter, Motor, Segeln, Anker, AIS, SOS (VHF-Notruf)
-var PAGES = ['p1', 'p2', 'p3', 'p4', 'p6', 'pA', 'pR', 'p5', 'pS'], NP = PAGES.length, PG_WEATHER = 3, PG_ENGINE = 4, PG_SAIL = 5, PG_AIS = 6, PG_RADAR = 7, PG_ANCHOR = 8, PG_SOS = 9;
-var PNAMES = ['SUKI', 'ENERGY', 'WEATHER', 'ENGINE', 'SAILSTEER', 'AIS', 'RADAR', 'ANCHOR', 'EMERGENCY'];
+var PAGES = ['p1', 'p2', 'p3', 'p4', 'p6', 'pA', 'pR', 'p5', 'pW', 'pS'], NP = PAGES.length, PG_WEATHER = 3, PG_ENGINE = 4, PG_SAIL = 5, PG_AIS = 6, PG_RADAR = 7, PG_ANCHOR = 8, PG_WATCH = 9, PG_SOS = 10;
+var PNAMES = ['SUKI', 'ENERGY', 'WEATHER', 'ENGINE', 'SAILSTEER', 'AIS', 'RADAR', 'ANCHOR', 'WATCH', 'EMERGENCY'];
 function showPage(n) {
   page = n;
   if (PNAMES[n - 1]) $('pname').textContent = PNAMES[n - 1];
@@ -1653,6 +1693,7 @@ function showPage(n) {
   });
   if (n === PG_ANCHOR) ancMapShow();
   if (n === PG_RADAR) { radarFetch(); renderRadar(S); }
+  if (n === PG_WATCH) renderWatchCal(S);
 }
 $('scr').addEventListener('pointerdown', function (e) { swX = e.clientX; swiped = false; });
 $('scr').addEventListener('pointerup', function (e) {
@@ -1665,6 +1706,7 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'ArrowRight') showPage(Math.min(NP, page + 1)); else if (e.key === 'ArrowLeft') showPage(Math.max(1, page - 1));
 });
 $('d1').parentNode.addEventListener('click', function (e) { e.stopPropagation(); showPage(page % NP + 1); });
+$('utc').addEventListener('click', function (e) { if (S && S.wplan && S.wplan.at) { e.stopPropagation(); showPage(PG_WATCH); } });   // Tipp auf die Wachzeile → Kalender
 setInterval(function () {
   var b = !!(S && S.blink);
   var ak = (S && S.alarmKeys) || [], only = function (p) { return ak.length && ak.every(function (k) { return k.indexOf(p) === 0; }); };

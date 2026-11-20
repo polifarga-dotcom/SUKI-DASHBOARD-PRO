@@ -435,13 +435,31 @@ try { flow.set('cfg', JSON.parse(msg.payload)); node.status({ fill: 'green', tex
 catch (e) { node.status({ fill: 'yellow', text: 'Defaults' }); }
 return null;""", 600, 340)
 
+# ── Wachplan (nur lesend; geändert wird er nur in der Radar-App, chart-proxy auf dem Pi) ──
+inject('Wachplan-Poll', 150, 1740, 'Wachplan GET', 30, [str_prop('topic', 'watchplan')])
+add('Wachplan GET', 'http request', 360, 1740, [['Wachplan speichern']], method='GET', ret='obj',
+    paytoqs='ignore', url='http://127.0.0.1:8091/tiles/api/watch/now', tls='', persist=False, proxy='', insecureHTTPParser=False,
+    authType='', senderr=False, headers=[], requestTimeout=3000)
+fn('Wachplan speichern', """\
+if (msg.statusCode === 200 && msg.payload && typeof msg.payload === 'object') flow.set('watchplan', { data: msg.payload, t: Date.now() });
+return null;""", 560, 1740)
+
+# ── Vesper Cortex (nur lesend, über den Pi-Dienst cortex-bridge) ─────────────
+inject('Cortex-Poll', 150, 1700, 'Cortex GET', 2, [str_prop('topic', 'cortex')])
+add('Cortex GET', 'http request', 360, 1700, [['Cortex speichern']], method='GET', ret='obj',
+    paytoqs='ignore', url='http://127.0.0.1:8095/state', tls='', persist=False, proxy='', insecureHTTPParser=False,
+    authType='', senderr=False, headers=[], requestTimeout=1500)
+fn('Cortex speichern', """\
+if (msg.statusCode === 200 && msg.payload && typeof msg.payload === 'object') flow.set('cortex', { data: msg.payload, t: Date.now() });
+return null;""", 560, 1700)
+
 CONFIG_FN = """\
 // GET → { config, batteries } | POST → validieren, speichern, Datei schreiben
 const DEF = { windAlarmOn: true, windAlarmKn: 25, windHystKn: 2, windSource: 'auto', windAvgSec: 10, windWinMin: 2,
     battAlarmOn: true, battLowSoc: 30, battHystSoc: 3, battLowVolt: 0, battInstance: 'auto',
     waterAlarmOn: true, waterLowPct: 15, waterHystPct: 3, waterInstance: 'auto',
     baroAlarmOn: true, baroLowHpa: 995, baroHystHpa: 1, baroWinMin: 2,
-    aisMode: 'cruising', aisCruiseNm: 0.5, aisOffshoreNm: 2, aisTcpaMin: 20, aisRangeNm: 2,
+    aisMode: 'cruising', aisCruiseNm: 0.5, aisOffshoreNm: 2, aisTcpaMin: 20, aisRangeNm: 2, aisSource: 'suki',
     sailStyle: 'tacho', sailCloseFrom: 30, sailCloseTo: 50, sosPob: 2, sosDesc: 'sailing trimaran, 14 metres',
     bwSwap: false, bwWarnPct: 75, bwHighPct: 90, fuelWarnPct: 20, fuelLowPct: 10,
     dayInstance: 'auto', dayAlarmOn: true, dayWarnPct: 30, dayLowPct: 15, dayHystPct: 3,
@@ -452,7 +470,7 @@ const DEF = { windAlarmOn: true, windAlarmKn: 25, windHystKn: 2, windSource: 'au
     anchorAlarmOn: true, anchorLocalFallback: true, stormAlarmOn: true, ackMinutes: 5, staleSec: 30, testUntil: 0, night: false, nightAuto: false,
     soundOn: true, soundNight: 'short', radarSel: 'A' };
 const RANGE = { windWinMin: [1, 360], windAlarmKn: [5, 80], windHystKn: [0, 10], windAvgSec: [2, 120], battLowSoc: [5, 95],
-    battHystSoc: [0, 20], battLowVolt: [0, 60], waterLowPct: [0, 95], waterHystPct: [0, 20], baroLowHpa: [900, 1050], baroHystHpa: [0, 10], baroWinMin: [1, 360], sosPob: [1, 30], aisCruiseNm: [0.1, 5], aisOffshoreNm: [0.2, 10], aisTcpaMin: [1, 120], aisRangeNm: [0.25, 24], sailCloseFrom: [0, 90], sailCloseTo: [0, 120], bwWarnPct: [10, 100], bwHighPct: [10, 100], fuelWarnPct: [0, 90], fuelLowPct: [0, 90], dayWarnPct: [0, 95], dayLowPct: [0, 95], dayHystPct: [0, 20], rigWarnT: [0.5, 20], rigAlarmT: [0.5, 25], rigHystT: [0, 2], rigScaleT: [1, 30], engTempWarnC: [40, 130], engTempAlarmC: [40, 130], engTempHystC: [0, 10], engMaxRpm: [1000, 6000], engRedRpm: [500, 6000], engGreenFrom: [0, 6000], engGreenTo: [0, 6000], ackMinutes: [1, 120], staleSec: [5, 300], planLph: [0.5, 50], planSog: [1, 20], svcInt: [10, 2000], svcAt: [0, 100000], briDay: [10, 100], briNight: [10, 100] };
+    battHystSoc: [0, 20], battLowVolt: [0, 60], waterLowPct: [0, 95], waterHystPct: [0, 20], baroLowHpa: [900, 1050], baroHystHpa: [0, 10], baroWinMin: [1, 360], sosPob: [1, 30], aisCruiseNm: [0.05, 5], aisOffshoreNm: [0.2, 10], aisTcpaMin: [1, 120], aisRangeNm: [0.25, 24], sailCloseFrom: [0, 90], sailCloseTo: [0, 120], bwWarnPct: [10, 100], bwHighPct: [10, 100], fuelWarnPct: [0, 90], fuelLowPct: [0, 90], dayWarnPct: [0, 95], dayLowPct: [0, 95], dayHystPct: [0, 20], rigWarnT: [0.5, 20], rigAlarmT: [0.5, 25], rigHystT: [0, 2], rigScaleT: [1, 30], engTempWarnC: [40, 130], engTempAlarmC: [40, 130], engTempHystC: [0, 10], engMaxRpm: [1000, 6000], engRedRpm: [500, 6000], engGreenFrom: [0, 6000], engGreenTo: [0, 6000], ackMinutes: [1, 120], staleSec: [5, 300], planLph: [0.5, 50], planSog: [1, 20], svcInt: [10, 2000], svcAt: [0, 100000], briDay: [10, 100], briNight: [10, 100] };
 const BOOL = ['night', 'nightAuto', 'soundOn', 'baroAlarmOn', 'rigAlarmOn', 'bwSwap', 'engTempAlarmOn', 'fuelUseSensor', 'windAlarmOn', 'battAlarmOn', 'waterAlarmOn', 'anchorAlarmOn', 'anchorLocalFallback', 'stormAlarmOn', 'dayAlarmOn'];
 const cfg = Object.assign({}, DEF, flow.get('cfg') || {});
 
@@ -471,6 +489,7 @@ if (msg.req.method === 'POST') {
     if (['full', 'short', 'off'].indexOf(b.soundNight) >= 0) cfg.soundNight = b.soundNight;
     if (['tacho', 'classic'].indexOf(b.sailStyle) >= 0) cfg.sailStyle = b.sailStyle;
     if (['anchor', 'cruising', 'offshore'].indexOf(b.aisMode) >= 0) cfg.aisMode = b.aisMode;
+    if (['suki', 'cortex'].indexOf(b.aisSource) >= 0) cfg.aisSource = b.aisSource;
     if (['A', 'B'].indexOf(b.radarSel) >= 0) cfg.radarSel = b.radarSel;
     if (typeof b.battInstance === 'string' && /^[\\w-]{1,20}$/.test(b.battInstance)) cfg.battInstance = b.battInstance;
     if (typeof b.sosDesc === 'string') cfg.sosDesc = b.sosDesc.replace(/[^\\w ,.\\-\\/]/g, '').slice(0, 40);
@@ -639,7 +658,8 @@ fn('State', """\
 const st = flow.get('state');
 // ?ais=0: Display ist nicht auf dem AIS-Screen → Zielliste weglassen (spart ~7,5 KB je Abruf; Alarme bleiben über alarmKeys)
 if (st && msg.req && msg.req.query && msg.req.query.ais === '0' && st.ais) {
-    msg.payload = Object.assign({}, st, { ais: Object.assign({}, st.ais, { targets: [] }) });
+    // Wachkalender nur mit ?cal=1 (Kalender-Screen) mitsenden
+    msg.payload = Object.assign({}, st, { ais: Object.assign({}, st.ais, { targets: [] }) }, msg.req.query.cal === '1' ? {} : { wcal: null });
     return msg;
 }
 msg.payload = st || { v: 1, status: 'warn', blink: false, msg: 'Starting ...',
@@ -662,6 +682,7 @@ msg.payload = {
     wind: { st: w.st, kn: w.kn, max: w.max, thr: w.thr, src: w.src || 'AWS', win: w.win, hist: (w.hist || []).slice(-60) },
     batt: { st: (s.batt || {}).st, soc: (s.batt || {}).soc },
     baro: { st: (s.baro || {}).st, hpa: (s.baro || {}).hpa, d: (s.baro || {}).d },
+    wp: s.wplan || null,
 };
 return msg;""", 360, 550, [['cabin antwort']])
 http_out('cabin antwort', 560, 550, {'Cache-Control': 'no-store'})

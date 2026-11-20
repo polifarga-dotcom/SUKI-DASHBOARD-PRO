@@ -9,7 +9,7 @@ const DEF = {
     battAlarmOn: true, battLowSoc: 30, battHystSoc: 3, battLowVolt: 0, battInstance: 'auto',
     waterAlarmOn: true, waterLowPct: 15, waterHystPct: 3, waterInstance: 'auto',
     sailStyle: 'tacho', sailCloseFrom: 30, sailCloseTo: 50,
-    aisMode: 'cruising', aisCruiseNm: 0.5, aisOffshoreNm: 2, aisTcpaMin: 20, aisRangeNm: 2,
+    aisMode: 'cruising', aisCruiseNm: 0.5, aisOffshoreNm: 2, aisTcpaMin: 20, aisRangeNm: 2, aisSource: 'suki',
     sosPob: 2, sosDesc: 'sailing trimaran, 14 metres',
     bwSwap: false, bwWarnPct: 75, bwHighPct: 90, fuelWarnPct: 20, fuelLowPct: 10,
     dayInstance: 'auto', dayAlarmOn: true, dayWarnPct: 30, dayLowPct: 15, dayHystPct: 3,
@@ -747,9 +747,22 @@ const NM = 1852;
 const aisTab = flow.get('ais') || {};
 const ownCogL = skN && skN.data && leaf(skN.data.courseOverGroundTrue);
 const ownCog = ownCogL && isNum(ownCogL.value) && ageS(ownCogL.timestamp) < 60 ? ownCogL.value : 0;
-const ownSog = sogLeaf && isNum(sogLeaf.value) && ageS(sogLeaf.timestamp) < cfg.staleSec ? sogLeaf.value : 0;
+const ownSogRaw = sogLeaf && isNum(sogLeaf.value) && ageS(sogLeaf.timestamp) < cfg.staleSec ? sogLeaf.value : 0;
+// unter 0,5 kn = stillstehend (GPS-Rauschen); liegen wir selbst still, gelten Ziele erst ab 1,5 kn als fahrend
+// (festgemachte Klasse-B-Geräte rauschen im Hafen bis ~1 kn und erzeugen sonst Schein-CPAs) – wie in der Radar-App
+const ownSog = ownSogRaw * MS2KN < 0.5 ? 0 : ownSogRaw;
+const tgtMinKn = ownSog ? 0.5 : 1.5;
 const aisThrNm = cfg.aisMode === 'offshore' ? cfg.aisOffshoreNm : cfg.aisMode === 'cruising' ? cfg.aisCruiseNm : null;
+// Alarmquelle: SUKI (eigene Rechnung) oder Cortex (dessen Alarmflags, Profil am Cortex); Cortex > 30 s stumm → SUKI-Rechnung
+const cxWant = cfg.aisSource === 'cortex';
+const cxRaw = flow.get('cortex');
+const cx = cxWant && cxRaw && now - cxRaw.t < 30000 && cxRaw.data && cxRaw.data.ok ? cxRaw.data : null;
+const cxAlarm = {};
+if (cx) for (const t of cx.targets || []) if ((t.cpaA || t.guardA || t.proxA) && !t.lost) cxAlarm[t.m] = t;
+if (cxWant && !cx) warns.push('Cortex offline - SUKI AIS alarm active');
 const ais = { mode: cfg.aisMode, thr: aisThrNm, cn: cfg.aisCruiseNm, on: cfg.aisOffshoreNm, own: !!posOk, targets: [], n: 0, alarms: 0 };
+ais.src = cx ? 'cortex' : 'suki';
+ais.cortex = cxWant ? { ok: !!cx, profile: cx && cx.profile ? cx.profile.name : null } : null;
 if (posOk) {
     const la0 = pos.value.latitude, lo0 = pos.value.longitude, mLon = 111320 * Math.cos(la0 * toR);
     const vo = [Math.sin(ownCog) * ownSog, Math.cos(ownCog) * ownSog];   // eigene Geschwindigkeit (Ost, Nord) m/s
@@ -762,21 +775,24 @@ if (posOk) {
         const e = (t.lon - lo0) * mLon, n = (t.lat - la0) * 111320;
         const dist = Math.sqrt(e * e + n * n);
         if (dist > 24 * NM) continue;
-        const ts = isNum(t.sog) ? t.sog : 0, tc = isNum(t.cog) ? t.cog : 0;
+        const tc = isNum(t.cog) ? t.cog : 0;
+        const ts = isNum(t.sog) && isNum(t.cog) && t.sog * MS2KN >= tgtMinKn ? t.sog : 0;
         const rv = [Math.sin(tc) * ts - vo[0], Math.cos(tc) * ts - vo[1]];   // relative Geschwindigkeit
         const v2 = rv[0] * rv[0] + rv[1] * rv[1];
         let tcpa = v2 > 1e-4 ? -(e * rv[0] + n * rv[1]) / v2 : 0;      // s
         const cpa = tcpa > 0 ? Math.hypot(e + rv[0] * tcpa, n + rv[1] * tcpa) : dist;
         if (tcpa < 0) tcpa = 0;
-        const stale = age > 600;
+        const stale = age > 360;                                        // > 6 min ohne Position: kein Alarm (Radar-App: Ziel verloren)
+        const fixed = /^(99|00)/.test(String(t.mmsi || ''));            // AtoN/Basisstation: nie Kollisionsalarm
         let st = 'ok';
-        if (aisThrNm != null && !stale) {
+        if (cx) { if (cxAlarm[String(t.mmsi || '')]) st = 'alarm'; }
+        else if (aisThrNm != null && !stale && !fixed) {
             const thrM = aisThrNm * NM, tWin = cfg.aisTcpaMin * 60;
             if (cpa < thrM && tcpa > 0 && tcpa < tWin) st = 'alarm';
             else if (cpa < thrM * 2 && tcpa > 0 && tcpa < tWin * 2) st = 'warn';
         }
         list.push({ m: String(t.mmsi || ''), nm: t.name || '', e: Math.round(e), n: Math.round(n),
-            cog: Math.round(tc * 180 / Math.PI), sog: r1(ts * MS2KN), hdg: isNum(t.hdg) ? Math.round(t.hdg * 180 / Math.PI) : null,
+            cog: Math.round(tc * 180 / Math.PI), sog: r1((isNum(t.sog) ? t.sog : 0) * MS2KN), hdg: isNum(t.hdg) ? Math.round(t.hdg * 180 / Math.PI) : null,
             d: Math.round(dist / NM * 100) / 100, b: Math.round(((Math.atan2(e, n) / toR) + 360) % 360),
             cpa: Math.round(cpa / NM * 100) / 100, tcpa: tcpa > 0 ? Math.round(tcpa / 6) / 10 : null,
             st, stale, age: Math.round(age), cs: t.cs || '', ty: t.type || '', len: isNum(t.len) ? Math.round(t.len) : null,
@@ -789,11 +805,19 @@ if (posOk) {
     ais.n = list.length;
     ais.targets = list.slice(0, 30);
     for (const t of list) {
-        if (t.st !== 'alarm') continue;
+        if (cx || t.st !== 'alarm') continue;
         ais.alarms++;
         alarms.push({ key: 'ais_' + t.m, text: `AIS ${t.nm || t.m} CPA ${t.cpa.toFixed(2)} NM in ${t.tcpa != null ? Math.round(t.tcpa) : 0} min` });
     }
     ais.ownCog = Math.round(ownCog * 180 / Math.PI); ais.ownSog = r1(ownSog * MS2KN);
+}
+// Cortex-Alarme auch ohne eigene Position und für Ziele, die SignalK nicht kennt (Cortex hat eigenes GPS)
+for (const m of Object.keys(cxAlarm)) {
+    const c = cxAlarm[m];
+    const sk = Object.keys(aisTab).map((k) => aisTab[k]).find((x) => String(x.mmsi || '') === m);
+    const why = c.cpaA ? (c.cpa != null ? `CPA ${c.cpa.toFixed(2)} NM` + (c.tcpa > 0 ? ` in ${Math.round(c.tcpa / 60)} min` : '') : 'CPA') : c.guardA ? 'guard zone' : 'proximity';
+    ais.alarms++;
+    alarms.push({ key: 'ais_' + m, text: `AIS ${(sk && sk.name) || m} ${why} (Cortex ${(cx.profile && cx.profile.name) || ''})` });
 }
 // Heading-up: Bildschirm nach eigenem Heading drehen; ohne Heading COG (nur in Fahrt), sonst Nord oben
 ais.up = hdgDeg != null ? Math.round(hdgDeg) : ownSog * MS2KN > 1 ? Math.round(ownCog * 180 / Math.PI) : null;
@@ -900,6 +924,32 @@ const state = {
     baro: baro,
     anchor: anchor,
     alarmKeys: alarms.map((a) => a.key),
+    ackedKeys: alarms.filter((a) => isAcked(a.key)).map((a) => a.key),
 };
+// Wachplan (Anzeige): wer hat Wache, wer als Nächstes, Wechselzeit; 10 min vorher soon=true (kein Ton)
+const wpc = flow.get('watchplan');
+const wpd = wpc && now - wpc.t < 120000 && wpc.data && wpc.data.on ? wpc.data : null;
+const ascii = (v) => String(v || '').replace(/ß/g, 'ss').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '');   // Display-Schriften nur ASCII
+state.wplan = wpd ? { now: ascii(wpd.now && wpd.now.label), names: ascii(wpd.now && wpd.now.names.join(', ')), nx: ascii(wpd.next && wpd.next.label), at: wpd.at != null ? new Date(wpd.at).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }) : '', min: wpd.inMin, soon: !!wpd.soon } : null;
+// Wachkalender (Mini-Dash-Screen): heute + 2 Tage in Ortszeit, Einträge [Tag, Startmin, Endmin, Farbe, Name, Spur, Pause davor, Pause danach (min, -1 = unbekannt)]
+// shortcut: Tagesgrenzen mit dem Offset von jetzt, an einem Sommerzeit-Umstellungstag 1 h verschoben
+state.wcal = null;
+if (wpd && Array.isArray(wpd.list)) {
+    const loc = new Date(now).toLocaleString('sv-SE', { timeZone: tz });
+    const off = Math.round((Date.parse(loc.replace(' ', 'T') + 'Z') - now) / 6e4) * 6e4;
+    const mid0 = Math.floor((now + off) / 864e5) * 864e5 - off;
+    const days = [], ev = [];
+    let lanes = 1;
+    for (let d = 0; d < 3; d++) {
+        const a = mid0 + d * 864e5, b = a + 864e5;
+        days.push(new Date(a + off).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short', day: '2-digit' }).toUpperCase().replace(',', ''));
+        for (const w of wpd.list) {
+            if (w.e <= a || w.s >= b || ev.length >= 60) continue;
+            lanes = Math.max(lanes, (w.n || 0) + 1);
+            ev.push([d, Math.round((Math.max(w.s, a) - a) / 6e4), Math.round((Math.min(w.e, b) - a) / 6e4), w.c, ascii(w.l).slice(0, 23), w.n || 0, w.rb == null ? -1 : w.rb, w.ra == null ? -1 : w.ra]);
+        }
+    }
+    state.wcal = { days, lanes, nowMin: Math.round((now - mid0) / 6e4), ev };
+}
 flow.set('state', state);
 return null;

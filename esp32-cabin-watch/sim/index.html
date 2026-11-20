@@ -62,6 +62,7 @@ function toCabin(s) {
     wind: { st: w.st, kn: w.kn, max: w.max, thr: w.thr, src: w.src || 'AWS', win: w.win, hist: (w.hist || []).slice(-60) },
     batt: { st: (s.batt || {}).st, soc: (s.batt || {}).soc },
     baro: { st: (s.baro || {}).st, hpa: (s.baro || {}).hpa, d: (s.baro || {}).d },
+    wp: s.wplan || null,
   };
 }
 
@@ -218,8 +219,16 @@ function drawHome(d) {
     const txt = d.stale ? 'NO DATA' : ok ? 'ALL OK' : 'NOTICE';
     const col = d.stale ? p.warn : ok ? p.ok : p.warn;
     circle(318, 30, 6, null, 0, col); T(txt, 332, 35, 15, col);
-    T(d.date || '', 318, 70, 16, p.dim, 'left', 400);
-    T('UTC ' + (d.utc || '--:--'), 318, 98, 20, p.dim, 'left', 700);
+    const wp = d.wp;   // Wachplan statt UTC, darunter der Nächste — wie in der Firmware
+    if (wp && wp.at && !d.stale) {
+      T(d.date || '', 318, 58, 16, p.dim, 'left', 400);
+      const ws = (wp.now || '-') + ' til ' + wp.at, nx = 'Next: ' + (wp.nx || '-');
+      T(ws, 318, 80, fit(ws, 154, 17, 11), p.txt, 'left', 700);
+      T(nx, 318, 101, fit(nx, 154, 13, 11), wp.soon ? p.warn : p.dim, 'left', 700);
+    } else {
+      T(d.date || '', 318, 70, 16, p.dim, 'left', 400);
+      T('UTC ' + (d.utc || '--:--'), 318, 98, 20, p.dim, 'left', 700);
+    }
   }
   // Anchor tile
   const a = d.anc, ax = 8, ay = 118, aw = 228, ah = 172, aAl = a.st === 'alarm' && !d.stale;

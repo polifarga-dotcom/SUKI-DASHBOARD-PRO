@@ -6,7 +6,7 @@ export type Motion = 'center' | 'lookahead' | 'custom';
 export type Theme = 'day' | 'dusk' | 'night';
 export type Palette = 'multicolor' | 'yellow' | 'green';
 export type VectorMode = 'true' | 'relative';
-export type AlarmPreset = 'harbor' | 'coastal' | 'offshore' | 'custom';
+export type AlarmPreset = 'harbor' | 'coastal' | 'offshore' | 'custom' | 'off';
 export type Lang = 'en' | 'de';
 
 export interface GuardZone {
@@ -56,7 +56,7 @@ export interface Settings {
 	aisGuard: boolean; // AIS-Ziele in Guard Zones alarmieren
 	sim: boolean;
 	sidePanel: boolean;
-	sideTab: 'instruments' | 'targets' | 'radar' | 'layers' | 'alarms' | 'settings';
+	sideTab: 'instruments' | 'targets' | 'radar' | 'layers' | 'alarms' | 'watch' | 'settings';
 	/** Instrumenten-Tab: angezeigte Boxen (Reihenfolge) und SailSteer */
 	instBoxes: string[];
 	sailsteer: boolean;
@@ -69,14 +69,25 @@ export interface Settings {
 	shallowAlarm: number;
 	/** Wachalarm: Bestätigung alle n Minuten, 0 = aus */
 	watchMin: number;
+	/** Einbauort der GPS-Antenne relativ zur Radarantenne (m): + voraus, + Steuerbord */
+	gpsFwd: number;
+	gpsStbd: number;
 	/** Wachalarm eingeschaltet (z. B. nur für die Nachtwache) */
 	watchOn: boolean;
 	/** Passage: Startzeit (ms, 0 = keine) und Ziel-Marker */
 	passageStart: number;
 	destId: number | null;
+	/** Wettermodelle: Gebiet um das Schiff (Halbseite in sm) */
+	wxRadius: number;
+	/** Wind-Farbfläche nach Böen statt Mittelwind */
+	wxGustFill: boolean;
+	/** Favoriten (Ebenen-IDs, Wettermodelle und Kartenebenen) und Listen nur mit Favoriten */
+	wxFavs: string[];
+	wxFavOnly: boolean;
+	layerFavOnly: boolean;
 }
 
-export const ALARM_PRESETS: Record<Exclude<AlarmPreset, 'custom'>, { cpa: number; tcpa: number; label: string }> = {
+export const ALARM_PRESETS: Record<Exclude<AlarmPreset, 'custom' | 'off'>, { cpa: number; tcpa: number; label: string }> = {
 	harbor: { cpa: 0.1 * NM, tcpa: 5 * 60, label: 'Harbor' },
 	coastal: { cpa: 0.5 * NM, tcpa: 20 * 60, label: 'Coastal' },
 	offshore: { cpa: 2 * NM, tcpa: 30 * 60, label: 'Offshore' }
@@ -134,8 +145,15 @@ const DEFAULTS: Settings = {
 	shallowAlarm: 0,
 	watchMin: 15,
 	watchOn: false,
+	gpsFwd: 0,
+	gpsStbd: 0,
 	passageStart: 0,
 	destId: null,
+	wxRadius: 100,
+	wxGustFill: false,
+	wxFavs: [],
+	wxFavOnly: false,
+	layerFavOnly: false,
 	instBoxes: ['aws', 'awa', 'tws', 'twd', 'sog', 'stw', 'dpt', 'cog'],
 	sailsteer: true
 };
@@ -175,7 +193,7 @@ $effect.root(() => {
 
 export function applyAlarmPreset(p: AlarmPreset) {
 	settings.alarmPreset = p;
-	if (p !== 'custom') {
+	if (p !== 'custom' && p !== 'off') {
 		settings.cpaLimit = ALARM_PRESETS[p].cpa;
 		settings.tcpaLimit = ALARM_PRESETS[p].tcpa;
 	}

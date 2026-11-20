@@ -103,6 +103,9 @@ struct DashState {
   char time[8] = "--:--", date[16] = "";
   char utc[8] = "";
   char msg[200] = "";
+  char wNow[24] = "", wNx[24] = "", wAt[6] = ""; bool wSoon = false;   // Wachplan (nur Anzeige)
+  struct WEv { uint8_t d, lane; uint16_t a, b, col; int16_t rb, ra; char l[24]; };   // rb/ra = Pause davor/danach (min, -1 unbekannt)     // Wachkalender: Tag 0–2, Minuten ab 00:00 Ortszeit
+  WEv wEv[60]; uint8_t wN = 0, wLanes = 1; int16_t wNowMin = -1; char wDays[3][8] = {"", "", ""};
   char battSt[8] = "na";
   int battSoc = -1, battThr = -1;
   float battV = NAN, battA = NAN;
@@ -259,7 +262,8 @@ static volatile uint32_t radRange = 0, radAge = 0xFFFFFFFF, radRxMs = 0;
 static volatile bool radLive = false, radSelB = false;   // vom Pi: gewählter Bereich sendet / HALO B gewählt
 static volatile int8_t radSelRequest = -1;                // Tipp auf die Statusecke: 0 = A, 1 = B an Node-RED senden
 static uint16_t* radQ = nullptr;   // Viertelkreis-Tabelle: je |dx|,|dy| Richtung im Viertel (obere 8 Bit) + Entfernungsstufe (255 = außerhalb)
-static const uint8_t PAGE_ORDER[] = {1, 2, 3, 4, 5, 6, 9, 7, 8};   // Wisch-Reihenfolge: Radar direkt hinter AIS
+static const uint8_t PAGE_ORDER[] = {1, 2, 3, 4, 5, 6, 9, 7, 10, 8};   // Wisch-Reihenfolge: Radar hinter AIS, Wachkalender hinter Anker
+static const int NPG = sizeof(PAGE_ORDER);
   // unterdrückt Blinken kurz bis zur Bestätigung von Node-RED
 
 // Tag: schwarz/weiß/grün — Nacht: schwarz/rot (Nachtsicht schonen), Alarm blinkt dunkelrot
@@ -407,6 +411,22 @@ static void parseState(const char* body, size_t len) {
   strlcpy(n.utc, doc["utc"] | "", sizeof(n.utc));
   strlcpy(n.date, doc["date"] | "", sizeof(n.date));
   strlcpy(n.msg, doc["msg"] | "", sizeof(n.msg));
+  JsonObject wpl = doc["wplan"];
+  if (!wpl.isNull()) { strlcpy(n.wNow, wpl["now"] | "", sizeof(n.wNow)); strlcpy(n.wNx, wpl["nx"] | "", sizeof(n.wNx)); strlcpy(n.wAt, wpl["at"] | "", sizeof(n.wAt)); n.wSoon = wpl["soon"] | false; }
+  JsonObject wc = doc["wcal"];   // nur auf dem Kalender-Screen (?cal=1)
+  if (!wc.isNull()) {
+    n.wLanes = constrain((int)(wc["lanes"] | 1), 1, 4); n.wNowMin = wc["nowMin"] | -1;
+    for (int i = 0; i < 3; i++) strlcpy(n.wDays[i], wc["days"][i] | "", sizeof(n.wDays[i]));
+    for (JsonVariant v : wc["ev"].as<JsonArray>()) {
+      if (n.wN >= 60) break;
+      JsonArray e = v.as<JsonArray>();
+      auto& w = n.wEv[n.wN++];
+      w.d = constrain((int)(e[0] | 0), 0, 2); w.a = constrain((int)(e[1] | 0), 0, 1440); w.b = constrain((int)(e[2] | 0), 0, 1440);
+      long hx = strtol((e[3] | "#888888") + 1, nullptr, 16);
+      w.col = lgfx::color565((hx >> 16) & 255, (hx >> 8) & 255, hx & 255);
+      strlcpy(w.l, e[4] | "", sizeof(w.l)); w.lane = constrain((int)(e[5] | 0), 0, 3); w.rb = e[6] | -1; w.ra = e[7] | -1;
+    }
+  }
 
   JsonObject b = doc["batt"];
   strlcpy(n.battSt, b["st"] | "na", sizeof(n.battSt));
@@ -814,7 +834,7 @@ static void netTask(void*) {
       static bool init = false;
       if (!init) { http.setReuse(true); http.setConnectTimeout(1500); http.setTimeout(2000); init = true; }
       static char* rx = (char*)heap_caps_malloc(RX_MAX, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-      if (http.begin(dashUrl() + (page == 6 || page == 9 ? "/state" : "/state?ais=0"))) {   // AIS-Zielliste nur auf AIS- und Radar-Screen
+      if (http.begin(dashUrl() + (page == 6 || page == 9 ? "/state" : page == 10 ? "/state?ais=0&cal=1" : "/state?ais=0"))) {   // AIS-Zielliste nur auf AIS- und Radar-Screen
         int code = http.GET();
         if (code == 200) {
           int n = http.getSize();
@@ -2324,7 +2344,7 @@ static void aisPage(const DashState& s, const AisState& a, bool online, bool red
   for (int i = 0; i < 3; i++) {
     int bx = PX + i * 98;
     bool on = online && !strcmp(a.mode, mk[i]);
-    if (i == 0) strcpy(b, "ANCHOR"); else snprintf(b, sizeof(b), "%s %g", i == 1 ? "CRUISE" : "OFFSHORE", i == 1 ? a.cn : a.on);
+    if (i == 0) strcpy(b, "OFF"); else snprintf(b, sizeof(b), "%s %g", i == 1 ? "CRUISE" : "OFFSHORE", i == 1 ? a.cn : a.on);
     uint16_t oc = i == 2 ? C_BLUE : i == 0 ? C_WHITE : C_GREEN;
     uint16_t bc = on ? oc : C_BORDER, tc = on ? oc : C_GREY;
     if (red) bc = tc = C_ONRED;
@@ -2455,6 +2475,42 @@ static void nmText(char* b, size_t n, uint32_t m) {
   else if (nm >= 1) snprintf(b, n, "%.1f NM", nm);
   else snprintf(b, n, "%.2f NM", nm);
 }
+// Wachkalender: heute + 2 Tage in Ortszeit, Blöcke in Team-/Personenfarbe, rote Linie = jetzt (nur Anzeige)
+static void watchPage(const DashState& s, bool online, bool red, uint16_t bg) {
+  const int GX = 50, GY = 82, GH = 368, CW = 244, GAP = 6;
+  const float sc = GH / 1440.0f;
+  if (!online || !s.wN) { centerText(online ? "NO WATCH PLAN RUNNING" : "NO DATA", 400, 250, &fonts::DejaVu18, C_GREY, bg); return; }
+  const bool dim = s.night || red;
+  fb.setFont(&fonts::DejaVu12);
+  for (int h = 0; h <= 24; h += 3) {   // Stundenraster
+    int y = GY + (int)(h * 60 * sc);
+    fb.drawFastHLine(GX, y, 3 * CW + 2 * GAP, C_BORDER);
+    if (h < 24) { char b[4]; snprintf(b, sizeof(b), "%02d", h); fb.setTextDatum(textdatum_t::middle_right); fb.setTextColor(C_GREY, bg); fb.drawString(b, GX - 8, y + 1); }
+  }
+  for (int d = 0; d < 3; d++) centerText(s.wDays[d], GX + d * (CW + GAP) + CW / 2, 66, &fonts::DejaVu12, d ? C_GREY : C_WHITE, bg);
+  for (int i = 0; i < s.wN; i++) {
+    const auto& w = s.wEv[i];
+    const int lw = CW / s.wLanes, x = GX + w.d * (CW + GAP) + w.lane * lw + 1, y = GY + (int)(w.a * sc) + 1, h = (int)((w.b - w.a) * sc) - 2;
+    if (h < 2) continue;
+    const uint16_t fc = dim ? C_BORDER : w.col, tc = dim ? C_WHITE : C_BLACK;
+    fb.fillRect(x, y, lw - 2, h, fc);
+    if (h >= 15) {
+      fbClip(x + 4, y, lw - 10, h);
+      fb.setTextDatum(textdatum_t::top_left); fb.setTextColor(tc, fc);
+      // Zeile 1: Name + Zeit; darunter Pause davor/danach (aus wie viel Ruhe kommt die Wache, wie viel folgt)
+      char t[48], rb[10], ra[10];
+      auto hm = [](char* o, size_t n, int m) { if (m < 0) snprintf(o, n, "?"); else if (m % 60) snprintf(o, n, "%dh%02d", m / 60, m % 60); else snprintf(o, n, "%dh", m / 60); };
+      hm(rb, sizeof(rb), w.rb); hm(ra, sizeof(ra), w.ra);
+      snprintf(t, sizeof(t), "%s  %02d:%02d-%02d:%02d", w.l, w.a / 60, w.a % 60, (w.b / 60) % 24, w.b % 60);
+      fb.drawString(t, x + 4, y + 2);
+      if (h >= 44) { snprintf(t, sizeof(t), "from %s rest", rb); fb.drawString(t, x + 4, y + 16); snprintf(t, sizeof(t), "then %s rest", ra); fb.drawString(t, x + 4, y + 30); }
+      else if (h >= 30) { snprintf(t, sizeof(t), "from %s, then %s rest", rb, ra); fb.drawString(t, x + 4, y + 16); }
+      fbUnclip();
+    }
+  }
+  if (s.wNowMin >= 0 && s.wNowMin < 1440) fb.fillRect(GX - 4, GY + (int)(s.wNowMin * sc) - 1, CW + 4, 3, C_ACC);   // jetzt (Spalte heute)
+}
+
 static void radarPage(const DashState& s, const AisState& a, bool online, uint16_t bg) {
   // Radar über die volle Breite: Kreis so groß wie die Höhe zwischen Kopfleiste und Seitenpunkten, Infos in den Ecken
   const int MY = 48, MH = 408, cx = 400, cy = 252, RR = 200, QW = RR + 1;
@@ -2652,19 +2708,26 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
     { const int ox = 27, oy = 24; thickArc(ox, oy, 9, 310, 590, 3, C_GREY); fbWideLine(ox, oy - 12, ox, oy - 2, 1.4f, C_GREY); }   // Power
     drawAlpha4(LOGO_NEEL, LOGO_NEEL_W, LOGO_NEEL_H, 200, 14, C_WHITE, hb);
     fb.fillRect(300, 14, 2, 20, C_ACC);
-    static const char* PN[] = {"SUKI", "ENERGY", "WEATHER", "ENGINE", "SAILSTEER", "AIS", "ANCHOR", "EMERGENCY", "RADAR"};
+    static const char* PN[] = {"SUKI", "ENERGY", "WEATHER", "ENGINE", "SAILSTEER", "AIS", "ANCHOR", "EMERGENCY", "RADAR", "WATCH"};
     fb.setFont(&fonts::DejaVu12); fb.setTextDatum(textdatum_t::middle_left); fb.setTextColor(C_GREY, hb);
-    fb.drawString(showSettings ? "SETTINGS" : PN[constrain((int)page, 1, 9) - 1], 312, 25);
+    fb.drawString(showSettings ? "SETTINGS" : PN[constrain((int)page, 1, 10) - 1], 312, 25);
     {   // Uhrzeit lokal groß + UTC klein, gemeinsam um x 505 zentriert
       const char* lt = online ? s.time : "--:--";
-      char ut[16] = "";
-      if (online && s.utc[0]) snprintf(ut, sizeof(ut), "UTC %s", s.utc);
+      char ut[48] = "", nx[40] = "";
+      // Wachplan statt UTC: wer hat Wache bis wann, darunter der Nächste (gelb 10 min vor dem Wechsel)
+      bool wpl = online && s.wAt[0];
+      if (wpl) { snprintf(ut, sizeof(ut), "%s til %s", s.wNow[0] ? s.wNow : "-", s.wAt); snprintf(nx, sizeof(nx), "Next: %s", s.wNx[0] ? s.wNx : "-"); }
+      else if (online && s.utc[0]) snprintf(ut, sizeof(ut), "UTC %s", s.utc);
       fb.setFont(&fonts::DejaVu24); int wl = fb.textWidth(lt);
-      fb.setFont(&fonts::DejaVu12); int wu = ut[0] ? fb.textWidth(ut) + 8 : 0;
+      fb.setFont(&fonts::DejaVu12); int wu = ut[0] ? max(fb.textWidth(ut), nx[0] ? fb.textWidth(nx) : 0) + 8 : 0;
       int tx = 505 - (wl + wu) / 2;
       fb.setTextDatum(textdatum_t::baseline_left);
       fb.setFont(&fonts::DejaVu24); fb.setTextColor(C_WHITE, hb); fb.drawString(lt, tx, 34);
-      if (wu) { fb.setFont(&fonts::DejaVu12); fb.setTextColor(C_DIM, hb); fb.drawString(ut, tx + wl + 8, 33); }
+      fb.setFont(&fonts::DejaVu12);
+      if (wpl) {
+        fb.setTextColor(C_WHITE, hb); fb.drawString(ut, tx + wl + 8, 23);
+        fb.setTextColor(s.wSoon ? C_AMBER : C_DIM, hb); fb.drawString(nx, tx + wl + 8, 38);
+      } else if (wu) { fb.setTextColor(C_DIM, hb); fb.drawString(ut, tx + wl + 8, 33); }
     }
     // Status: farbiges Quadrat + Text rechtsbündig (Tipp darauf zeigt eine ausgeblendete Warnung wieder)
     fb.setFont(&fonts::DejaVu18);
@@ -2862,13 +2925,15 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
     aisPage(s, aisR, online, red, bg);
   } else if (page == 9) {
     radarPage(s, aisR, online, bg);
+  } else if (page == 10) {
+    watchPage(s, online, red, bg);
   } else {
     sosPage(s, online, red, bg);
   }
   }
 
   // Alarm-Overlay unten über dem Inhalt (ersetzt die feste Meldungszeile)
-  if (ovlKind && (page <= 5 || page == 9 || showSettings) && bandY + BAND_H > 366 && bandY < 450) {
+  if (ovlKind && (page <= 5 || page >= 9 || showSettings) && bandY + BAND_H > 366 && bandY < 450) {
     const int ox = 60, oy = 366, ow = 680, oh = 84;
     const uint16_t ac = ovlKind == 1 ? C_ACC : C_AMBER, ob = C_HDR;
     fb.fillRect(ox, oy, ow, oh, ob);
@@ -2893,8 +2958,8 @@ static void renderScene(const DashState& s, bool online, bool redPhase) {
   }
   // Seitenpunkte: kleine Quadrate, der aktive Screen als Balken
   if (bandY + BAND_H > 460 && bandY < 472) {
-    int xx = 400 - (8 * 6 + 16 + 8 * 8) / 2;
-    for (int i = 0; i < 9; i++) {   // in Wisch-Reihenfolge
+    int xx = 400 - ((NPG - 1) * 6 + 16 + (NPG - 1) * 8) / 2;
+    for (int i = 0; i < NPG; i++) {   // in Wisch-Reihenfolge
       bool on = page == PAGE_ORDER[i];
       int ww = on ? 16 : 6;
       fb.fillRect(xx, 463, ww, 6, on ? C_WHITE : C_BORDER);
@@ -3052,11 +3117,11 @@ void loop() {
         aupState = AUP_CONFIRM; aupUntil = millis() + 4000;
       }
       dataRev++;
-    } else if (ovlKind == 1 && (page <= 5 || page == 9) && abs(dx) <= 120 && t0y >= 366 && t0y < 450 && t0x >= 60 && t0x < 740) {
+    } else if (ovlKind == 1 && (page <= 5 || page >= 9) && abs(dx) <= 120 && t0y >= 366 && t0y < 450 && t0x >= 60 && t0x < 740) {
       ackRequested = true; localAckMs = millis(); dataRev++;      // Tipp aufs Alarm-Overlay → quittieren
     } else if (abs(dx) > 120 && !showSettings) {
-      int pi = 0; for (int i = 0; i < 9; i++) if (PAGE_ORDER[i] == page) pi = i;   // Wisch-Reihenfolge (Radar hinter AIS)
-      page = PAGE_ORDER[constrain(pi + (dx < 0 ? 1 : -1), 0, 8)];
+      int pi = 0; for (int i = 0; i < NPG; i++) if (PAGE_ORDER[i] == page) pi = i;   // Wisch-Reihenfolge (Radar hinter AIS)
+      page = PAGE_ORDER[constrain(pi + (dx < 0 ? 1 : -1), 0, NPG - 1)];
       dataRev++;  // sofort neu zeichnen
     } else if (page == 9 && !showSettings && abs(dx) <= 120 && t0x >= 580 && t0y >= 52 && t0y < 120) {
       radSelRequest = radSelB ? 0 : 1; radSelB = !radSelB; radLive = false; dataRev++;   // HALO A ↔ B
@@ -3086,12 +3151,15 @@ void loop() {
     } else {
       xSemaphoreTake(sMutex, portMAX_DELAY);
       bool blinking = S.blink || S.stormNote || S.warnAck, night = S.night;   // auch gelbe Gewitterwarnung und quittierbare Warnungen
+      bool hasW = S.wAt[0];   // Wachzeile neben der Uhr sichtbar
       xSemaphoreGive(sMutex);
       if (localNightMs && millis() - localNightMs < 3000) night = localNightVal;
       static uint32_t lastTapMs = 0;   // Doppeltipp auf eine freie Stelle = Tag/Nacht (wie beim Cabin Watch)
       bool dbl = lastTapMs && millis() - lastTapMs < 400;
       lastTapMs = dbl || (t0x >= 142 && t0x < 190 && t0y < 52) ? 0 : millis();
-      if (t0x >= 600 && t0y < 52 && !blinking) {
+      if (hasW && t0x >= 420 && t0x < 640 && t0y < 52 && !blinking && !dbl) {
+        page = 10; showSettings = false; dataRev++;                // Tipp auf die Wachzeile → Wachkalender
+      } else if (t0x >= 640 && t0y < 52 && !blinking) {
         ovlRecall = true; dataRev++;                               // Tipp auf den Status → Warnung wieder einblenden
       } else if ((t0x >= 142 && t0x < 190 && t0y < 52) || (dbl && !blinking)) {
         localNightVal = !night; localNightMs = millis();

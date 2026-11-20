@@ -7,6 +7,7 @@
 	import { evaluateAlarms, alarms, ackAll, ackAlarm, muteFor, watch, confirmWatch, setWatch } from './alarms/alarms.svelte';
 	import { unlockAudio } from './alarms/audio';
 	import { startAlarmSync } from './alarms/alarmsync.svelte';
+	import { startNodeRed, nr } from './data/nodered.svelte';
 	import { startSim } from './sim/simulator';
 	import { tools, addMarker } from './radar/tools.svelte';
 	import { fmtDeg, fmtSpeed, fmtLat, fmtLon, dec } from './lib/geo';
@@ -17,9 +18,17 @@
 	import SettingsTab from './ui/SettingsTab.svelte';
 	import LayersTab from './ui/LayersTab.svelte';
 	import InstrumentsTab from './ui/InstrumentsTab.svelte';
+	import WatchTab from './ui/WatchTab.svelte';
+	import WatchCalendar from './ui/WatchCalendar.svelte';
+	import { wp, startWatchPlan, showTz } from './watch/watch.svelte';
+	import { watchNow, hhmm } from '../pi/chart-proxy/watch.mjs';
 	import Icon from './ui/Icon.svelte';
 	import AlarmBar from './ui/AlarmBar.svelte';
 	import { loadProviders } from './chart/layers.svelte';
+	import { loadWxModels, tickWx, ensureWx } from './chart/weather.svelte';
+	import { ensureAnchorages, loadOwn } from './chart/anchorages.svelte';
+	import { ensureCoast } from './chart/coast.svelte';
+	import { chartCfg } from './chart/layers.svelte';
 	import { t, timeFmt } from './lib/i18n.svelte';
 
 	let clock = $state(new Date());
@@ -34,11 +43,19 @@
 		connectSignalK();
 		connectMayara();
 		loadProviders();
+		loadWxModels();
+		loadOwn();
 		const stopSync = startAlarmSync();
+		const stopNr = startNodeRed();
+		const stopWatch = startWatchPlan();
 		if (settings.sim) setTimeout(startSim, 1500);
 		const t1 = setInterval(() => computeTargets(), 500);
 		const t2 = setInterval(() => {
 			evaluateAlarms();
+			tickWx();
+			if (settings.chart) ensureWx(own.pos, tools.viewBBox); // Position ist nicht tief reaktiv → hier regelmäßig prüfen (billig)
+			if (settings.chart && chartCfg.layers.some((l) => l.id === 'anch' && l.on)) ensureAnchorages(tools.viewBBox);
+			if (settings.chart && chartCfg.layers.some((l) => l.id === 'coast' && l.on)) ensureCoast(tools.viewBBox);
 			clock = new Date();
 		}, 1000);
 		// Kielspur vom Pi
@@ -105,6 +122,8 @@
 			clearInterval(t4);
 			clearInterval(t5);
 			stopSync();
+			stopNr();
+			stopWatch();
 			window.removeEventListener('keydown', onKey);
 			document.removeEventListener('visibilitychange', onVis);
 			window.removeEventListener('pageshow', onVis);
@@ -175,12 +194,16 @@
 		if (d !== prevDual) settings.sidePanel = !d;
 		prevDual = d;
 	});
+	const wNow = $derived(wp.doc ? watchNow(wp.doc, clock.getTime()) : null);
+	const chipAt = $derived(wNow?.at != null ? hhmm(wNow.at, showTz()) : ''); // Ortszeit, Plan in UTC
+	const chipNext = $derived(wNow?.next?.label ?? '');
 	const tabs = [
 		['instruments', 'gauge', 'Instruments'],
 		['targets', 'list', 'Targets'],
 		['radar', 'radar', 'Radar'],
 		['layers', 'layers', 'Layers'],
 		['alarms', 'bell', 'Alarms'],
+		['watch', 'users', 'Watch'],
 		['settings', 'gear', 'Settings']
 	] as const;
 </script>
@@ -203,6 +226,12 @@
 			<span class="pill" class:ok={radar.connected} title={t('Radar server')}>RDR</span>
 			{#if settings.sim}<span class="pill sim">SIM</span>{/if}
 			<span class="num clock">{timeFmt(clock)}</span>
+			{#if wNow?.on}
+				<button class="wchip num" class:soon={wNow.soon} onclick={() => (wp.calendar = true)} title={t('Watch calendar')}>
+					<Icon name="users" size={16} />
+					{#if wNow.soon}{t('Change {t} → {n}', { t: chipAt, n: chipNext })}{:else}{wNow.now?.label || '—'} <span class="muted">{t('until {t}', { t: chipAt })}</span>{/if}
+				</button>
+			{/if}
 			<!-- Wachalarm: Auge schaltet ein; eingeschaltet = Bestätigen mit Countdown + Aus-Knopf -->
 			{#if settings.watchOn}
 				{@const left = Math.round((watch.last + settings.watchMin * 60e3 - clock.getTime()) / 1000)}
@@ -218,6 +247,7 @@
 			<button class:on={settings.chart} onclick={() => (settings.chart = !settings.chart)} title={t('Chart overlay')} aria-label={t('Chart overlay')}><Icon name="map" /></button>
 			{#if radar.list.length > 1}<button class:on={settings.dualRange} onclick={() => (settings.dualRange = !settings.dualRange)} title={t('Dual range')} aria-label={t('Dual range')}><Icon name="split" /></button>{/if}
 			<button class:on={settings.theme === 'night'} onclick={() => (settings.theme = settings.theme === 'night' ? 'dusk' : 'night')} title={t('Night mode (N)')} aria-label={t('Night mode')}><Icon name="moon" /></button>
+			{#if settings.alarmPreset === 'off' && nr.src !== 'cortex'}<button class="aisoff" onclick={() => { settings.sidePanel = true; settings.sideTab = 'alarms'; }} title={t('AIS collision alarms are off – tap to change')}>{t('AIS ALARM OFF')}</button>{/if}
 			<button class="mutebtn" class:muted={!settings.alarmSound} onclick={() => { unlockAudio(); settings.alarmSound = !settings.alarmSound; }} title={settings.alarmSound ? t('Mute all alarm sounds') : t('Switch alarm sounds on')} aria-label={settings.alarmSound ? t('Mute all alarm sounds') : t('Switch alarm sounds on')} aria-pressed={!settings.alarmSound}>
 				<Icon name={settings.alarmSound ? 'volume' : 'volumeOff'} />{#if !settings.alarmSound}<span>{t('MUTED')}</span>{/if}
 			</button>
@@ -254,11 +284,13 @@
 					{:else if settings.sideTab === 'radar'}<RadarTab radarId={settings.radarId} />
 					{:else if settings.sideTab === 'layers'}<LayersTab />
 					{:else if settings.sideTab === 'alarms'}<AlarmsTab />
+					{:else if settings.sideTab === 'watch'}<WatchTab now={clock.getTime()} />
 					{:else}<SettingsTab />{/if}
 				</div>
 			</aside>
 		{/if}
 	</main>
+	{#if wp.calendar}<WatchCalendar now={clock.getTime()} />{/if}
 </div>
 
 <style>
@@ -282,11 +314,15 @@
 	.pill.warn { background: var(--pill-warn); }
 	.pill.sim { background: var(--sim-bg); color: var(--sim-fg); }
 	.clock { margin: 0 6px; color: var(--muted); }
+	.aisoff { background: var(--pill-warn); border-color: var(--pill-warn); color: var(--pill-fg); font-weight: 800; }
 	.watchgrp { display: inline-flex; gap: 2px; }
 	.watchbtn { gap: 6px; font-weight: 700; }
 	.watchbtn.due { background: var(--pill-warn); border-color: var(--pill-warn); color: var(--pill-fg); }
 	.watchbtn.over { background: var(--pill-bad); border-color: var(--pill-bad); color: var(--pill-bad-fg); animation: mutepulse 1s ease-in-out infinite; }
 	.alarmbtn { position: relative; }
+	.wchip { gap: 6px; font-weight: 700; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.wchip.soon { background: var(--pill-warn); border-color: var(--pill-warn); color: var(--pill-fg); }
+	.wchip.soon .muted { color: inherit; }
 	.update { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 12px; }
 	/* Stummschalter: aktiv = auffällig orange und blinkend, damit es nicht vergessen wird */
 	.mutebtn.muted { background: var(--pill-warn); border-color: var(--pill-warn); color: var(--pill-fg); font-weight: 800; animation: mutepulse 1.6s ease-in-out infinite; }
@@ -302,7 +338,7 @@
 	/* Griff am rechten Rand des Radarbereichs: Seitenleiste ein-/ausklappen */
 	.sidetoggle { position: absolute; right: 0; top: 50%; transform: translateY(-50%); z-index: 35; width: 22px; min-height: 64px; padding: 0; border-radius: 8px 0 0 8px; border-right: 0; background: color-mix(in srgb, var(--panel) 85%, transparent); }
 	.side { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 1px solid var(--line); }
-	.tabs { display: grid; grid-template-columns: repeat(6, 1fr); border-bottom: 1px solid var(--line); }
+	.tabs { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--line); }
 	.tabs button { border: 0; border-radius: 0; background: transparent; font-size: 10.5px; padding: 6px 2px 5px; min-height: 48px; border-bottom: 2px solid transparent; flex-direction: column; gap: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
 	.tabs .badge.sm { position: absolute; top: 3px; right: 6px; }
 	.tabs button.on { background: transparent; color: var(--accent); border-bottom-color: var(--accent); }

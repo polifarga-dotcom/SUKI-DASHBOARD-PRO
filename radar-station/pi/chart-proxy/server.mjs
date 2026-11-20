@@ -10,6 +10,9 @@ import { execFile } from 'node:child_process';
 import { PROVIDERS, byId } from './providers.mjs';
 import { tileBBox3857, countTiles, iterTiles } from './tilemath.mjs';
 import { trackStore, trackDistance } from './track.mjs';
+import { WX_MODELS, wxModel, wxStore } from './wx.mjs';
+import { anchStore, cleanOwn, coastQuery, coastConvert } from './anchorages.mjs';
+import { cleanWatch, watchNow, watchList } from './watch.mjs';
 
 const PORT = Number(process.env.PORT ?? 8091);
 const DATA = process.env.CHART_DATA ?? '/home/admin/chart-proxy-data';
@@ -96,8 +99,11 @@ async function googleToken(key) {
 	return j.session;
 }
 
+/** Schlüssel des Anbieters; keyFrom = teilt den Schlüssel eines anderen (z. B. alle Esri-Karten) */
+const keyOf = (p) => keys[p.keyFrom ?? p.id] ?? '';
+
 async function upstreamUrl(p, z, x, y) {
-	const key = keys[p.id] ?? '';
+	const key = keyOf(p);
 	if (p.needsKey && !key) throw Object.assign(new Error('no key'), { code: 412 });
 	const o = opts(p);
 	for (const [k, f] of Object.entries(p.dynamic ?? {})) o[k] = f();
@@ -292,6 +298,12 @@ const pruneTrack = () => trk.prune(trackCfg.days).catch(() => {});
 pruneTrack();
 setInterval(pruneTrack, 6 * 3600e3);
 
+// ── Wettermodelle (Open-Meteo), auf dem Pi gespeichert ──
+const wx = wxStore(path.join(DATA, 'wx'), fetch, path.join(DATA, 'wx-usage.json'));
+const anch = anchStore(path.join(DATA, 'anchorages'));
+const coast = anchStore(path.join(DATA, 'coast'), fetch, coastQuery, coastConvert);
+setInterval(() => wx.prune(3).catch(() => {}), 6 * 3600e3);
+
 function onPosition(lat, lon) {
 	const t = Date.now();
 	lastFix = { t, lat, lon };
@@ -448,7 +460,8 @@ function publicProvider(p) {
 		prefetch: p.prefetch,
 		prefetchMax: p.prefetchMax ?? MAX_JOB_TILES,
 		needsKey: !!p.needsKey,
-		keySet: !!keys[p.id],
+		keySet: !!keyOf(p),
+		keyFrom: p.keyFrom,
 		keyLabel: p.keyLabel,
 		keyUrl: p.keyUrl,
 		attribution: p.attribution,
@@ -456,7 +469,7 @@ function publicProvider(p) {
 		options: p.options ?? {},
 		values: opts(p),
 		// direct-Anbieter: der Browser braucht URL + Key (Bedingungen erlauben keinen Proxy)
-		directUrl: p.mode === 'direct' && keys[p.id] ? p.url.replace('{key}', encodeURIComponent(keys[p.id])) : undefined,
+		directUrl: p.mode === 'direct' && (!p.needsKey || keyOf(p)) ? p.url.replace('{key}', encodeURIComponent(keyOf(p))) : undefined,
 		status: status[p.id] ?? null
 	};
 }
@@ -489,7 +502,7 @@ const server = http.createServer(async (req, res) => {
 		}
 
 		if (parts[0] !== 'api') return json(res, 404, { error: 'not found' });
-		const [, what, a1] = parts;
+		const [, what, a1, a2] = parts;
 
 		if (what === 'providers' && req.method === 'GET') return json(res, 200, PROVIDERS.map(publicProvider));
 
@@ -525,7 +538,7 @@ const server = http.createServer(async (req, res) => {
 			// Schlüssel/Erreichbarkeit prüfen: eine Kachel über Malta holen (ohne Cache)
 			const p = byId(a1);
 			if (!p) return json(res, 404, { error: 'unknown provider' });
-			if (p.mode === 'direct') return json(res, 200, { ok: !!keys[p.id], note: 'direct' });
+			if (p.mode === 'direct') return json(res, 200, { ok: !!keyOf(p), note: 'direct' });
 			try {
 				const r = await fetchUpstream(p, 10, 551, 397);
 				return json(res, 200, { ok: true, bytes: r.buf.length });
@@ -564,7 +577,7 @@ const server = http.createServer(async (req, res) => {
 				const total = countTiles(bbox, z0, z1);
 				const limit = p.prefetchMax ?? MAX_JOB_TILES;
 				if (dryRun || total > limit) return json(res, dryRun ? 200 : 400, { total, zmin: z0, zmax: z1, limit, estMB: Math.round((total * (p.ext === 'png' ? 25 : 30)) / 1024) });
-				if (p.needsKey && !keys[p.id]) return json(res, 412, { error: 'no key' });
+				if (p.needsKey && !keyOf(p)) return json(res, 412, { error: 'no key' });
 				return json(res, 200, startPrefetch(p, bbox, z0, z1));
 			}
 			if (req.method === 'DELETE' && jobs.has(a1)) {
@@ -670,6 +683,85 @@ const server = http.createServer(async (req, res) => {
 			const ids = (u.searchParams.get('ids') ?? '').split(',').filter((x) => byId(x)).slice(0, 12);
 			const out = await Promise.all(ids.map((id) => imageryMeta(id, lat, lon, z)));
 			return json(res, 200, out.filter(Boolean));
+		}
+
+		// Küstenlinie weltweit, grob (Natural Earth 10m, gemeinfrei; einmalig nach DATA kopiert)
+		if (what === 'coast' && a1 === 'ne' && req.method === 'GET') {
+			const buf = await fs.readFile(path.join(DATA, 'coast-ne10.json')).catch(() => null);
+			if (!buf) return json(res, 404, { error: 'coast-ne10.json missing on the Pi' });
+			res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=2592000' });
+			return res.end(buf);
+		}
+
+		if ((what === 'anchorages' || what === 'coast') && req.method === 'GET') {
+			// /tiles/api/anchorages|coast/<lat>/<lon> = 1°-Zelle (SW-Ecke, ganzzahlig)
+			const la = Number(a1), lo = Number(a2);
+			if (!Number.isInteger(la) || !Number.isInteger(lo) || la < -90 || la > 89 || lo < -180 || lo > 179) return json(res, 400, { error: 'bad cell' });
+			try {
+				// Overpass ist oft langsam: nach 20 s „pending“ antworten, der Pi lädt im Hintergrund weiter (nginx wartet nicht ewig)
+				const job = (what === 'coast' ? coast : anch).get(la, lo);
+				job.catch(() => {});
+				const r = await Promise.race([job, new Promise((ok) => setTimeout(() => ok(null), 20e3))]);
+				return json(res, 200, r ?? { pending: true });
+			} catch (e) {
+				return json(res, 502, { error: String(e.message ?? e) });
+			}
+		}
+
+		// Wachplaner: nur die Radar-App ändert (PUT, ganzes Dokument mit rev); MFD/Node-RED lesen /watch/now
+		if (what === 'watchplan') {
+			const cur = await readJson('watchplan.json', null);
+			if (req.method === 'GET') return json(res, 200, cur);
+			if (req.method === 'PUT') {
+				const d = cleanWatch(JSON.parse((await body(req, 2e5)).toString() || '{}'));
+				if (typeof d === 'string') return json(res, 400, { error: d });
+				if (cur && d.rev !== cur.rev) return json(res, 409, { error: 'plan was changed on another device', plan: cur });
+				d.rev = (cur?.rev ?? 0) + 1;
+				await writeJson('watchplan.json', d);
+				return json(res, 200, d);
+			}
+		}
+		if (what === 'watch' && a1 === 'now' && req.method === 'GET') {
+			const cur = await readJson('watchplan.json', null);
+			const t = Date.now(); // list: Kalender auf dem Mini Dash (gestern bis +3 Tage, Ortszeit rechnet Node-RED)
+			return json(res, 200, cur ? { ...watchNow(cur, t), list: watchList(cur, t - 864e5, t + 3 * 864e5) } : { on: false });
+		}
+
+		if (what === 'myanchorages') {
+			// eigene Ankerplätze: GET Liste, PUT = einen anlegen/ändern, DELETE /<id>
+			const list = await readJson('my-anchorages.json', []);
+			if (req.method === 'GET') return json(res, 200, list);
+			if (req.method === 'PUT') {
+				const a = cleanOwn(JSON.parse((await body(req, 1e5)).toString() || '{}'));
+				if (!a) return json(res, 400, { error: 'bad anchorage' });
+				const out = [...list.filter((x) => x.id !== a.id), a];
+				await writeJson('my-anchorages.json', out);
+				return json(res, 200, a);
+			}
+			if (req.method === 'DELETE' && a1) {
+				await writeJson('my-anchorages.json', list.filter((x) => x.id !== a1));
+				return json(res, 200, { ok: true });
+			}
+		}
+
+		if (what === 'wx' && req.method === 'GET') {
+			if (a1 === 'models') return json(res, 200, WX_MODELS);
+			if (a1 === 'usage') return json(res, 200, wx.usage());
+			// /tiles/api/wx?model=ecmwf_ifs&lat=..&lon=..&r=100 (Halbseite in sm)
+			const m = wxModel(u.searchParams.get('model'));
+			const lat = Number(u.searchParams.get('lat'));
+			const lon = Number(u.searchParams.get('lon'));
+			const r = Number(u.searchParams.get('r') ?? 100);
+			if (!m || !(Math.abs(lat) <= 85) || !(Math.abs(lon) <= 180) || !(r >= 10 && r <= 1600)) return json(res, 400, { error: 'bad request' });
+			try {
+				// Warteschlange (Minutenlimit) kann länger dauern als nginx wartet: nach 20 s „pending“, der Pi lädt weiter
+				const job = wx.get(m, lat, lon, r);
+				job.catch(() => {});
+				const f = await Promise.race([job, new Promise((ok) => setTimeout(() => ok(null), 20e3))]);
+				return json(res, 200, f ?? { pending: true, code: 'queued' });
+			} catch (e) {
+				return json(res, e.code === 'quota' ? 429 : e.code === 'outside' ? 404 : 502, { error: String(e.message ?? e), code: e.code ?? 'api', resetAt: e.resetAt ?? null });
+			}
 		}
 
 		if (what === 'status' && req.method === 'GET') return json(res, 200, { status, lastPt, lastFix });

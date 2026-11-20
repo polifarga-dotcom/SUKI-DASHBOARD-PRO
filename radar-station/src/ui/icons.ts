@@ -10,6 +10,7 @@ export const ICONS: Record<string, string> = {
 	volumeOff: 'M11 5 6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6',
 	check: 'M20 6 9 17l-5-5',
 	x: 'M18 6 6 18M6 6l12 12',
+	anchor: 'M12 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 22V8M5 12H2a10 10 0 0 0 20 0h-3M8 11h8',
 	target: 'M12 2v4M12 18v4M2 12h4M18 12h4M12 12m-6 0a6 6 0 1 0 12 0a6 6 0 1 0-12 0',
 	crosshair: 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0M22 12h-4M6 12H2M12 6V2M12 22v-4',
 	ruler: 'M12 12 21 3M12 12m-8 0a8 8 0 1 0 16 0a8 8 0 1 0-16 0',
@@ -36,6 +37,10 @@ export const ICONS: Record<string, string> = {
 	chevronRight: 'M9 18l6-6-6-6',
 	gauge: 'M12 14l4-4M3.3 19a10 10 0 1 1 17.4 0M12 14m-1.5 0a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0',
 	measure: 'M3 17 17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2',
-	home: 'M3 11 12 3l9 8M5 9.5V21h14V9.5',
+	// Eigenschiff-Symbol in Fokusecken: „zurück zum Schiff“
+	recenter: 'M12 6.5l4 10-4-2.5-4 2.5zM3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5',
+	calendar: 'M4 5h16v15H4zM4 10h16M8 3v4M16 3v4',
+	users: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 12 0v1M16 3.5a4 4 0 0 1 0 7M22 21v-1a6 6 0 0 0-4-5.6',
+	star: 'M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9z',
 	pin: 'M12 21s7-6.3 7-12a7 7 0 1 0-14 0c0 5.7 7 12 7 12zM12 9m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0'
 };
