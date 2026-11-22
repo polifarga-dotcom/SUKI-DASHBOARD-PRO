@@ -862,6 +862,19 @@ if (rs && rs.watchOn && rs.watchMin > 0 && now - rs.t < 60000) {
     if (over >= 60000) alarms.push({ key: 'watch@' + rs.lastAt, text: `WATCH CHECK – no confirmation for ${Math.floor((now - rs.lastAt) / 60000)} min` });
 }
 
+// ── Mann über Bord (POST /mob): Alarm bis „geborgen“, Peilung/Abstand von der eigenen Position ──
+const mob = (flow.get('mob') || []).map((m) => {
+    const o = { id: m.id, lat: m.lat, lon: m.lon, t: m.t, by: m.by || '', min: Math.floor((now - m.t) / 60000), nm: null, brg: null };
+    if (posOk) {
+        const la = pos.value.latitude, lo = pos.value.longitude, R = Math.PI / 180;
+        const dy = (m.lat - la) * 60, dx = (m.lon - lo) * 60 * Math.cos(la * R);
+        o.nm = Math.round(Math.hypot(dx, dy) * 100) / 100;
+        o.brg = Math.round(((Math.atan2(dx, dy) / R) + 360) % 360);
+    }
+    return o;
+});
+for (const m of mob) alarms.push({ key: 'mob_' + m.id, text: `MOB ${m.nm != null ? m.nm.toFixed(2) + ' NM ' + String(m.brg).padStart(3, '0') + ' deg' : ''} ${m.min} min ago`.replace(/\s+/g, ' ') });
+
 // ── Test-Alarm ────────────────────────────────────────────────────────────
 if (cfg.testUntil && now < cfg.testUntil) alarms.push({ key: 'test', text: 'TEST ALARM' });
 
@@ -923,6 +936,8 @@ const state = {
     wind: wind,
     baro: baro,
     anchor: anchor,
+    mob: mob,
+    marks: flow.get('mark') || [],
     alarmKeys: alarms.map((a) => a.key),
     ackedKeys: alarms.filter((a) => isAcked(a.key)).map((a) => a.key),
 };

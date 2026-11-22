@@ -20,36 +20,74 @@
   .pill.ok { color: var(--ok); border-color: var(--ok); }
   .pill.bad { color: var(--al); border-color: var(--al); }
   #clock { font-size: 22px; font-variant-numeric: tabular-nums; }
-  a.btn, button { font: inherit; color: var(--tx); background: var(--card); border: 2px solid var(--line); border-radius: 12px; padding: 14px 18px; font-size: 20px; text-decoration: none; text-align: center; cursor: pointer; }
+  a.btn, button { font: inherit; color: var(--tx); background: var(--card); border: 2px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 19px; text-decoration: none; text-align: center; cursor: pointer; }
   button:active, a.btn:active { filter: brightness(1.4); }
-  main { flex: 1; display: flex; flex-wrap: wrap; align-items: flex-start; padding: 7px; overflow: auto; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; }
-  .card > * + * { margin-top: 12px; }
-  .alarms { flex: 2 1 420px; margin: 7px; }
-  .side { flex: 1 1 300px; display: flex; flex-direction: column; margin: 7px; }
-  .side > * + * { margin-top: 14px; }
+  /* passt ohne Scrollen auf den kleinsten Zeus³S (9" = 1280×720); größere Schirme bekommen mehr Kalender */
+  main { flex: 1; display: flex; align-items: stretch; padding: 6px; overflow: hidden; min-height: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; }
+  .card > * + * { margin-top: 8px; }
+  .col { flex: 2 1 0; display: flex; flex-direction: column; margin: 6px; min-width: 0; min-height: 0; }
+  .col > * + * { margin-top: 12px; }
+  .ahead { display: flex; align-items: center; }
+  .ahead > :first-child { flex: 1; min-width: 0; }
+  .ahead > * + * { margin-left: 14px; }
+  /* Wachkalender: je Tag eine Zeile 00–24 h, Schichten als Zellen nebeneinander (Breite = Dauer) */
+  .cal { flex: 1; min-height: 0; }
+  #tl { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .ax { display: flex; height: 20px; flex: none; }
+  .ax .b { position: relative; flex: 1; }
+  .ax span { position: absolute; top: 0; font-size: 13px; color: var(--mut); transform: translateX(-50%); }
+  .tr { flex: 1; display: flex; min-height: 0; margin-top: 6px; }
+  .tr .d { width: 104px; flex: none; padding-right: 6px; font-size: 13px; color: var(--mut); font-weight: 600; letter-spacing: 1px; display: flex; flex-direction: column; justify-content: center; }
+  .tr .d b { color: var(--tx); font-size: 15px; }
+  .tr .b { position: relative; flex: 1; border-radius: 8px; background: rgba(255, 255, 255, .03); overflow: hidden;
+    background-image: linear-gradient(to right, var(--line) 1px, transparent 1px); background-size: 12.5% 100%; }
+  .c { position: absolute; border-radius: 8px; border: 1px solid rgba(0, 0, 0, .35); padding: 4px 8px; overflow: hidden; color: #0b1220; display: flex; flex-direction: column; justify-content: center; }
+  .c .n { font-weight: 800; font-size: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .c .t { font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; opacity: .85; }
+  .c.past { opacity: .3; }
+  .c.now { box-shadow: 0 0 0 3px var(--tx) inset; }
+  .past-sh { position: absolute; top: 0; bottom: 0; left: 0; background: rgba(0, 0, 0, .45); }
+  .nowl { position: absolute; top: 0; bottom: 0; width: 3px; background: var(--al); margin-left: -1px; }
+  /* Nacht: nur dunkles Rot (Nachtsicht) – keine Personenfarben, keine hellen Flächen; Name unterscheidet die Schichten */
+  .night .c { background: #160000 !important; color: var(--tx); border: 1px solid #330000; }
+  .night .c .t { opacity: .7; }
+  .night .c.now { background: #300000 !important; box-shadow: 0 0 0 2px var(--al) inset; }
+  .night .c.past { opacity: .35; }
+  .night .tr .b { background-color: #050000; background-image: linear-gradient(to right, #240000 1px, transparent 1px); }
+  .night .past-sh { background: rgba(0, 0, 0, .6); }
+  .night #wSum.soon, .night .kv.soon, .night .kv.soon b { color: var(--al); }
+  .night li { background: rgba(255, 0, 0, .07); }
+  .night li.warn { background: transparent; }
+  .night .pill.ok { color: var(--mut); border-color: var(--mut); }
+  .night a.btn, .night button { border-color: #2a0000; }
+  #wSum { font-size: 20px; text-align: right; white-space: nowrap; }
+  #wSum b { font-weight: 800; }
+  #wSum.soon { color: #f2b705; }
+  .side { flex: 1 1 0; max-width: 430px; display: flex; flex-direction: column; margin: 6px; min-height: 0; }
+  .side > * + * { margin-top: 12px; }
   h2 { margin: 0; font-size: 15px; letter-spacing: 1.5px; color: var(--mut); font-weight: 600; }
-  #status { font-size: 34px; font-weight: 700; }
+  #status { font-size: 30px; font-weight: 700; margin-top: 4px; }
   #status.ok { color: var(--ok); } #status.warn { color: var(--warn); } #status.alarm { color: var(--al); }
   ul { list-style: none; margin: 0; padding: 0; }
   li + li { margin-top: 8px; }
-  li { padding: 12px 14px; border-radius: 10px; border-left: 6px solid var(--al); background: rgba(229, 72, 77, .12); font-size: 20px; }
+  li { padding: 9px 14px; border-radius: 10px; border-left: 6px solid var(--al); background: rgba(229, 72, 77, .12); font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   li.acked { border-left-color: var(--mut); background: transparent; color: var(--mut); }
   li.warn { border-left-color: var(--warn); background: rgba(242, 161, 59, .1); }
-  #ack { font-size: 30px; font-weight: 700; padding: 22px; border-color: var(--al); color: var(--al); }
+  #ack { font-size: 26px; font-weight: 700; padding: 16px 24px; border-color: var(--al); color: var(--al); flex: none; }
   button[disabled] { opacity: .35; }
   #ack[disabled] { opacity: .35; border-color: var(--line); color: var(--mut); }
   body.blink .alarms { animation: bl 1s steps(2) infinite; }
   @keyframes bl { 50% { border-color: var(--al); box-shadow: 0 0 0 3px var(--al) inset; } }
-  .big { font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .big { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .row { display: flex; align-items: center; }
   .row > * + * { margin-left: 10px; }
   .row > * { flex: 1; }
   .seg button.on { border-color: var(--acc); color: var(--acc); font-weight: 700; }
   .mut { color: var(--mut); font-size: 15px; }
-  #watchOk { font-size: 26px; font-weight: 700; padding: 18px; border-color: var(--ok); color: var(--ok); }
+  #watchOk { font-size: 24px; font-weight: 700; padding: 14px; border-color: var(--ok); color: var(--ok); }
   .due #watchLeft { color: var(--al); }
-  .kv { display: flex; justify-content: space-between; font-size: 20px; }
+  .kv { display: flex; justify-content: space-between; font-size: 19px; }
   .kv b { font-variant-numeric: tabular-nums; }
   .kv.soon, .kv.soon b { color: #f2b705; }
 </style>
@@ -63,18 +101,25 @@
   <button id="nightBtn">Night</button>
 </header>
 <main>
+  <div class="col">
   <section class="card alarms">
-    <h2>ACTIVE ALARMS</h2>
-    <div id="status">—</div>
+    <div class="ahead">
+      <div><h2>ACTIVE ALARMS</h2><div id="status">—</div></div>
+      <button id="ack" disabled>ACKNOWLEDGE</button>
+    </div>
     <ul id="list"></ul>
-    <button id="ack" disabled>ACKNOWLEDGE</button>
     <div class="mut">Acknowledges on all devices: piezo, Mini Dash, Cabin Watch and Radar app.</div>
   </section>
+  <section class="card cal" id="planCard" style="display:none">
+    <div class="ahead"><h2>WATCH · 3 DAYS</h2><div id="wSum"></div></div>
+    <div id="tl"></div>
+    <div class="mut">Set up in the Radar app (Watch tab) · boat time <span id="wTz"></span></div>
+  </section>
+  </div>
   <div class="side">
     <section class="card" id="watchCard">
       <h2>WATCH ALARM</h2>
-      <div class="row"><div class="big" id="watchLeft">off</div></div>
-      <button id="watchOk">WATCH OK</button>
+      <div class="row"><div class="big" id="watchLeft">off</div><button id="watchOk">WATCH OK</button></div>
       <div class="row seg">
         <button id="watchToggle">On</button>
         <button id="watchMinus">− 5 min</button>
@@ -94,12 +139,6 @@
         <button data-m="offshore">OFFSHORE</button>
       </div>
       <div class="mut" id="aisInfo"></div>
-    </section>
-    <section class="card" id="planCard" style="display:none">
-      <h2>WATCH</h2>
-      <div class="kv"><span>On watch</span><b id="wNow">—</b></div>
-      <div class="kv" id="wNextRow"><span id="wAt">Next</span><b id="wNext">—</b></div>
-      <div class="mut" id="wNames"></div>
     </section>
     <section class="card">
       <h2>PASSAGE</h2>
@@ -145,15 +184,18 @@
     $('conn').className = 'pill ' + (nrOk ? 'ok' : 'bad');
     var night = nightManual != null ? nightManual : !!(st && st.night);
     document.documentElement.className = night ? 'night' : '';
+    $('nightBtn').textContent = night ? 'Day' : 'Night';
     if (!st) return;
     $('clock').textContent = st.time || '--:--';
     var keys = st.alarmKeys || [], acked = st.ackedKeys || [];
     var texts = st.msg ? String(st.msg).split('  |  ') : [];
     var html = '';
     if (keys.length) {
-      for (var i = 0; i < keys.length; i++) html += '<li class="' + (acked.indexOf(keys[i]) >= 0 ? 'acked' : '') + '">' + esc(texts[i] || keys[i]) + '</li>';
+      var MAXL = 3;
+      for (var i = 0; i < Math.min(keys.length, MAXL); i++) html += '<li class="' + (acked.indexOf(keys[i]) >= 0 ? 'acked' : '') + '">' + esc(texts[i] || keys[i]) + '</li>';
+      if (keys.length > MAXL) html += '<li>+ ' + (keys.length - MAXL) + ' more: ' + esc(texts.slice(MAXL).join(' · ')) + '</li>';
     } else {
-      for (var k = 0; k < texts.length; k++) html += '<li class="warn">' + esc(texts[k]) + '</li>';
+      for (var k = 0; k < Math.min(texts.length, 3); k++) html += '<li class="warn">' + esc(texts[k]) + '</li>';
     }
     $('list').innerHTML = html;
     var s = $('status');
@@ -241,17 +283,62 @@
   function locHM(at, fb) {
     try { return new Date(at).toLocaleTimeString('en-GB', { timeZone: st && st.tz || 'UTC', hour: '2-digit', minute: '2-digit' }); } catch (e) { return fb; }
   }
-  function pollWatchPlan() {
-    xhr('GET', '/tiles/api/watch/now', null, function (ok, j) {
-      $('planCard').style.display = ok && j && j.on ? '' : 'none';
-      if (!ok || !j || !j.on) return;
-      $('wNow').textContent = j.now ? j.now.label : '—';
-      $('wNext').textContent = j.next ? j.next.label : '—';
-      $('wAt').textContent = j.at != null ? 'Change ' + locHM(j.at, j.atText) + (j.inMin != null ? ' (' + j.inMin + ' min)' : '') : 'Next';
-      $('wNextRow').className = 'kv' + (j.soon ? ' soon' : '');
-      $('wNames').textContent = j.now && j.now.names.join(', ') !== j.now.label ? j.now.names.join(', ') : '';
-    });
+  function tz() { return st && st.tz || 'UTC'; }
+  /** Minuten seit Mitternacht in Bordzeit */
+  function locMin(t) {
+    try {
+      var p = new Intl.DateTimeFormat('en-GB', { timeZone: tz(), hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(t)), h = 0, m = 0;
+      for (var i = 0; i < p.length; i++) { if (p[i].type === 'hour') h = +p[i].value % 24; if (p[i].type === 'minute') m = +p[i].value; }
+      return h * 60 + m;
+    } catch (e) { return new Date(t).getUTCHours() * 60 + new Date(t).getUTCMinutes(); }
   }
+  function locDay(t, f) {
+    try { return new Date(t).toLocaleDateString('en-GB', { timeZone: tz(), weekday: f ? 'long' : 'short', day: f ? undefined : '2-digit', month: f ? undefined : 'short' }).toUpperCase(); } catch (e) { return ''; }
+  }
+  function hm(t) { return locHM(t, ''); }
+  var plan = null;
+  function renderPlan() {
+    var j = plan;
+    $('planCard').style.display = j && j.on ? '' : 'none';
+    if (!j || !j.on) return;
+    var DAY = 86400000, now = Date.now();
+    // shortcut: Tagesbeginn mit dem Offset von jetzt, am Tag der Sommerzeitumstellung 1 h verschoben
+    var d0 = Math.floor((now - locMin(now) * 60000) / 60000) * 60000, end = d0 + 3 * DAY; // drei volle Tage
+    var list = (j.list || []).filter(function (e) { return e.e > d0 && e.s < end; });
+    var lanes = 1;
+    for (var i = 0; i < list.length; i++) lanes = Math.max(lanes, (list[i].n || 0) + 1);
+    var html = '<div class="ax"><div class="d" style="width:104px"></div><div class="b">';
+    for (var h = 0; h <= 24; h += 3) html += '<span style="left:' + (h / 24 * 100) + '%' + (h === 0 ? ';transform:none' : h === 24 ? ';transform:translateX(-100%)' : '') + '">' + ('0' + h).slice(-2) + '</span>';
+    html += '</div></div>';
+    var cur = null, nxt = null;
+    for (var r = 0; r < 3; r++) {
+      var rs = d0 + r * DAY, re = rs + DAY;
+      if (rs >= end) break;
+      html += '<div class="tr"><div class="d"><b>' + (r === 0 ? 'TODAY' : r === 1 ? 'TOMORROW' : locDay(rs + 43200000, true)) + '</b>' + locDay(rs + 43200000) + '</div><div class="b">';
+      if (r === 0) html += '<div class="past-sh" style="width:' + ((now - rs) / DAY * 100) + '%"></div>';
+      for (var k = 0; k < list.length; k++) {
+        var e = list[k], s0 = Math.max(e.s, rs), s1 = Math.min(e.e, re, end);
+        if (s1 <= s0) continue;
+        var isNow = e.s <= now && now < e.e, past = e.e <= now;
+        if (isNow) cur = e; else if (!past && (!nxt || e.s < nxt.s)) nxt = e;
+        var w = (s1 - s0) / DAY * 100;
+        html += '<div class="c' + (past ? ' past' : '') + (isNow ? ' now' : '') + '" title="' + esc(e.l) + '" style="left:' + ((s0 - rs) / DAY * 100) + '%;width:' + w + '%;top:' + (e.n / lanes * 100) + '%;height:' + (100 / lanes) + '%;background:' + esc(e.c || '#888') + '">' +
+          '<div class="n">' + esc(e.l || '—') + '</div>' + (w > 7 ? '<div class="t">' + hm(e.s) + '–' + hm(e.e) + '</div>' : '') + '</div>';
+      }
+      if (r === 0) html += '<div class="nowl" style="left:' + ((now - rs) / DAY * 100) + '%"></div>';
+      html += '</div></div>';
+    }
+    $('tl').innerHTML = html;
+    var mn = nxt ? Math.round((nxt.s - now) / 60000) : null;
+    $('wSum').innerHTML = (cur ? 'On watch <b>' + esc(cur.l) + '</b> until ' + hm(cur.e) : 'No watch now') +
+      (nxt ? ' · next <b>' + esc(nxt.l) + '</b> ' + (mn < 60 ? 'in ' + mn + ' min' : hm(nxt.s)) : '');
+    $('wSum').className = mn != null && mn <= 10 ? 'soon' : '';
+    $('wTz').textContent = tz();
+  }
+  function pollWatchPlan() {
+    xhr('GET', '/tiles/api/watch/now', null, function (ok, j) { plan = ok ? j : null; renderPlan(); });
+  }
+  setInterval(renderPlan, 30000);
   pollWatchPlan();
   setInterval(pollWatchPlan, 15000);
 })();

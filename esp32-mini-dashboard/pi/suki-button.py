@@ -3,23 +3,31 @@
 # Der Pi liest die Werbepakete direkt mit (kein Shelly-Gateway nötig) und löst über Node-RED aus:
 #   1× = alle Alarme quittieren (wie Taste am Mini Dash; bei Wachalarm zusätzlich Wache bestätigen)
 #   2× = Wache bestätigen
-#   3× = Anker setzen ("Drop Anchor Now": Bugposition, Radius 6 × Tiefe) – nur unter 1 kn und ohne aktiven Anker
-#   lang = Anker aufholen (nur wenn ein Anker aktiv ist)
-# Rückmeldung über den Piezo an GPIO17: 1/2/3 kurze Töne = erledigt, 2 lange = Anker auf, 1 sehr langer = abgelehnt.
+#   3× = Wegpunkt „hier“ (bordweit, eigene Position aus SignalK; sehen Radar-App und alle Geräte)
+#   lang = Mann über Bord (bordweit: Alarm auf allen Geräten, Position aus SignalK)
+# Rückmeldung über den Piezo an GPIO17: 1/2/3 kurze Töne = erledigt, 2 lange = MOB gesetzt, 1 sehr langer = abgelehnt.
 #
 #   suki-button             Dienst (nur angelernte Taster aus config.json)
 #   suki-button --learn     60 s lauschen, den ersten gedrückten Shelly-Taster anlernen
 #   suki-button --press N   Aktion N (1, 2, 3, 4=lang) ohne Taster auslösen
-#   --dry                   Anker-Aktionen nur prüfen (Node-RED dry run), nichts setzen
+#   --dry                   MOB nicht auslösen (nur Ton und Ausgabe)
 #   suki-button --selftest
+#
+# Übergangsweise auf dem Mac (z. B. über Tailscale, nicht an Bord): SUKI_PI=192.168.0.100 python3 suki-button.py …
+#   Töne kommen dann aus dem Mac-Lautsprecher, MOB nur als Trockenlauf (echt nur mit --live, löst an Bord Alarm aus).
+#   macOS zeigt statt der MAC eine eigene Geräte-ID → auf dem Pi später neu anlernen.
 import asyncio, json, os, subprocess, sys, time, urllib.request
 
+MAC_OS = sys.platform == 'darwin'
+PI = os.environ.get('SUKI_PI')  # gesetzt = Pi aus der Ferne ansprechen
 CFG = os.path.expanduser('~/suki-button/config.json')
-NR = 'http://127.0.0.1:1880/esp-dash/api'
-SHARED = 'http://127.0.0.1:8091/tiles/api/shared'  # chart-proxy: Wachalarm aller Geräte
+NR = 'http://%s:1880/esp-dash/api' % (PI or '127.0.0.1')
+SHARED = 'http://%s:8090/tiles/api/shared' % PI if PI else 'http://127.0.0.1:8091/tiles/api/shared'  # chart-proxy: Wachalarm aller Geräte
 BTHOME = '0000fcd2-0000-1000-8000-00805f9b34fb'
 PIN = '17'
-DRY = '--dry' in sys.argv
+DRY = '--dry' in sys.argv or (MAC_OS and '--live' not in sys.argv)
+RAW = os.environ.get('SUKI_RAW')  # Diagnose: jedes BTHome-Paket ausgeben
+TRIPLE_S = 2.0
 EVENTS = {1: 'press', 2: 'double', 3: 'triple', 4: 'long'}
 
 # BTHome-v2-Objekte: ID → Länge in Bytes (nur was Shelly-Taster senden; Unbekanntes beendet das Lesen)
@@ -46,6 +54,11 @@ def parse(data: bytes):
 
 def beep(*ms):
     """Töne (an, aus, an, …) in ms; teilt sich GPIO17 mit suki-buzzer (der schreibt nur bei Wechseln)"""
+    if MAC_OS:  # kein Piezo: je Ton ein Systemklang (lang = tiefer)
+        for k, d in enumerate(ms):
+            if k % 2 == 0: subprocess.run(['afplay', '/System/Library/Sounds/' + ('Basso' if d >= 500 else 'Tink') + '.aiff'], check=False)
+            else: time.sleep(d / 1000)
+        return
     for k, d in enumerate(ms):
         subprocess.run(['pinctrl', 'set', PIN, 'op', 'dh' if k % 2 == 0 else 'dl'], check=False)
         time.sleep(d / 1000)
@@ -81,7 +94,6 @@ def act(n):
     code, st = http(NR + '/state?ais=0')
     if code != 200:
         print('node-red nicht erreichbar', st, flush=True); return NO
-    anc = st.get('anchor') or {}
     if n == 1:
         ok = http(NR + '/ack', {}, 'POST')[0] == 200
         if any(k.startswith('watch@') for k in st.get('alarmKeys') or []): confirm_watch()
@@ -89,19 +101,14 @@ def act(n):
     if n == 2:
         return OK[2] if confirm_watch() else NO
     if n == 3:
-        sog = (st.get('ais') or {}).get('ownSog') or 0
-        if anc.get('act'):
-            print('anker setzen abgelehnt: anker schon aktiv', flush=True); return NO
-        if sog >= 1:
-            print('anker setzen abgelehnt: sog %.1f kn' % sog, flush=True); return NO
-        code, r = http(NR + '/anchor', {'action': 'dry' if DRY else 'drop_now'}, 'POST')
-        print('anker setzen', code, r, flush=True)
+        code, r = http(NR + '/mark', {'action': 'set', 'by': 'Helm button'}, 'POST')
+        print('wegpunkt', code, r, flush=True)
         return OK[3] if code == 200 else NO
     if n == 4:
-        if not anc.get('act'):
-            print('anker auf abgelehnt: kein anker aktiv', flush=True); return NO
-        code, r = http(NR + '/anchor', {'action': 'dry' if DRY else 'up'}, 'POST')
-        print('anker auf', code, r, flush=True)
+        if DRY:
+            print('MOB (Trockenlauf, nichts ausgelöst)', flush=True); return UP
+        code, r = http(NR + '/mob', {'action': 'set', 'by': 'Helm button'}, 'POST')
+        print('MOB', code, r, flush=True)
         return UP if code == 200 else NO
     return None
 
@@ -118,6 +125,7 @@ async def scan(learn=False):
     cfg = load_cfg()
     macs = {m.upper() for m in cfg.get('macs', [])}
     last_pid = {}
+    last_ev = {}  # mac → (Ereignis, Zeit) für 1×+2× = 3×
     done = asyncio.Event()
     busy = asyncio.Lock()
 
@@ -131,6 +139,7 @@ async def scan(learn=False):
         data = adv.service_data.get(BTHOME)
         if not data: return
         p = parse(data)
+        if RAW: print('raw', dev.address, data.hex(), p, flush=True)
         if not p or not p.get('button'): return
         mac = dev.address.upper()
         if p.get('pid') is not None:
@@ -143,15 +152,20 @@ async def scan(learn=False):
             print('angelernt: %s (Batterie %s %%)' % (mac, p.get('battery')), flush=True)
             beep(*OK[1]); done.set(); return
         if mac not in macs: return
-        if p['button'] in EVENTS: asyncio.get_running_loop().create_task(handle(mac, p['button']))
+        ev, now = p['button'], time.monotonic()
+        # Der Taster zerlegt zu langsames 3× in 1× + 2× (bzw. 2× + 1×): kurz hintereinander = 3×
+        pev, pt = last_ev.get(mac, (0, 0))
+        if {ev, pev} == {1, 2} and now - pt < TRIPLE_S: ev = 3
+        last_ev[mac] = (0 if ev == 3 else ev, now)
+        if ev in EVENTS: asyncio.get_running_loop().create_task(handle(mac, ev))
 
-    async with BleakScanner(cb, adapter=cfg.get('adapter', 'hci1')):
+    async with BleakScanner(cb, **({} if MAC_OS else {'adapter': cfg.get('adapter', 'hci1')})):
         if learn:
             print('Taster jetzt 1× drücken (60 s) …', flush=True)
             try: await asyncio.wait_for(done.wait(), 60)
             except asyncio.TimeoutError: print('kein Taster gesehen', flush=True); sys.exit(1)
         else:
-            print('lausche auf %s' % (', '.join(sorted(macs)) or 'nichts – erst --learn'), flush=True)
+            print('lausche auf %s%s → %s' % (', '.join(sorted(macs)) or 'nichts – erst --learn', ' (MOB nur Trockenlauf)' if DRY else '', NR), flush=True)
             await asyncio.Event().wait()
 
 

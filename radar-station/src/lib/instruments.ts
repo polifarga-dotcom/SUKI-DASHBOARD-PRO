@@ -1,6 +1,7 @@
 // Instrumentenwerte für den Tab „Instrumente“: Rohdaten aus SignalK (inst/own), wahrer Wind berechnet,
 // wenn SignalK ihn nicht liefert, mit kurzer Glättung (Winkel als Vektoren gemittelt).
 import { own, inst } from '../data/signalk.svelte';
+import { nr } from '../data/nodered.svelte';
 import { D2R, KN, NM, dec, norm2pi, normPi, fmtLat, fmtLon } from './geo';
 import { t } from './i18n.svelte';
 
@@ -84,6 +85,8 @@ export interface Box {
 	value: (w: Wind) => string;
 	unit: string;
 	calc?: (w: Wind) => boolean;
+	/** Farbe der Box: 'warn' | 'alarm' */
+	level?: () => string | false | undefined;
 }
 
 const kn = (ms: number | null) => (ms == null ? '—' : dec(ms / KN, 1));
@@ -120,10 +123,18 @@ export const BOXES: Box[] = [
 	{ id: 'heel', label: 'HEEL', name: 'Heel', value: () => side(raw('navigation.attitude.roll')), unit: '' },
 	{ id: 'rudder', label: 'RUDDER', name: 'Rudder angle', value: () => side(raw('steering.rudderAngle')), unit: '' },
 	{ id: 'pos', label: 'POS', name: 'Position', value: () => (own.pos ? `${fmtLat(own.pos.lat)}\n${fmtLon(own.pos.lon)}` : '—'), unit: '' },
+	{ id: 'rigp', label: 'RIG P', name: 'Rig load port', value: () => tons('port'), unit: 't', level: () => rigOn() && nr.rig?.pst },
+	{ id: 'rigs', label: 'RIG S', name: 'Rig load starboard', value: () => tons('sb'), unit: 't', level: () => rigOn() && nr.rig?.sst },
 	{ id: 'trip', label: 'TRIP', name: 'Trip log', value: () => nmVal(raw('navigation.trip.log')), unit: 'nm' },
 	{ id: 'log', label: 'LOG', name: 'Total log', value: () => nmVal(raw('navigation.log'), 0), unit: 'nm' }
 ];
 
+/** Rigg-Last kommt über Node-RED (Cyclops → SignalK → Grenzwerte), nur frisch anzeigen */
+const rigOn = () => nr.ok && Date.now() - nr.t < FRESH;
+function tons(side: 'port' | 'sb') {
+	const v = rigOn() ? nr.rig?.[side] : null;
+	return v == null ? '—' : dec(v, 2);
+}
 function tempC(k: number | null) {
 	return k == null ? '—' : dec(k - 273.15, 1);
 }
@@ -131,4 +142,4 @@ function nmVal(m: number | null, d = 1) {
 	return m == null ? '—' : dec(m / NM, d);
 }
 
-export const DEFAULT_BOXES = ['aws', 'awa', 'tws', 'twd', 'sog', 'stw', 'dpt', 'cog'];
+export const DEFAULT_BOXES = ['aws', 'awa', 'tws', 'twd', 'sog', 'stw', 'dpt', 'cog', 'rigp', 'rigs'];

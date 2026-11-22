@@ -17,6 +17,8 @@ MFD_KEY = 'mfd-b00c60fed1bb860778d4c704eb12a8804884377bffafca83'  # anchor_confi
 ANCHOR_URL = f'{MFD_FN}?key={MFD_KEY}'
 CFG_FILE = '/home/admin/esp-dash/config.json'
 WIFI_FILE = '/home/admin/esp-dash/wifi.json'
+MARK_FILE = '/home/admin/esp-dash/marks.json'  # bordweite Wegpunkte „hier“
+MOB_FILE = '/home/admin/esp-dash/mob.json'    # aktive MOB-Positionen (überleben einen Node-RED-Neustart)
 FW_FILE = '/home/admin/esp-dash/fw.json'      # Firmware-Angebot je Display (Version, Größe, SHA-256, Auto/Force)
 FW_DIR = '/home/admin/esp-dash/fw'            # <dev>.bin, von build.sh ota hochgeladen
 LABEL = 'ESP32 Mini Dashboard'
@@ -695,7 +697,8 @@ const st = flow.get('state') || {};
 const now = Date.now(), old = flow.get('ack') || {};
 const kUntil = {};
 for (const [k, u] of Object.entries(old.kUntil || {})) if (u > now) kUntil[k] = u;
-for (const k of st.alarmKeys || []) kUntil[k] = now + (k.indexOf('storm_') === 0 ? 240 : (cfg.ackMinutes || 5)) * 60000;
+// MOB: Quittung 60 min (stummt den Ton während der Bergung, Position bleibt bis „geborgen“)
+for (const k of st.alarmKeys || []) kUntil[k] = now + (k.indexOf('storm_') === 0 ? 240 : k.indexOf('mob_') === 0 ? 60 : (cfg.ackMinutes || 5)) * 60000;
 if (st.storm && st.storm.noteKey) kUntil[st.storm.noteKey] = now + 240 * 60000;   // gelbe Gewitterwarnung: Hinweis 4 h ausblenden
 flow.set('ack', { until: now + (cfg.ackMinutes || 5) * 60000, keys: st.alarmKeys || [], kUntil });
 // Quittierbare Warnungen (nur wenn kein Alarm aktiv): bleiben weg, bis ihre Ursache verschwindet (siehe evaluate.js)
@@ -706,6 +709,46 @@ node.status({ fill: 'blue', text: 'quittiert ' + new Date().toLocaleTimeString()
 msg.payload = { ok: true };
 return msg;""", 360, 580, [['ack antwort']])
 http_out('ack antwort', 560, 580)
+
+# ── 4a) Mann über Bord: bordweit (Radar-App, später weitere Geräte) ──────────
+# POST /mob {action:'set', lat?, lon?, by?} → neue MOB-Position (ohne lat/lon: aktuelle SignalK-Position)
+# POST /mob {action:'clear', id} bzw. {action:'clear', id:'all'} → geborgen. Alarm + Anzeige rechnet evaluate.js.
+# Wegpunkt „hier“ (POST /mark, z. B. Steuerstand-Taster 3×): gleiches Muster, kein Alarm, max. 20.
+for K, F, N, MAXN, Y, COL in (('mob', MOB_FILE, 'MOB', 5, 560, 'red'), ('mark', MARK_FILE, 'Mark', 20, 680, 'blue')):
+    inject(f'{N} laden (Start)', 160, Y + 40, f'{N} lesen Datei', '', [], once_delay=0.5)
+    add(f'{N} lesen Datei', 'file in', 380, Y, [[f'{N} übernehmen']], filename=F,
+        filenameType='str', format='utf8', chunk=False, sendError=False, encoding='none', allProps=False)
+    fn(f'{N} übernehmen', f"""\
+try {{ const l = JSON.parse(msg.payload); if (Array.isArray(l)) flow.set('{K}', l); node.status({{ fill: l.length ? '{COL}' : 'green', text: l.length + ' {N}' }}); }}
+catch (e) {{ node.status({{ fill: 'green', text: 'leer' }}); }}
+return null;""", 600, Y)
+    http_in(f'POST {K}', f'/esp-dash/api/{K}', 'post', 150, Y + 40, f'{N} API')
+    fn(f'{N} API', f"""\
+const b = msg.payload || {{}};
+const bad = (e) => {{ msg.statusCode = 400; msg.payload = {{ error: e }}; return [msg, null]; }};
+let list = (flow.get('{K}') || []).slice();
+const now = Date.now();
+if (b.action === 'set') {{
+    let lat = Number(b.lat), lon = Number(b.lon);
+    if (!(Math.abs(lat) <= 90 && Math.abs(lon) <= 180) || b.lat == null || b.lon == null) {{
+        // keine Position mitgeschickt: eigene Position aus SignalK
+        const n = flow.get('sk_nav'), p = n && n.data && n.data.position;
+        const v = p && (p.value || (p.values && Object.values(p.values)[0] && Object.values(p.values)[0].value));
+        if (!v || typeof v.latitude !== 'number') return bad('no position');
+        lat = v.latitude; lon = v.longitude;
+    }}
+    if (list.length >= {MAXN}) list = list.slice(-{MAXN - 1});
+    list.push({{ id: now, lat: +lat.toFixed(6), lon: +lon.toFixed(6), t: now, by: String(b.by || '').replace(/[^\\w .-]/g, '').slice(0, 30) }});
+}} else if (b.action === 'clear') {{
+    list = b.id === 'all' ? [] : list.filter((m) => m.id !== Number(b.id));
+}} else return bad('action set|clear');
+flow.set('{K}', list);
+node.status({{ fill: list.length ? '{COL}' : 'green', text: list.length + ' {N}' }});
+msg.payload = {{ ok: true, {K}: list }};
+return [msg, {{ payload: JSON.stringify(list) }}];""", 380, Y + 40, [[f'{K} antwort'], [f'{N} schreiben']], outputs=2)
+    http_out(f'{K} antwort', 600, Y + 40, {'Cache-Control': 'no-store'})
+    add(f'{N} schreiben', 'file', 610, Y + 80, filename=F, filenameType='str',
+        appendNewline=False, createDir=True, overwriteFile='true', encoding='utf8')
 
 # ── 4b) Anker einholen (systemweit über Supabase, nur Stoppen — Setzen geht hier nicht) ──
 http_in('POST anchor-up', '/esp-dash/api/anchor-up', 'post', 150, 620, 'Anker-up Request')

@@ -6,7 +6,7 @@
 	import { fmtDist, D2R, R2D, NM, dec } from '../lib/geo';
 	import { t, timeFmt } from '../lib/i18n.svelte';
 	import Icon from './Icon.svelte';
-	import { nr, pushAisConfig, setAisSource } from '../data/nodered.svelte';
+	import { nr, pushAisConfig, setAisSource, setRigConfig } from '../data/nodered.svelte';
 	const preset = (p: AlarmPreset) => {
 		applyAlarmPreset(p);
 		pushAisConfig();
@@ -75,6 +75,16 @@
 		</fieldset>
 		<label class="chk"><input type="checkbox" bind:checked={settings.lostTargetAlarm} /> {t('Lost dangerous target warning')}</label>
 	</section>
+
+	{#if nr.rigCfg}
+		<section>
+			<b>{t('Rig load')}</b>
+			<label class="chk"><input type="checkbox" checked={nr.rigCfg.on} onchange={(e) => setRigConfig({ on: (e.target as HTMLInputElement).checked })} /> {t('Alarm when a shroud is overloaded')}</label>
+			<label class="ctl"><span>{t('Warning (orange) from')} <b class="num">{dec(nr.rigCfg.warn, 1)} t</b></span><input type="range" min="1" max="8" step="0.1" value={nr.rigCfg.warn} oninput={(e) => setRigConfig({ warn: Math.min(Number((e.target as HTMLInputElement).value), nr.rigCfg!.alarm - 0.1) })} /></label>
+			<label class="ctl"><span>{t('Alarm from')} <b class="num">{dec(nr.rigCfg.alarm, 1)} t</b></span><input type="range" min="1" max="8" step="0.1" value={nr.rigCfg.alarm} oninput={(e) => setRigConfig({ alarm: Math.max(Number((e.target as HTMLInputElement).value), nr.rigCfg!.warn + 0.1) })} /></label>
+			<div class="small">{t('Rig alarm runs on the Pi (Cyclops sensors): Mini Dash, Cabin Watch and piezo use the same limits; acknowledging anywhere acknowledges everywhere.')}</div>
+		</section>
+	{/if}
 
 	<section>
 		<b>{t('Watch alarm')}</b>

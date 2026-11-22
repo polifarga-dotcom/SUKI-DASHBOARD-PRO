@@ -17,6 +17,8 @@ export interface Marker {
 	t: number;
 	/** Symbol (MARK_ICONS-ID), fehlt = Wegpunkt */
 	icon?: string;
+	/** bordweiter MOB aus Node-RED (alle Geräte, Mini Dash, Cabin Watch) */
+	shared?: boolean;
 }
 
 
@@ -85,6 +87,10 @@ export function addMarker(pos: LatLon, kind: Marker['kind'] = 'mark') {
 }
 
 export function removeMarker(id: number) {
+	// bordweiter MOB/Wegpunkt: in Node-RED löschen, sonst taucht er beim nächsten Abgleich wieder auf
+	const sh = tools.markers.find((m) => m.id === id && m.shared);
+	if (sh)
+		fetch(`/esp-dash/api/${sh.kind}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear', id }) }).catch(() => {});
 	tools.markers = tools.markers.filter((m) => m.id !== id);
 }
 

@@ -59,6 +59,8 @@ export interface Settings {
 	sideTab: 'instruments' | 'targets' | 'radar' | 'layers' | 'routes' | 'alarms' | 'watch' | 'settings';
 	/** Instrumenten-Tab: angezeigte Boxen (Reihenfolge) und SailSteer */
 	instBoxes: string[];
+	/** Rigg-Boxen einmalig zu gespeicherten Instrumenten hinzugefügt */
+	rigAdded: boolean;
 	sailsteer: boolean;
 	sortBy: 'danger' | 'cpa' | 'tcpa' | 'range';
 	/** Karte unabhängig von der Radar-Range zoomen */
@@ -164,7 +166,8 @@ const DEFAULTS: Settings = {
 	routeFavs: [],
 	routeFavOnly: false,
 	markSort: 'time',
-	instBoxes: ['aws', 'awa', 'tws', 'twd', 'sog', 'stw', 'dpt', 'cog'],
+	instBoxes: ['aws', 'awa', 'tws', 'twd', 'sog', 'stw', 'dpt', 'cog', 'rigp', 'rigs'],
+	rigAdded: true,
 	sailsteer: true
 };
 
@@ -174,7 +177,9 @@ function load(): Settings {
 	try {
 		const raw = localStorage.getItem(KEY);
 		if (raw) {
-			const s: Settings = { ...structuredClone(DEFAULTS), ...JSON.parse(raw) };
+			const saved = JSON.parse(raw);
+			const s: Settings = { ...structuredClone(DEFAULTS), ...saved };
+			if (!saved.rigAdded) s.instBoxes = [...s.instBoxes.filter((x) => x !== 'rigp' && x !== 'rigs'), 'rigp', 'rigs']; // neu: Rigg-Last
 			if (!(s.watchMin > 0)) s.watchMin = DEFAULTS.watchMin; // früher hieß 0 „aus“
 			return s;
 		}

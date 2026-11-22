@@ -13,7 +13,7 @@ import { nr, nrAck } from '../data/nodered.svelte';
 
 export type Level = 'alarm' | 'warning';
 
-export type Category = 'collision' | 'guard' | 'sart' | 'lost' | 'system' | 'mob' | 'depth' | 'watch' | 'squall';
+export type Category = 'collision' | 'guard' | 'sart' | 'lost' | 'system' | 'mob' | 'depth' | 'watch' | 'squall' | 'rig';
 
 export interface Alarm {
 	id: string;
@@ -41,7 +41,8 @@ const CATEGORY_LABEL: Record<Category, string> = {
 	mob: 'Man overboard',
 	depth: 'Shallow water',
 	watch: 'Watch alarm',
-	squall: 'Squall'
+	squall: 'Squall',
+	rig: 'Rig load'
 };
 export const categoryLabel = (c: Category) => t(CATEGORY_LABEL[c]);
 
@@ -176,6 +177,19 @@ export function evaluateAlarms(now = Date.now()) {
 		});
 	}
 
+	// Rigg-Last zu hoch: Alarm rechnet Node-RED (Cyclops-Sensoren, gleiche Grenze wie Mini Dash / Cabin Watch)
+	for (const n of nr.rigAlarms) {
+		const id = 'nr:' + n.key;
+		want.set(id, {
+			id,
+			level: 'alarm',
+			category: 'rig',
+			title: n.side === 'port' ? t('Port shroud') : t('Starboard shroud'),
+			detail: t('Rig load {v} t, alarm above {a} t.', { v: n.tons != null ? dec(n.tons, 2) : '—', a: nr.rig?.alarm != null ? dec(nr.rig.alarm, 1) : '?' }),
+			advice: t('Ease the sails (reef, ease sheets) and check the rig.')
+		});
+	}
+
 	// Radar-Echos in Guard Zones (Zählung im Spoke-Worker)
 	const rid = settings.radarId;
 	const r = radar.byId[rid];
@@ -200,8 +214,9 @@ export function evaluateAlarms(now = Date.now()) {
 		for (const m of tools.markers) {
 			if (m.kind !== 'mob') continue;
 			const [x, y] = toLocal(own.pos, m.pos);
-			want.set(`mob:${m.id}`, {
-				id: `mob:${m.id}`,
+			const id = m.shared ? `nr:mob_${m.id}` : `mob:${m.id}`; // bordweit: Quittung über Node-RED
+			want.set(id, {
+				id,
 				level: 'alarm',
 				category: 'mob',
 				title: 'MOB',
@@ -286,8 +301,7 @@ export function evaluateAlarms(now = Date.now()) {
 	// Quittung der Node-RED-Alarme gilt so, wie Node-RED sie meldet (läuft dort nach ackMinutes ab)
 	for (const [k, t] of nrAckPending) if (now - t > 5000) nrAckPending.delete(k);
 	for (const a of next) {
-		const n = a.id.startsWith('nr:') && nr.aisAlarms.find((x) => 'nr:' + x.key === a.id);
-		if (n) a.acked = n.acked || nrAckPending.has(a.id);
+		if (a.id.startsWith('nr:')) a.acked = nr.acked.includes(a.id.slice(3)) || nrAckPending.has(a.id);
 	}
 	next.sort((a, b) => (a.level === b.level ? b.since - a.since : a.level === 'alarm' ? -1 : 1));
 	alarms.active = next;

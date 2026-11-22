@@ -7,7 +7,7 @@
 	import { evaluateAlarms, alarms, ackAll, ackAlarm, muteFor, watch, confirmWatch, setWatch } from './alarms/alarms.svelte';
 	import { unlockAudio } from './alarms/audio';
 	import { startAlarmSync } from './alarms/alarmsync.svelte';
-	import { startNodeRed, nr } from './data/nodered.svelte';
+	import { startNodeRed, nr, mobSet } from './data/nodered.svelte';
 	import { startSim } from './sim/simulator';
 	import { tools, addMarker } from './radar/tools.svelte';
 	import { fmtDeg, fmtSpeed, fmtLat, fmtLon, dec } from './lib/geo';
@@ -181,7 +181,11 @@
 		mobHold = true;
 		mobTimer = setTimeout(() => {
 			mobHold = false;
-			if (own.pos) addMarker({ ...own.pos }, 'mob');
+			// bordweit über Node-RED (Mini Dash, Cabin Watch, Piezo, alle Geräte); ohne Verbindung nur hier
+			if (own.pos) {
+				const p = { ...own.pos };
+				mobSet(p).then((ok) => ok || addMarker(p, 'mob'));
+			}
 			settings.sidePanel = true;
 			settings.sideTab = 'alarms';
 		}, 800);

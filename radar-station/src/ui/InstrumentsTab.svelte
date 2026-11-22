@@ -77,6 +77,10 @@
 		tick;
 		return byId(id).value(w);
 	};
+	const lvl = (id: string) => {
+		tick;
+		return byId(id).level?.();
+	};
 	const unit = (u: string) => (u === 'nm' ? nmUnit() : u);
 	const noSpeed = $derived.by(() => {
 		tick;
@@ -135,7 +139,7 @@
 		<div class="grid">
 			{#each shown as id (id)}
 				{@const b = byId(id)}
-				<div class="box" class:wide={id === 'pos'}>
+				<div class="box" class:wide={id === 'pos'} class:warn={lvl(id) === 'warn'} class:alarm={lvl(id) === 'alarm'}>
 					<div class="bl">
 						<span>{b.label}</span>
 						{#if b.calc?.(w)}<span class="calc">calc</span>{/if}
@@ -187,6 +191,10 @@
 	.calc { font-size: 9.5px; font-weight: 700; color: var(--warn); letter-spacing: 0; border: 1px solid var(--warn); border-radius: 4px; padding: 0 4px; }
 	.bv { font-size: 30px; font-weight: 800; line-height: 1.05; text-align: right; color: var(--text); white-space: nowrap; }
 	.box.wide { grid-column: 1 / -1; }
+	.box.warn { border-color: var(--warn); }
+	.box.warn .bv { color: var(--warn); }
+	.box.alarm { border-color: var(--alarm); background: color-mix(in srgb, var(--alarm) 18%, var(--panel-2)); }
+	.box.alarm .bv { color: var(--alarm); }
 	.bv.posv { font-size: 19px; white-space: pre-line; line-height: 1.2; }
 	.bu { font-size: 12px; font-weight: 600; color: var(--muted); margin-left: 4px; }
 	.editor { padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
