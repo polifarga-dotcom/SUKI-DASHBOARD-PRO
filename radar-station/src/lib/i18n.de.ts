@@ -33,6 +33,7 @@ export const DE: Record<string, string> = {
 	'Delete GRIB files': 'GRIB-Dateien löschen',
 	Charts: 'Karten',
 	'Weather API': 'Wetter-API',
+	Weather: 'Wetter',
 	'PredictWind GRIB': 'PredictWind GRIB',
 	'Weather (Open-Meteo)': 'Wetter (Open-Meteo)',
 	'PredictWind models': 'PredictWind-Modelle',

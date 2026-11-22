@@ -215,8 +215,8 @@
 	<section class="subtabs">
 		<div class="seg">
 			<button class:on={settings.layerSub === 'charts'} onclick={() => (settings.layerSub = 'charts')}><Icon name="map" size={14} /> {t('Charts')}</button>
-			<button class:on={settings.layerSub === 'wx'} onclick={() => (settings.layerSub = 'wx')}><Icon name="cloud" size={14} /> {t('Weather API')}</button>
-			<button class:on={settings.layerSub === 'grib'} onclick={() => (settings.layerSub = 'grib')}><Icon name="download" size={14} /> {t('PredictWind GRIB')} ({gribAll.length})</button>
+			<button class:on={settings.layerSub === 'wx'} onclick={() => (settings.layerSub = 'wx')} title={t('Weather API')}><Icon name="cloud" size={14} /> {t('Weather')}</button>
+			<button class:on={settings.layerSub === 'grib'} onclick={() => (settings.layerSub = 'grib')} title={t('PredictWind GRIB')}><Icon name="download" size={14} /> GRIB ({gribAll.length})</button>
 		</div>
 	</section>
 
@@ -485,7 +485,8 @@
 	.fav.faved { color: #f2b705; }
 	.fav.faved :global(svg path) { fill: currentColor; }
 	.subtabs { position: sticky; top: 0; z-index: 2; background: var(--panel); }
-	.subtabs .seg { flex-wrap: wrap; }
+	.subtabs .seg { flex-wrap: nowrap; }
+	.subtabs .seg button { white-space: nowrap; }
 	.del { align-self: flex-start; display: inline-flex; gap: 4px; align-items: center; }
 	.fillsel { flex-wrap: wrap; align-self: flex-start; }
 	.fillsel button { min-height: 28px; font-size: 12px; padding: 2px 8px; }
