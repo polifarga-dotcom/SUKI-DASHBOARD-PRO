@@ -25,6 +25,14 @@ export const PRESETS = [
 		info: 'For four people standing watch alone: eight 3-hour watches a day, each person has two of them at the same times every day (e.g. 00–03 and 12–15) with 9 hours off in between. Popular on cruising yachts with four crew and an autopilot.' },
 	{ id: 'four12', name: '4 on / 12 off', units: 4, mode: 'rotate', starts: [0, 4, 8, 12, 16, 20].map((h) => h * H),
 		info: 'Four people (or four watches) stand 4 hours each and have 12 hours off. Six watches a day for four watches, so the watch times change every day and nobody keeps the 00–04 watch for long. Lots of rest, one person alone on watch.' },
+	{ id: 'six6', name: '6 on / 6 off', units: 2, mode: 'fixed', starts: [0, 6, 12, 18].map((h) => h * H),
+		info: 'Two watches alternate every 6 hours, same times every day (A 00–06 + 12–18, B 06–12 + 18–24). Long rest periods allow real sleep; the watches themselves are long and tiring at night. Common on long passages and on work boats.' },
+	{ id: 'two6', name: '2 on / 6 off', units: 4, mode: 'fixed', starts: Array.from({ length: 12 }, (_, i) => i * 2 * H),
+		info: 'Four people (or four watches) stand short 2-hour watches with 6 hours off, three times a day at the same times. Very alert watches for cold, heavy weather or hand steering, but rest is never longer than 6 hours.' },
+	{ id: 'dayoff44', name: '4 on / 4 off with day off', units: 3, mode: 'rotate', dayOff: true, starts: [0, 4, 8, 12, 16, 18, 20].map((h) => h * H),
+		info: 'Port and starboard (4 on / 4 off with dog watches) for two watches, while a third watch has the whole day off – often as "mother watch" doing cooking and chores and sleeping through the night. The day off moves on every day, so everyone gets one free day in three.' },
+	{ id: 'dayoff48', name: '4 on / 8 off with day off', units: 4, mode: 'fixed', dayOff: true, starts: [0, 4, 8, 12, 16, 20].map((h) => h * H),
+		info: 'Three watches keep 4 on / 8 off while a fourth has the day off (mother watch: galley and chores, full night sleep). The free day moves on daily, so with four people or four teams everyone is free every fourth day and the watch times change with it.' },
 	{ id: 'rolling', name: 'Rolling watch', units: 0, mode: 'rolling', starts: [0], shift: 60, on: 2,
 		info: 'Staggered watch for individual crew: every hour one person comes on and stands 2 hours, so two are always on watch and one of them is fresh and the other already knows the situation.' },
 	{ id: 'custom', name: 'Custom pattern', units: 0, mode: 'rotate', starts: [0, 4 * H, 8 * H, 12 * H, 16 * H, 20 * H],
@@ -77,6 +85,18 @@ export const hhmm = (t, tz) => {
 // ── Kalender ────────────────────────────────────────────────────────────────
 const mod = (a, n) => ((a % n) + n) % n;
 
+/** Index der Einheit mit freiem Tag am Plantag di (-1 = kein freier Tag) */
+const offIdx = (m, di) => (m.dayOff && m.mode !== 'rolling' && m.units.length > 1 ? mod(di, m.units.length) : -1);
+/** Einheit mit freiem Tag zum Zeitpunkt t (Plantag in der Plan-Zeitzone) oder null */
+export function offAt(doc, t) {
+	const m = doc?.model;
+	if (!m?.dayOff || doc.active === false || !/^\d{4}-\d\d-\d\d$/.test(m.start ?? '')) return null;
+	const p = parts(t, doc.tz || 'UTC');
+	const [sy, sm, sd] = m.start.split('-').map(Number);
+	const i = offIdx(m, Math.round((Date.UTC(p.y, p.m - 1, p.d) - Date.UTC(sy, sm - 1, sd)) / 864e5));
+	return i < 0 ? null : m.units[i];
+}
+
 /** Wachen im Zeitraum [from, to): { start, end, units: [{t:'team'|'person', id}], members: [crewId] } */
 export function schedule(doc, from, to) {
 	const m = doc?.model, tz = doc?.tz || 'UTC', out = [];
@@ -85,7 +105,7 @@ export function schedule(doc, from, to) {
 	const n = units.length;
 	const [sy, sm, sd] = m.start.split('-').map(Number);
 	const s0 = Date.UTC(sy, sm - 1, sd);
-	const ov = new Map((doc.overrides ?? []).map((o) => [o.start, o.units]));
+	const ov = new Map((doc.overrides ?? []).filter((o) => o.start >= s0 - 14 * 3600e3).map((o) => [o.start, o.units])); // Änderungen aus älteren Plänen (vor dem Planstart) zählen nicht
 	const team = new Map((doc.teams ?? []).map((t) => [t.id, t]));
 	const members = (us) => [...new Set(us.flatMap((u) => (u.t === 'team' ? (team.get(u.id)?.members ?? []) : [u.id])))];
 	const push = (start, end, u) => {
@@ -110,10 +130,13 @@ export function schedule(doc, from, to) {
 		}
 		const B = m.starts.length;
 		const N = new Date(dU + 864e5);
+		// freier Tag: Einheit di % n hat an diesem Plantag keine Wache, die übrigen teilen sich die Wachen
+		const act = offIdx(m, di) < 0 ? units : units.filter((_, j) => j !== offIdx(m, di));
+		const na = act.length;
 		for (let i = 0; i < B; i++) {
 			const st = zoned(y, mo, d, m.starts[i], tz);
 			const en = i < B - 1 ? zoned(y, mo, d, m.starts[i + 1], tz) : zoned(N.getUTCFullYear(), N.getUTCMonth() + 1, N.getUTCDate(), m.starts[0], tz);
-			push(st, en, [units[m.mode === 'fixed' ? i % n : mod(di * B + i, n)]]);
+			push(st, en, [act[m.mode === 'fixed' ? i % na : mod(di * B + i, na)]]);
 		}
 	}
 	return out.sort((a, b) => a.start - b.start);
@@ -172,7 +195,8 @@ export function watchNow(doc, t = Date.now()) {
 		at,
 		atText: at != null ? hhmm(at, doc.tz) : '',
 		inMin: at != null ? Math.ceil((at - t) / 6e4) : null,
-		soon: at != null && at - t <= 10 * 6e4
+		soon: at != null && at - t <= 10 * 6e4,
+		off: offAt(doc, t) ? unitName(doc, offAt(doc, t)) : null // freier Tag heute
 	};
 }
 
@@ -209,6 +233,7 @@ export function cleanWatch(d, now = Date.now()) {
 	if (!Array.isArray(m.units) || m.units.length > 16 || !m.units.every(okUnit)) return 'bad watch order';
 	if (!/^\d{4}-\d\d-\d\d$/.test(m.start ?? '')) return 'bad start date';
 	const model = { preset: str(m.preset, 20), mode: m.mode, starts, units: m.units.map((u) => ({ t: u.t, id: u.id })), start: m.start };
+	if (m.dayOff === true && m.mode !== 'rolling') model.dayOff = true;
 	if (m.mode === 'rolling') {
 		if (!(1440 % m.shift === 0 && m.shift >= 30 && m.shift <= 360)) return 'change interval must divide the day (30–360 min)';
 		if (!(Number.isInteger(m.on) && m.on >= 1 && m.on <= 4)) return 'people on watch 1–4';

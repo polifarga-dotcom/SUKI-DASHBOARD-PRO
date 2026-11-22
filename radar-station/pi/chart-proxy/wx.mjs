@@ -46,7 +46,8 @@ export const WX_MODELS = [
 export const wxModel = (id) => WX_MODELS.find((m) => m.id === id);
 
 const KINDS = {
-	wind: { url: FORECAST, vars: ['wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'pressure_msl'], extra: '&wind_speed_unit=kn', k: 1 },
+	// x: Zusatzwerte als Farbfläche (Regen mm/h, Wolken %, CAPE J/kg, Temperatur °C); 8 Variablen kosten bei Open-Meteo nicht mehr als 4 (Grenze 10)
+	wind: { url: FORECAST, vars: ['wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'pressure_msl'], x: { rain: 'precipitation', cloud: 'cloud_cover', cape: 'cape', temp: 'temperature_2m' }, extra: '&wind_speed_unit=kn', k: 1 },
 	wave: { url: MARINE, vars: ['wave_height', 'wave_direction', 'wave_period'], extra: '', k: 1 },
 	current: { url: MARINE, vars: ['ocean_current_velocity', 'ocean_current_direction'], extra: '', k: 1 / 1.852 } // km/h → kn
 };
@@ -95,7 +96,7 @@ export function wxUrl(model, g) {
 		la.push(r3(g.lat0 + Math.floor(i / g.nx) * g.dlat));
 		lo.push(r3(g.lon0 + (i % g.nx) * g.dlon));
 	}
-	return `${K.url}?latitude=${la.join(',')}&longitude=${lo.join(',')}&hourly=${K.vars.join(',')}&models=${model.id}&forecast_days=14&timeformat=unixtime&timezone=GMT&cell_selection=${K.url === MARINE ? 'sea' : 'nearest'}${K.extra}`; // Meeresmodelle: „nearest“ bricht bei Landpunkten ganz ab, „sea“ liefert dort null
+	return `${K.url}?latitude=${la.join(',')}&longitude=${lo.join(',')}&hourly=${[...K.vars, ...Object.values(K.x ?? {})].join(',')}&models=${model.id}&forecast_days=14&timeformat=unixtime&timezone=GMT&cell_selection=${K.url === MARINE ? 'sea' : 'nearest'}${K.extra}`; // Meeresmodelle: „nearest“ bricht bei Landpunkten ganz ab, „sea“ liefert dort null
 }
 
 /** Open-Meteo-Antwort (Array je Gitterpunkt) → kompaktes Feld; Werte [t][y][x] flach, null = keine Daten (Land/außerhalb) */
@@ -121,10 +122,23 @@ export function wxConvert(model, g, resp) {
 			}
 		return out;
 	});
+	// Zusatzwerte; Variablen, die das Modell nicht hat (nur null), entfallen
+	const x = {};
+	for (const [k, v] of Object.entries(K.x ?? {})) {
+		const out = new Array(nt * locs.length).fill(null);
+		let some = false;
+		for (let ti = 0; ti < nt; ti++)
+			for (let p = 0; p < locs.length; p++) {
+				const val = locs[p]?.hourly[v]?.[ti];
+				if (val != null) (out[ti * locs.length + p] = Math.round(val * 10) / 10), (some = true);
+			}
+		if (some) x[k] = out;
+	}
 	return {
 		model: model.id,
 		kind: model.kind,
 		...g,
+		...(Object.keys(x).length ? { x } : {}),
 		t0: time[0] * 1000,
 		dt: nt > 1 ? (time[1] - time[0]) * 1000 : 3600e3,
 		nt,
@@ -153,6 +167,12 @@ const SETTLE = 10 * 60e3; // Open-Meteo empfiehlt, 10 min nach „verfügbar“ 
 /** Open-Meteo frei (nicht-kommerziell), je IP: jeder Gitterpunkt zählt als Abruf */
 export const WX_LIMITS = { minute: 600, hour: 5000, day: 10000, month: 300000 };
 const RESERVE = 0.95; // nicht bis ans Limit: Starlink teilt die IP evtl. mit anderen Nutzern
+/** kostenpflichtige API (Standard-Plan), nur wenn das freie Kontingent erschöpft ist */
+// shortcut: Limit fest auf den Standard-Plan (1 Mio./Monat), bei größerem Plan hier anpassen
+export const WX_PAID_LIMITS = { month: 1_000_000 };
+/** gleiche Abfrage gegen die Kunden-API mit Schlüssel */
+export const wxPaidUrl = (url, key) =>
+	url.replace('https://api.open-meteo.com', 'https://customer-api.open-meteo.com').replace('https://marine-api.open-meteo.com', 'https://customer-marine-api.open-meteo.com') + `&apikey=${encodeURIComponent(key)}`;
 
 const err = (code, msg, extra = {}) => Object.assign(new Error(msg), { code, ...extra });
 
@@ -175,69 +195,85 @@ export function wxLimitReset(why, now) {
 export const wxCost = (points, vars, days) => points * Math.max(1, vars / 10) * Math.max(1, days / 14);
 
 /** eigener Verbrauchszähler je Zeitfenster (UTC), auf dem Pi gespeichert */
-export function wxMeter(file = null) {
+export function wxMeter(file = null, limits = WX_LIMITS) {
 	let u = {};
 	const ready = file ? fs.readFile(file, 'utf8').then((s) => (u = JSON.parse(s)), () => {}) : Promise.resolve();
 	const cur = (now) => {
-		for (const p of Object.keys(WX_LIMITS)) if (!u[p] || u[p].end <= now) u[p] = { n: 0, end: periodEnd(p, now) };
+		for (const p of Object.keys(limits)) if (!u[p] || u[p].end <= now) u[p] = { n: 0, end: periodEnd(p, now) };
 		return u;
 	};
 	return {
 		ready,
-		used: (now = Date.now()) => Object.fromEntries(Object.keys(WX_LIMITS).map((p) => [p, Math.round(cur(now)[p].n)])),
+		used: (now = Date.now()) => Object.fromEntries(Object.keys(limits).map((p) => [p, Math.round(cur(now)[p].n)])),
 		/** reicht das Kontingent für n Abrufe? sonst das knappste Zeitfenster */
 		block(n, now = Date.now()) {
 			cur(now);
-			for (const p of ['month', 'day', 'hour', 'minute']) if (u[p].n + n > WX_LIMITS[p] * RESERVE) return { period: p, resetAt: u[p].end };
+			for (const p of ['month', 'day', 'hour', 'minute']) if (limits[p] && u[p].n + n > limits[p] * RESERVE) return { period: p, resetAt: u[p].end };
 			return null;
 		},
 		add(n, now = Date.now()) {
 			cur(now);
-			for (const p of Object.keys(WX_LIMITS)) u[p].n += n;
+			for (const p of Object.keys(limits)) u[p].n += n;
 			if (file) fs.writeFile(file, JSON.stringify(u)).catch(() => {});
 		}
 	};
 }
 
-export function wxStore(dir, fetchImpl = fetch, usageFile = null) {
+export function wxStore(dir, fetchImpl = fetch, usageFile = null, getKey = () => '') {
 	const mem = new Map();
 	const inflight = new Map(); // gleiche Anfrage von mehreren Geräten → ein Abruf
 	const metas = new Map();
 	const meter = wxMeter(usageFile);
 	let queue = Promise.resolve();
 	let blocked = null; // Open-Meteo meldete „limit exceeded“: { until, why }
+	const paidMeter = wxMeter(usageFile && usageFile.replace(/\.json$/, '-paid.json'), WX_PAID_LIMITS);
+	let paidBlocked = null; // dasselbe für die Kunden-API
+	const live = (b) => (b && Date.now() < b.until ? b : null);
 	const file = (key) => path.join(dir, `${key}.json`);
 
 	async function upstream(model, g) {
 		const pts = wxInside(model, g).length;
 		if (!pts) throw err('outside', 'outside the model area');
-		const cost = wxCost(pts, KINDS[model.kind].vars.length, 14);
+		const cost = wxCost(pts, KINDS[model.kind].vars.length + Object.keys(KINDS[model.kind].x ?? {}).length, 14);
 		await meter.ready;
+		await paidMeter.ready;
 		for (;;) {
+			// erst das freie Kontingent; erst wenn es erschöpft ist und ein Schlüssel hinterlegt ist, die Kunden-API
 			const now = Date.now();
-			if (blocked && now < blocked.until) throw err('quota', blocked.why, { resetAt: blocked.until, source: 'open-meteo' });
-			const b = meter.block(cost, now);
-			if (!b) break;
-			if (b.period !== 'minute') throw err('quota', `own count: ${b.period} limit reached`, { resetAt: b.resetAt, period: b.period, source: 'own' });
-			await new Promise((r) => setTimeout(r, b.resetAt - now + 500)); // Minutenlimit: in der Warteschlange warten
-		}
-		let r, j;
-		try {
-			r = await fetchImpl(wxUrl(model, g), { headers: { 'User-Agent': 'suki-radar-station' }, signal: AbortSignal.timeout(60e3) });
-			j = await r.json();
-		} catch (e) {
-			throw err('network', String(e.message ?? e));
-		}
-		meter.add(cost); // auch Fehlerantworten zählen vorsichtshalber
-		if (!r.ok || j.error) {
-			const why = j.reason ?? `HTTP ${r.status}`;
-			if (/limit exceeded/i.test(why)) {
-				blocked = { until: wxLimitReset(why, Date.now()), why };
-				throw err('quota', why, { resetAt: blocked.until, source: 'open-meteo' });
+			let free = live(blocked) && { why: blocked.why, resetAt: blocked.until, source: 'open-meteo' };
+			const b = free ? null : meter.block(cost, now);
+			if (b && b.period !== 'minute') free = { why: `own count: ${b.period} limit reached`, resetAt: b.resetAt, period: b.period, source: 'own' };
+			else if (b) {
+				await new Promise((r) => setTimeout(r, b.resetAt - now + 500)); // Minutenlimit: in der Warteschlange warten
+				continue;
 			}
-			throw err('api', why, { status: r.status });
+			const key = free ? String(getKey() ?? '').trim() : '';
+			if (free && !key) throw err('quota', free.why, free);
+			if (free && live(paidBlocked)) throw err('quota', paidBlocked.why, { resetAt: paidBlocked.until, source: 'paid' });
+			const pb = free && paidMeter.block(cost, now);
+			if (pb) throw err('quota', `paid plan: ${pb.period} limit reached`, { resetAt: pb.resetAt, period: pb.period, source: 'paid' });
+			const paid = !!free;
+			let r, j;
+			try {
+				const url = wxUrl(model, g);
+				r = await fetchImpl(paid ? wxPaidUrl(url, key) : url, { headers: { 'User-Agent': 'suki-radar-station' }, signal: AbortSignal.timeout(60e3) });
+				j = await r.json();
+			} catch (e) {
+				throw err('network', String(e.message ?? e).replaceAll(key || '\0', '***')); // Schlüssel nie in Meldungen
+			}
+			(paid ? paidMeter : meter).add(cost); // auch Fehlerantworten zählen vorsichtshalber
+			if (!r.ok || j.error) {
+				const why = j.reason ?? `HTTP ${r.status}`;
+				if (/limit exceeded/i.test(why)) {
+					const blk = { until: wxLimitReset(why, Date.now()), why };
+					if (paid) paidBlocked = blk;
+					else blocked = blk;
+					continue; // frei erschöpft → nächster Durchlauf nimmt die Kunden-API (oder meldet das Kontingent)
+				}
+				throw err('api', paid ? `paid API: ${why}` : why, { status: r.status });
+			}
+			return { ...wxConvert(model, g, j), ...(await runOf(model)), cost, ...(paid && { paid: true }) };
 		}
-		return { ...wxConvert(model, g, j), ...(await runOf(model)), cost };
 	}
 
 	/** Lauf-Infos (meta.json, zählt nicht zum Kontingent); Fehler sind egal (dann ohne Datenstand) */
@@ -285,7 +321,7 @@ export function wxStore(dir, fetchImpl = fetch, usageFile = null) {
 	}
 
 	return {
-		usage: () => ({ used: meter.used(), limits: WX_LIMITS, reserve: RESERVE, blocked: blocked && Date.now() < blocked.until ? blocked : null }),
+		usage: () => ({ used: meter.used(), limits: WX_LIMITS, reserve: RESERVE, blocked: live(blocked), paid: { key: !!getKey(), used: paidMeter.used(), limits: WX_PAID_LIMITS, blocked: live(paidBlocked) } }),
 		/** Feld für Modell + Position; bei Fehler der letzte gespeicherte Stand (stale + Fehlercode) */
 		async get(model, lat, lon, rNm) {
 			const g = wxGrid(lat, lon, rNm, model.res);

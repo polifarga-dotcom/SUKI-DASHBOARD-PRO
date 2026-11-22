@@ -19,6 +19,8 @@
 	import LayersTab from './ui/LayersTab.svelte';
 	import InstrumentsTab from './ui/InstrumentsTab.svelte';
 	import WatchTab from './ui/WatchTab.svelte';
+	import RoutesTab from './ui/RoutesTab.svelte';
+	import { startRoutes } from './chart/routes.svelte';
 	import WatchCalendar from './ui/WatchCalendar.svelte';
 	import { wp, startWatchPlan, showTz } from './watch/watch.svelte';
 	import { watchNow, hhmm } from '../pi/chart-proxy/watch.mjs';
@@ -48,6 +50,7 @@
 		const stopSync = startAlarmSync();
 		const stopNr = startNodeRed();
 		const stopWatch = startWatchPlan();
+		const stopRoutes = startRoutes();
 		if (settings.sim) setTimeout(startSim, 1500);
 		const t1 = setInterval(() => computeTargets(), 500);
 		const t2 = setInterval(() => {
@@ -124,6 +127,7 @@
 			stopSync();
 			stopNr();
 			stopWatch();
+			stopRoutes();
 			window.removeEventListener('keydown', onKey);
 			document.removeEventListener('visibilitychange', onVis);
 			window.removeEventListener('pageshow', onVis);
@@ -197,14 +201,17 @@
 	const wNow = $derived(wp.doc ? watchNow(wp.doc, clock.getTime()) : null);
 	const chipAt = $derived(wNow?.at != null ? hhmm(wNow.at, showTz()) : ''); // Ortszeit, Plan in UTC
 	const chipNext = $derived(wNow?.next?.label ?? '');
+	/** voller Name als Tooltip, wo das Tab-Label gekürzt ist */
+	const TAB_FULL: Record<string, string> = { instruments: 'Instruments', settings: 'Settings' };
 	const tabs = [
-		['instruments', 'gauge', 'Instruments'],
+		['instruments', 'gauge', 'Instr.'], // kurz: 8 Tabs à ~42 px
 		['targets', 'list', 'Targets'],
 		['radar', 'radar', 'Radar'],
 		['layers', 'layers', 'Layers'],
+		['routes', 'route', 'Routes'],
 		['alarms', 'bell', 'Alarms'],
 		['watch', 'users', 'Watch'],
-		['settings', 'gear', 'Settings']
+		['settings', 'gear', 'Setup']
 	] as const;
 </script>
 
@@ -275,7 +282,7 @@
 			<aside class="side">
 				<nav class="tabs">
 					{#each tabs as [id, icon, txt]}
-						<button class:on={settings.sideTab === id} onclick={() => (settings.sideTab = id)}><Icon name={icon} size={16} /> {t(txt)}{#if id === 'alarms' && unacked}<span class="badge sm">{unacked}</span>{/if}</button>
+						<button class:on={settings.sideTab === id} onclick={() => (settings.sideTab = id)} title={t(TAB_FULL[id] ?? txt)}><Icon name={icon} size={16} /> {t(txt)}{#if id === 'alarms' && unacked}<span class="badge sm">{unacked}</span>{/if}</button>
 					{/each}
 				</nav>
 				<div class="tabbody">
@@ -283,6 +290,7 @@
 					{:else if settings.sideTab === 'targets'}<TargetsTab />
 					{:else if settings.sideTab === 'radar'}<RadarTab radarId={settings.radarId} />
 					{:else if settings.sideTab === 'layers'}<LayersTab />
+					{:else if settings.sideTab === 'routes'}<RoutesTab />
 					{:else if settings.sideTab === 'alarms'}<AlarmsTab />
 					{:else if settings.sideTab === 'watch'}<WatchTab now={clock.getTime()} />
 					{:else}<SettingsTab />{/if}
@@ -338,7 +346,7 @@
 	/* Griff am rechten Rand des Radarbereichs: Seitenleiste ein-/ausklappen */
 	.sidetoggle { position: absolute; right: 0; top: 50%; transform: translateY(-50%); z-index: 35; width: 22px; min-height: 64px; padding: 0; border-radius: 8px 0 0 8px; border-right: 0; background: color-mix(in srgb, var(--panel) 85%, transparent); }
 	.side { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 1px solid var(--line); }
-	.tabs { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--line); }
+	.tabs { display: grid; grid-template-columns: repeat(8, 1fr); border-bottom: 1px solid var(--line); }
 	.tabs button { border: 0; border-radius: 0; background: transparent; font-size: 10.5px; padding: 6px 2px 5px; min-height: 48px; border-bottom: 2px solid transparent; flex-direction: column; gap: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
 	.tabs .badge.sm { position: absolute; top: 3px; right: 6px; }
 	.tabs button.on { background: transparent; color: var(--accent); border-bottom-color: var(--accent); }

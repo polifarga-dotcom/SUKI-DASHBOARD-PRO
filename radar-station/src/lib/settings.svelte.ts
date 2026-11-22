@@ -56,7 +56,7 @@ export interface Settings {
 	aisGuard: boolean; // AIS-Ziele in Guard Zones alarmieren
 	sim: boolean;
 	sidePanel: boolean;
-	sideTab: 'instruments' | 'targets' | 'radar' | 'layers' | 'alarms' | 'watch' | 'settings';
+	sideTab: 'instruments' | 'targets' | 'radar' | 'layers' | 'routes' | 'alarms' | 'watch' | 'settings';
 	/** Instrumenten-Tab: angezeigte Boxen (Reihenfolge) und SailSteer */
 	instBoxes: string[];
 	sailsteer: boolean;
@@ -79,12 +79,18 @@ export interface Settings {
 	destId: number | null;
 	/** Wettermodelle: Gebiet um das Schiff (Halbseite in sm) */
 	wxRadius: number;
-	/** Wind-Farbfläche nach Böen statt Mittelwind */
-	wxGustFill: boolean;
 	/** Favoriten (Ebenen-IDs, Wettermodelle und Kartenebenen) und Listen nur mit Favoriten */
 	wxFavs: string[];
 	wxFavOnly: boolean;
 	layerFavOnly: boolean;
+	/** Ebenen-Tab: Karten / Wetter-API / PredictWind-GRIB */
+	layerSub: 'charts' | 'wx' | 'grib';
+	/** Routen-Tab: Subtab und Favoriten (r:<Routen-ID>, m:<Marker-ID>) */
+	routeSub: 'routes' | 'wps';
+	routeFavs: string[];
+	routeFavOnly: boolean;
+	/** Sortierung der Wegpunkte (Marker) im Routen-Tab */
+	markSort: 'time' | 'name' | 'icon';
 }
 
 export const ALARM_PRESETS: Record<Exclude<AlarmPreset, 'custom' | 'off'>, { cpa: number; tcpa: number; label: string }> = {
@@ -150,10 +156,14 @@ const DEFAULTS: Settings = {
 	passageStart: 0,
 	destId: null,
 	wxRadius: 100,
-	wxGustFill: false,
 	wxFavs: [],
 	wxFavOnly: false,
 	layerFavOnly: false,
+	layerSub: 'charts',
+	routeSub: 'routes',
+	routeFavs: [],
+	routeFavOnly: false,
+	markSort: 'time',
 	instBoxes: ['aws', 'awa', 'tws', 'twd', 'sog', 'stw', 'dpt', 'cog'],
 	sailsteer: true
 };

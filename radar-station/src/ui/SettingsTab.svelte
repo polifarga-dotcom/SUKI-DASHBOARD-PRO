@@ -2,10 +2,11 @@
 	import { settings, resetSettings } from '../lib/settings.svelte';
 	import { radar, reconnectMayara } from '../data/mayara.svelte';
 	import { startSim, stopSim } from '../sim/simulator';
-	import { tools, removeMarker } from '../radar/tools.svelte';
-	import { fmtLat, fmtLon, dec } from '../lib/geo';
+	import { tools } from '../radar/tools.svelte';
+	import { dec } from '../lib/geo';
 	import { t } from '../lib/i18n.svelte';
 	import { providers, putKey, testProvider } from '../chart/layers.svelte';
+	import { wx, loadUsage } from '../chart/weather.svelte';
 	import Icon from './Icon.svelte';
 
 	// Kielspur: Anzeige-Länge in Stufen, Speicherung auf dem Pi (Tage, Größe, Löschen)
@@ -47,6 +48,17 @@
 	async function removeKey(id: string) {
 		await putKey(id, '');
 		keyMsg[id] = t('Key removed');
+		if (id === 'openmeteo') loadUsage();
+	}
+	$effect(() => {
+		loadUsage();
+	});
+	// Open-Meteo-Schlüssel nicht testen: jeder Test kostet bezahlte Abrufe
+	async function saveWxKey() {
+		const ok = await putKey('openmeteo', keyInput.openmeteo ?? '');
+		keyInput.openmeteo = '';
+		keyMsg.openmeteo = ok ? t('Key saved – used only when the free quota is used up.') : t('Saving failed');
+		loadUsage();
 	}
 
 	// Herunterfahren der Pis (OpenCPN-Pi .112, SignalK-/Radar-Pi .100 = dieser Server)
@@ -190,16 +202,21 @@
 				</div>
 			</div>
 		{/each}
+		<div class="prov">
+			<div class="pname"><b>{t('Open-Meteo weather (paid fallback)')}</b> {#if wx.usage?.paid?.key}<span class="okk">✓ {t('key set')}</span>{/if}</div>
+			<div class="muted small">{t('The free quota is always used first. Only when it is used up does the Pi switch to the paid API with this key, so the high-resolution grid keeps loading.')}</div>
+			<div class="keyrow">
+				<input type="password" autocomplete="off" placeholder={t('API key')} bind:value={keyInput.openmeteo} />
+				<button class="mini" disabled={!keyInput.openmeteo} onclick={saveWxKey}>{t('Save')}</button>
+				{#if wx.usage?.paid?.key}<button class="mini" onclick={() => removeKey('openmeteo')}>{t('Remove')}</button>{/if}
+			</div>
+			<div class="small">
+				<a href="https://open-meteo.com/en/pricing" target="_blank" rel="noopener">{t('Get a key')}</a>
+				{#if keyMsg.openmeteo}<span class="kmsg">{keyMsg.openmeteo}</span>{/if}
+			</div>
+		</div>
 	</section>
 
-	<section>
-		<b>{t('Markers')}</b>
-		{#each tools.markers as m (m.id)}
-			<div class="mk small num"><span><b>{m.label}</b> {fmtLat(m.pos.lat)} {fmtLon(m.pos.lon)}</span><button class="mini" onclick={() => removeMarker(m.id)} aria-label={t('Delete marker')}><Icon name="trash" size={14} /></button></div>
-		{:else}
-			<div class="muted small">{t('None. Long-press / right-click the radar to place one.')}</div>
-		{/each}
-	</section>
 
 	<section>
 		<b>{t('System')}</b>
@@ -227,7 +244,6 @@
 	.two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 	.small { font-size: 12px; }
 	.mini { min-height: 28px; padding: 2px 8px; }
-	.mk { display: flex; justify-content: space-between; align-items: center; }
 	.seg { align-self: flex-start; }
 	.prov { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
 	.okk { color: var(--ok); font-size: 12px; margin-left: 6px; }

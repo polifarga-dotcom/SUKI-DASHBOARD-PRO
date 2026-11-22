@@ -15,7 +15,10 @@ export interface Marker {
 	label: string;
 	kind: 'mark' | 'mob';
 	t: number;
+	/** Symbol (MARK_ICONS-ID), fehlt = Wegpunkt */
+	icon?: string;
 }
+
 
 const MK = 'suki-radar-markers-v1';
 const SK = 'suki-radar-squalls-v1';

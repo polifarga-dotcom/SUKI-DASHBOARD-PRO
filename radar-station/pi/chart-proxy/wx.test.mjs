@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { wxGrid, wxUrl, wxConvert, wxStore, wxModel, wxInside, wxLimitReset, wxMeter, wxCost, periodEnd } from './wx.mjs';
+import { wxGrid, wxUrl, wxConvert, wxStore, wxModel, wxInside, wxLimitReset, wxMeter, wxCost, periodEnd, wxPaidUrl } from './wx.mjs';
 
 const fake = (g, nt, kind) =>
 	Array.from({ length: g.nx * g.ny }, (_, p) => ({
@@ -10,7 +10,7 @@ const fake = (g, nt, kind) =>
 			time: Array.from({ length: nt + 2 }, (_, i) => 1795000000 + i * 3600),
 			...(kind === 'current'
 				? { ocean_current_velocity: [...Array(nt).fill(1.852), null, null], ocean_current_direction: [...Array(nt).fill(90), null, null] }
-				: { wind_speed_10m: [...Array(nt).fill(p === 0 ? null : 12.34), null, null], wind_direction_10m: [...Array(nt).fill(270), null, null], wind_gusts_10m: [...Array(nt).fill(20.04), null, null], pressure_msl: [...Array(nt).fill(1013.27), null, null] })
+				: { wind_speed_10m: [...Array(nt).fill(p === 0 ? null : 12.34), null, null], wind_direction_10m: [...Array(nt).fill(270), null, null], wind_gusts_10m: [...Array(nt).fill(20.04), null, null], pressure_msl: [...Array(nt).fill(1013.27), null, null], precipitation: [...Array(nt).fill(0.44), null, null], cape: Array(nt + 2).fill(null) })
 		}
 	}));
 
@@ -48,6 +48,28 @@ describe('weather grid', () => {
 		expect(calls).toBe(1);
 		await fs.rm(dir, { recursive: true });
 	});
+	it('uses the free API first and the paid customer API only after the free limit is exceeded', async () => {
+		expect(wxPaidUrl('https://marine-api.open-meteo.com/v1/marine?x=1', 'a b')).toBe('https://customer-marine-api.open-meteo.com/v1/marine?x=1&apikey=a%20b');
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wxp-'));
+		const m = wxModel('ecmwf_ifs025');
+		const g = wxGrid(36, 14, 50, m.res);
+		let key = '';
+		const urls = [];
+		const st = wxStore(dir, async (u) => {
+			if (u.includes('/static/meta.json')) return { ok: true, json: async () => ({}) };
+			urls.push(u);
+			if (u.startsWith('https://api.open-meteo.com')) return { ok: false, status: 429, json: async () => ({ error: true, reason: 'Daily API request limit exceeded.' }) };
+			return { ok: true, json: async () => fake(g, 3, 'wind') };
+		}, null, () => key);
+		await expect(st.get(m, 36, 14, 50)).rejects.toThrow(/limit exceeded/); // ohne Schlüssel: Kontingent-Fehler
+		key = 'k1';
+		const f = await st.get(m, 36, 14, 50);
+		expect(f.paid).toBe(true);
+		expect(urls.length).toBe(2); // frei nicht erneut gefragt, solange gesperrt
+		expect(urls[1]).toMatch(/^https:\/\/customer-api\.open-meteo\.com\/v1\/forecast\?.*&apikey=k1$/);
+		expect(st.usage().paid.used.month).toBeGreaterThan(0);
+		await fs.rm(dir, { recursive: true });
+	});
 	it('keeps large areas inside ±89° latitude', () => {
 		const g = wxGrid(75, 10, 1600, 0.25);
 		expect(g.lat0 + (g.ny - 1) * g.dlat).toBeLessThanOrEqual(89);
@@ -73,6 +95,9 @@ describe('weather grid', () => {
 		expect(w.d[1]).toBe(270);
 		expect(w.p[1]).toBe(20); // Böen
 		expect(w.q[1]).toBe(1013.3); // Luftdruck
+		expect(w.x.rain[1]).toBe(0.4); // Regen mm/h
+		expect(w.x.cape).toBeUndefined(); // Modell ohne CAPE → entfällt
+		expect(wxUrl(wxModel('ecmwf_ifs'), g)).toMatch(/hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl,precipitation,cloud_cover,cape,temperature_2m&/);
 		const c = wxConvert(wxModel('meteofrance_currents'), g, fake(g, 2, 'current'));
 		expect(c.s[0]).toBe(1);
 		expect(c.p).toBeNull();

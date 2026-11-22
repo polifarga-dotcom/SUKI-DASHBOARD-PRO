@@ -1,6 +1,9 @@
 // Wetterfeld vom Pi (Open-Meteo-Gitter): Abtasten an Position/Zeit, Farbskalen. Reine Funktionen (testbar).
 
 export type WxKind = 'wind' | 'wave' | 'current';
+/** Zusatzwerte als Farbfläche: Regen mm/h, Wolken %, CAPE J/kg, Temperatur 2 m °C */
+export type WxExtra = 'rain' | 'cloud' | 'cape' | 'temp';
+export const EXTRAS: WxExtra[] = ['rain', 'cloud', 'cape', 'temp'];
 
 export interface WxModel {
 	id: string;
@@ -14,6 +17,8 @@ export interface WxModel {
 	/** ungefähres Nutzungsgebiet, z. B. „Weltweit“, „Zentrales Mittelmeer“ */
 	region?: string;
 	region_de?: string;
+	/** PredictWind-GRIB vom Pi (statt Open-Meteo) */
+	grib?: boolean;
 }
 
 export interface WxField {
@@ -34,6 +39,8 @@ export interface WxField {
 	p: (number | null)[] | null;
 	/** Luftdruck hPa (nur wind) */
 	q?: (number | null)[] | null;
+	/** Zusatzwerte (nur, was das Modell liefert), gleiche Anordnung wie s */
+	x?: Partial<Record<WxExtra, (number | null)[]>>;
 	fetched: number;
 	/** Modelllauf des Wetterdienstes (Initialisierung), verfügbar seit, Takt – ms; null = unbekannt */
 	run?: number | null;
@@ -136,9 +143,63 @@ export function sample(f: WxField, ti: number, lat: number, lon: number): WxSamp
 	return { s: s / w, dir: f.kind === 'current' ? to : (to + 180) % 360, p: pw ? p / pw : null, q: qw ? q / qw : null };
 }
 
+/** Zusatzwert bilinear an lat/lon (Ecken ohne Wert zählen nicht) */
+export function sampleX(f: WxField, key: WxExtra, ti: number, lat: number, lon: number): number | null {
+	const a = f.x?.[key];
+	if (!a || ti < 0) return null;
+	const fx = (lon - f.lon0) / f.dlon;
+	const fy = (lat - f.lat0) / f.dlat;
+	if (fx < 0 || fy < 0 || fx > f.nx - 1 || fy > f.ny - 1) return null;
+	const x0 = Math.min(f.nx - 2, Math.max(0, Math.floor(fx)));
+	const y0 = Math.min(f.ny - 2, Math.max(0, Math.floor(fy)));
+	const ax = fx - x0, ay = fy - y0;
+	const base = ti * f.nx * f.ny;
+	let w = 0, v = 0;
+	for (let k = 0; k < 4; k++) {
+		const val = a[base + (y0 + (k >> 1)) * f.nx + x0 + (k & 1)];
+		const wk = (k & 1 ? ax : 1 - ax) * (k >> 1 ? ay : 1 - ay);
+		if (val == null || wk <= 0) continue;
+		w += wk;
+		v += wk * val;
+	}
+	return w >= 0.25 ? v / w : null;
+}
+
 type Stops = [number, [number, number, number]][];
-/** Farbskalen (Werte in kn bzw. m) */
-export const SCALES: Record<WxKind, Stops> = {
+/** Farbskalen (Werte in kn bzw. m; Zusatzwerte in mm/h, %, J/kg, °C) */
+export const SCALES: Record<WxKind | WxExtra, Stops> = {
+	rain: [
+		[0.1, [150, 200, 255]],
+		[0.5, [80, 150, 240]],
+		[1, [40, 100, 220]],
+		[2, [40, 180, 80]],
+		[5, [240, 220, 40]],
+		[10, [240, 130, 30]],
+		[20, [220, 30, 40]],
+		[40, [160, 30, 150]]
+	],
+	cloud: [
+		[0, [235, 238, 242]],
+		[50, [200, 205, 212]],
+		[100, [150, 156, 165]]
+	],
+	cape: [
+		[100, [120, 200, 120]],
+		[500, [240, 220, 40]],
+		[1000, [245, 140, 40]],
+		[2000, [220, 30, 40]],
+		[3000, [160, 30, 150]]
+	],
+	temp: [
+		[-10, [80, 60, 170]],
+		[0, [60, 120, 220]],
+		[10, [60, 190, 190]],
+		[15, [90, 200, 100]],
+		[20, [230, 220, 60]],
+		[25, [245, 150, 40]],
+		[30, [225, 60, 40]],
+		[40, [150, 20, 60]]
+	],
 	wind: [
 		[0, [40, 60, 150]],
 		[5, [40, 120, 200]],
@@ -173,7 +234,7 @@ export const SCALES: Record<WxKind, Stops> = {
 	]
 };
 
-export function colorAt(kind: WxKind, val: number): [number, number, number] {
+export function colorAt(kind: WxKind | WxExtra, val: number): [number, number, number] {
 	const st = SCALES[kind];
 	if (val <= st[0][0]) return st[0][1];
 	for (let i = 1; i < st.length; i++)
@@ -186,7 +247,15 @@ export function colorAt(kind: WxKind, val: number): [number, number, number] {
 	return st[st.length - 1][1];
 }
 
-export const UNIT: Record<WxKind, string> = { wind: 'kn', wave: 'm', current: 'kn' };
+export const UNIT: Record<WxKind | WxExtra, string> = { wind: 'kn', wave: 'm', current: 'kn', rain: 'mm/h', cloud: '%', cape: 'J/kg', temp: '°C' };
+
+/** Deckkraft der Farbfläche (0–1): kein Regen / kaum CAPE durchsichtig, Wolken nach Bedeckung, sonst voll */
+export function fillAlpha(key: WxKind | WxExtra, val: number) {
+	if (key === 'rain') return val < 0.1 ? 0 : 1;
+	if (key === 'cape') return val < 100 ? 0 : 1;
+	if (key === 'cloud') return Math.max(0, Math.min(1, val / 100)) * 0.85;
+	return 1;
+}
 
 /** Tile-Pixel (Web-Mercator) → lat/lon */
 export function tileLatLon(z: number, x: number, y: number): [number, number] {

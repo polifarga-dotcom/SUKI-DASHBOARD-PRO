@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { antennaToRadar, toLocal, routeLength } from './geo';
+import { antennaToRadar, toLocal, routeLength, routeGpx } from './geo';
 
 const gps = { lat: 36, lon: 14 };
 const off = (hdgDeg: number, fwd: number, stbd: number) => toLocal(gps, antennaToRadar(gps, (hdgDeg * Math.PI) / 180, fwd, stbd)).map((v) => Math.round(v * 100) / 100);
@@ -18,5 +18,11 @@ describe('routeLength', () => {
 		const a = { lat: 0, lon: 0 }, b = { lat: 1 / 60, lon: 0 }, c = { lat: 1 / 60, lon: 1 / 60 };
 		expect(routeLength([a])).toBe(0);
 		expect(routeLength([a, b, c]) / 1852).toBeCloseTo(2, 2); // 1 sm Nord + 1 sm Ost
+	});
+	it('exports a measured route as GPX', () => {
+		const g = routeGpx([{ lat: 36.1, lon: 14.25 }, { lat: -1, lon: -2.5 }], 'A & B');
+		expect(g).toContain('<rte><name>A &#38; B</name>');
+		expect(g).toContain('<rtept lat="36.100000" lon="14.250000"><name>WP01</name></rtept>');
+		expect(g).toContain('<rtept lat="-1.000000" lon="-2.500000"><name>WP02</name></rtept>');
 	});
 });

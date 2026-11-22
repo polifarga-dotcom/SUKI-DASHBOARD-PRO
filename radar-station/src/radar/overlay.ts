@@ -1,11 +1,17 @@
 // Canvas2D-Overlay über dem Radarbild: Ringe, Kompassrose, Headingline, Eigenschiff, AIS/ARPA, Vektoren,
 // Tracks, CPA-Punkte, EBL/VRM, Guard Zones, Marker, Cursor.
+import { wpWeather } from '../../pi/chart-proxy/routes.mjs';
 import { routeLength, D2R, bearingOf, fmtDeg, fmtDist, norm2pi, numStr, ringStep, toLocal, NM, KN, dec, type LatLon } from '../lib/geo';
 import type { Settings, Theme } from '../lib/settings.svelte';
 import type { OwnShip } from '../data/signalk.svelte';
 import type { Target } from '../collision/targets.svelte';
 import type { Ebl, Marker } from './tools.svelte';
 import { toScreen, type View } from './view';
+import { markIcon } from './markIcons';
+import { ICONS } from '../ui/icons';
+
+const paths = new Map<string, Path2D>();
+const pathOf = (k: string) => paths.get(k) ?? paths.set(k, new Path2D(ICONS[k] ?? '')).get(k)!;
 import { squallEncounter, squallPos, squallVel, type Squall } from '../collision/squall';
 
 export interface OverlayInput {
@@ -25,6 +31,8 @@ export interface OverlayInput {
 	alarmKeys: Map<string, boolean>;
 	track: [number, number, number][];
 	measure: LatLon[] | null;
+	/** gespeicherte, eingeblendete Routen */
+	routes: { name: string; color: string; pts: (LatLon & { name?: string })[] }[];
 	alignFirst: LatLon | null;
 	now: number;
 	label: string; // z. B. „A“ im Dual-Range-Modus
@@ -277,24 +285,25 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, I: OverlayInput) {
 			const [x, y] = toLocal(own.pos, m.pos);
 			const [sx, sy] = toScreen(v, x, y);
 			if (sx < -20 || sy < -20 || sx > W + 20 || sy > H + 20) continue;
-			ctx.strokeStyle = m.kind === 'mob' ? C.danger : C.mark;
+			// Symbol (24er-SVG-Pfad) auf dunkler Scheibe (Nachtfarben bleiben erhalten)
+			const col = m.kind === 'mob' ? C.danger : C.mark;
+			ctx.fillStyle = C.textBg;
+			ctx.strokeStyle = col;
 			ctx.lineWidth = 2;
 			ctx.beginPath();
-			if (m.kind === 'mob') {
-				ctx.arc(sx, sy, 9, 0, Math.PI * 2);
-				ctx.moveTo(sx - 6, sy - 6);
-				ctx.lineTo(sx + 6, sy + 6);
-				ctx.moveTo(sx + 6, sy - 6);
-				ctx.lineTo(sx - 6, sy + 6);
-			} else {
-				ctx.moveTo(sx, sy - 9);
-				ctx.lineTo(sx + 7, sy);
-				ctx.lineTo(sx, sy + 9);
-				ctx.lineTo(sx - 7, sy);
-				ctx.closePath();
-			}
+			ctx.arc(sx, sy, 13, 0, Math.PI * 2);
+			ctx.fill();
 			ctx.stroke();
-			label(ctx, C, font(11, 600), m.label, sx + 11, sy - 11);
+			ctx.save();
+			ctx.translate(sx - 8.4, sy - 8.4);
+			ctx.scale(0.7, 0.7);
+			ctx.lineWidth = 2.6;
+			ctx.lineCap = 'round';
+			ctx.lineJoin = 'round';
+			ctx.strokeStyle = col;
+			ctx.stroke(pathOf(markIcon(m).icon));
+			ctx.restore();
+			label(ctx, C, font(11, 600), m.label, sx + 15, sy - 13);
 		}
 	}
 
@@ -549,6 +558,31 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, I: OverlayInput) {
 	}
 	ctx.restore();
 
+	// ── Routen ──
+	if (own.pos) {
+		for (const r of I.routes ?? []) {
+			const ps = r.pts.map((p) => toScreen(v, ...toLocal(own.pos!, p)));
+			ctx.strokeStyle = r.color;
+			ctx.fillStyle = r.color;
+			ctx.lineWidth = 2.5;
+			ctx.beginPath();
+			ps.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+			ctx.stroke();
+			ps.forEach(([x, y], i) => {
+				ctx.beginPath();
+				ctx.arc(x, y, i === 0 || i === ps.length - 1 ? 5 : 3.5, 0, Math.PI * 2);
+				ctx.fill();
+				if (x < -100 || x > W + 100 || y < -100 || y > H + 100) return;
+				const wx = wpWeather(r.pts[i].name);
+				if (wx?.vals.TWD != null) windArrow(ctx, x, y, wx.vals.TWD * D2R - v.up, wx.vals.TWS ?? 0);
+				// PredictWind: statt des langen Namens Uhrzeit + Wind
+				const short = wx ? `${new Date(wx.eta + wx.off * 6e4).toISOString().slice(11, 16)}${wx.vals.TWS != null ? ` · ${Math.round(wx.vals.TWS)} kn` : ''}` : r.pts[i].name;
+				const nm = i === 0 ? (short ? `${r.name} · ${short}` : r.name) : short;
+				if (nm) label(ctx, C, font(i === 0 ? 12 : 11, i === 0 ? 800 : 600), nm, x + 8, y - 6, r.color);
+			});
+		}
+	}
+
 	// ── Messstrecke ──
 	if (own.pos && I.measure?.length) {
 		const m = I.measure;
@@ -652,6 +686,26 @@ function ringLabel(m: number) {
 
 function rank(t: Target) {
 	return t.danger === 'dangerous' ? 0 : t.danger === 'caution' ? 1 : t.lost ? 3 : 2;
+}
+
+/** Windpfeil am Wegpunkt: zeigt, wohin der Wind weht; Farbe nach Stärke */
+function windArrow(ctx: CanvasRenderingContext2D, x: number, y: number, from: number, kn: number) {
+	const a = from + Math.PI / 2; // „aus“-Richtung → Pfeil in Windrichtung, Bildschirmwinkel
+	const dx = Math.cos(a), dy = Math.sin(a), L = 13;
+	ctx.save();
+	ctx.strokeStyle = ctx.fillStyle = kn >= 25 ? '#ff3b30' : kn >= 18 ? '#ff9500' : kn >= 8 ? '#34c759' : '#8e8e93';
+	ctx.lineWidth = 2;
+	ctx.beginPath();
+	ctx.moveTo(x - dx * L, y - dy * L);
+	ctx.lineTo(x + dx * L, y + dy * L);
+	ctx.stroke();
+	ctx.beginPath();
+	ctx.moveTo(x + dx * (L + 4), y + dy * (L + 4));
+	ctx.lineTo(x + dx * (L - 4) - dy * 4, y + dy * (L - 4) + dx * 4);
+	ctx.lineTo(x + dx * (L - 4) + dy * 4, y + dy * (L - 4) - dx * 4);
+	ctx.closePath();
+	ctx.fill();
+	ctx.restore();
 }
 
 function label(ctx: CanvasRenderingContext2D, C: Colors, f: string, txt: string, x: number, y: number, color?: string) {

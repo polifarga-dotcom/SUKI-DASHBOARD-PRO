@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Wachkalender (Vollbild): Woche oder Tag in Ortszeit (nur Anzeige, Plan in UTC). Tipp auf eine Wache → anders einteilen (Ausnahme).
-	import { schedule, zoned, dayOf, hhmm, unitName, restOf, restText, type Unit, type Watch } from '../../pi/chart-proxy/watch.mjs';
+	import { schedule, zoned, dayOf, hhmm, unitName, restOf, restText, offAt, type Unit, type Watch } from '../../pi/chart-proxy/watch.mjs';
 	import { wp, commit, showTz } from '../watch/watch.svelte';
 	import { t, isDe } from '../lib/i18n.svelte';
 	import Icon from './Icon.svelte';
@@ -94,7 +94,7 @@
 	<div class="grid scroll">
 		<div class="hdr" style="grid-template-columns: 48px repeat({cols.length}, 1fr)">
 			<span></span>
-			{#each cols as c (c.dU)}<span class:today={c.b[0] <= now && now < c.b[1]}>{dayName(c.dU)}</span>{/each}
+			{#each cols as c (c.dU)}{@const off = offAt(doc, (c.b[0] + c.b[1]) / 2)}<span class:today={c.b[0] <= now && now < c.b[1]}>{dayName(c.dU)}{#if off}<small class="off">{t('off: {n}', { n: unitName(doc, off) })}</small>{/if}</span>{/each}
 		</div>
 		<div class="body" style="grid-template-columns: 48px repeat({cols.length}, 1fr); height:{24 * HOUR}px">
 			<div class="hours">{#each Array.from({ length: 24 }, (_, h) => h) as h}<span style="top:{h * HOUR}px">{String(h).padStart(2, '0')}</span>{/each}</div>
@@ -168,6 +168,7 @@
 	.blk b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 	.blk span { font-size: 11px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 	.blk.ovr { border-style: dashed; border-left-style: solid; }
+	.off { display: block; font-size: 11px; font-weight: 400; opacity: 0.8; }
 	.blk.cur { box-shadow: 0 0 0 2px var(--accent); }
 	.nowline { position: absolute; left: 0; right: 0; border-top: 2px solid var(--alarm); z-index: 2; pointer-events: none; }
 	.pick { position: absolute; right: 16px; bottom: 16px; width: min(360px, calc(100% - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 5; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); }

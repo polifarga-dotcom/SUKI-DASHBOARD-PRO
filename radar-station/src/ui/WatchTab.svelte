@@ -88,6 +88,7 @@
 		if (id === 'custom') return commit();
 		m.mode = p.mode;
 		m.starts = [...p.starts];
+		m.dayOff = !!p.dayOff;
 		if (p.mode === 'rolling') {
 			m.shift = p.shift;
 			m.on = p.on;
@@ -122,6 +123,7 @@
 			m.on ??= 2;
 			m.starts = [m.starts[0] ?? 0];
 			m.units = doc!.crew.map((c) => ({ t: 'person', id: c.id }));
+			m.dayOff = false;
 		}
 		custom();
 	}
@@ -156,6 +158,7 @@
 			{#if info?.on}
 				<div class="now">
 					<div><span class="muted small">{t('Now')}</span> <b>{info.now?.label || '—'}</b>{#if info.now && info.now.names.join(' + ') !== info.now.label}<span class="muted small"> ({info.now.names.join(', ')})</span>{/if}</div>
+					{#if info.off}<div><span class="muted small">{t('Day off today')}</span> <b>{info.off}</b></div>{/if}
 					<div class:soon={info.soon}><span class="muted small">{t('Change {t}', { t: atL })}</span> <b>{info.next?.label ?? '—'}</b> <span class="muted small num">{t('in {m} min', { m: info.inMin ?? 0 })}</span></div>
 				</div>
 				<div class="list small num">
@@ -255,6 +258,9 @@
 				{:else if doc.model.mode === 'fixed'}{t('Every day the same: watch 1 → first in the order, watch 2 → second, …')}
 				{:else}{t('One person changes at each interval; each stands several intervals.')}{/if}
 			</div>
+			{#if doc.model.mode !== 'rolling'}
+				<label class="ctl"><span>{t('Rotating day off (one watch free each day)')}</span><input type="checkbox" checked={!!doc.model.dayOff} onchange={(e) => { doc.model.dayOff = e.currentTarget.checked; custom(); }} /></label>
+			{/if}
 
 			{#if doc.model.mode === 'rolling'}
 				<label class="ctl"><span>{t('First change (UTC)')}</span><input type="time" value={toTime(doc.model.starts[0] ?? 0)} onchange={(e) => setStart(0, e.currentTarget.value)} /></label>

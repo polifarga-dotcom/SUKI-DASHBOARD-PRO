@@ -24,15 +24,23 @@
 	import { CORAL_CLASSES, coralState, uploadCoral, deleteCoral } from '../chart/coralLayer';
 	import { tools } from '../radar/tools.svelte';
 	import { t } from '../lib/i18n.svelte';
-	import { dec } from '../lib/geo';
+	import { dec, fmtRange } from '../lib/geo';
 	import Icon from './Icon.svelte';
-	import { wx, wxModel, wxId, isWx, wxAbout, wxRunText, wxRegion, wxErrorText, loadUsage, wxKm } from '../chart/weather.svelte';
-	import { SCALES, UNIT, type WxKind } from '../chart/wxField';
+	import { wx, fields, wxModel, wxId, isWx, wxAbout, wxRunText, wxRegion, wxErrorText, loadUsage, wxKm } from '../chart/weather.svelte';
+	import { SCALES, UNIT, EXTRAS, type WxKind, type WxExtra } from '../chart/wxField';
 	import { anch, ANCH_COLOR } from '../chart/anchorages.svelte';
 	import { coast } from '../chart/coast.svelte';
+	import { pwDelete } from '../chart/pw.svelte';
+	import PwSync from './PwSync.svelte';
 
 	let open = $state<string | null>(null);
 	let presetName = $state('');
+	let savedPreset = $state(''); // kurz Haken anzeigen nach dem Überschreiben
+	function overwrite(name: string) {
+		savePreset(name);
+		savedPreset = name;
+		setTimeout(() => savedPreset === name && (savedPreset = ''), 1500);
+	}
 	let coralVersion = $state(0);
 
 	const KIND: Record<string, string> = { satellite: 'Satellite', depth: 'Depth', overlay: 'Overlay', base: 'Map' };
@@ -45,9 +53,27 @@
 	const favCount = (ls: { id: string }[]) => ls.filter((l) => settings.wxFavs.includes(l.id)).length;
 	const wxAll = $derived([...chartCfg.layers].reverse().filter((l) => isWx(l.id) && wxModel(l.id)));
 	const wxShown = $derived(settings.wxFavOnly ? wxAll.filter((l) => settings.wxFavs.includes(l.id)) : wxAll);
+	const wxApi = $derived(wxShown.filter((l) => !wxModel(l.id)!.grib));
+	const wxGrib = $derived(wxShown.filter((l) => wxModel(l.id)!.grib));
+	const apiAll = $derived(wxAll.filter((l) => !wxModel(l.id)!.grib));
+	const gribAll = $derived(wxAll.filter((l) => wxModel(l.id)!.grib));
+	async function deleteGrib(id: string, name: string) {
+		if (confirm(t('Delete the GRIB files of “{n}” on the Pi?', { n: name }))) await pwDelete(wxId(id));
+	}
 	const toggleFav = (id: string, on: boolean) => (settings.wxFavs = on ? [...settings.wxFavs, id] : settings.wxFavs.filter((x) => x !== id));
 	const WX_KIND: Record<WxKind, string> = { wind: 'Wind', wave: 'Waves', current: 'Current' };
-	const scaleCss = (k: WxKind) => {
+	const EXTRA_LABEL: Record<WxExtra | 'gust', string> = { gust: 'Gusts', rain: 'Rain', cloud: 'Clouds', cape: 'CAPE', temp: 'Temperature' };
+	/** Zusatzwerte, die das geladene Feld dieses Modells hat (Regen, Wolken, CAPE, Temperatur) */
+	const extrasOf = (id: string): (WxExtra | 'gust')[] => {
+		wx.version;
+		const f = fields.get(wxId(id));
+		if (!f) return [];
+		const gust = f.kind === 'wind' && f.p?.some((v) => v != null) ? (['gust'] as const) : [];
+		return [...gust, ...EXTRAS.filter((k) => f.x?.[k])];
+	};
+	/** angezeigte Farbfläche: gewählter Zusatzwert, falls vorhanden, sonst Wind/Welle/Strömung */
+	const fillKey = (l: { id: string; fill?: WxExtra | 'gust' }, kind: WxKind): WxKind | WxExtra => (l.fill && l.fill !== 'gust' && extrasOf(l.id).includes(l.fill) ? l.fill : kind);
+	const scaleCss = (k: WxKind | WxExtra) => {
 		const st = SCALES[k];
 		return `linear-gradient(90deg, ${st.map(([, c], i) => `rgb(${c.join(',')}) ${(i / (st.length - 1)) * 100}%`).join(', ')})`;
 	};
@@ -129,7 +155,118 @@
 	</button>
 {/snippet}
 
+{#snippet wxRow(l: (typeof wxAll)[number])}
+	{@const m = wxModel(l.id)!}
+	{@const st = wx.status[wxId(l.id)]}
+	<div class="layer" class:off={!l.on}>
+		<div class="lrow">
+			<input type="checkbox" bind:checked={l.on} aria-label={m.name} />
+			{@render star(l.id)}
+			<button class="lname plain" title={wxAbout(m)} onclick={() => (open = open === l.id ? null : l.id)}>
+				{m.name} <span class="badge">{t(WX_KIND[m.kind])}</span>{#if wxKm(m)}<span class="resv">{wxKm(m)}</span>{/if}
+				{#if l.on && st?.loading}<span class="muted small">{t('loading…')}</span>{/if}
+				{#if l.on && wxErrorText(l.id, true)}<span class="err small">{wxErrorText(l.id, true)}</span>{/if}
+			</button>
+			<span class="num pctv">{pct(l.opacity)}</span>
+			<button class="mini" onclick={() => moveLayer(l.id, 1)} aria-label={t('Move up')}>▲</button>
+			<button class="mini" onclick={() => moveLayer(l.id, -1)} aria-label={t('Move down')}>▼</button>
+		</div>
+		{#if wxRegion(m)}<div class="muted small">{wxRegion(m)}</div>{/if}
+		{#if l.on && wxRunText(l.id)}<div class="muted small num">{wxRunText(l.id)}</div>{/if}
+		{#if l.on}<input type="range" min="0" max="1" step="0.05" bind:value={l.opacity} aria-label={t('Opacity')} />{/if}
+		{#if l.on && extrasOf(l.id).length}
+			<div class="seg fillsel" role="radiogroup" aria-label={t('Colour fill')}>
+				<button class:on={!l.fill} onclick={() => (l.fill = undefined)}>{t(WX_KIND[m.kind])}</button>
+				{#each extrasOf(l.id) as k}<button class:on={l.fill === k} onclick={() => (l.fill = k)}>{t(EXTRA_LABEL[k])}</button>{/each}
+			</div>
+			{@const fk = fillKey(l, m.kind)}
+			<div class="wxscale" style="background:{scaleCss(fk)}"></div>
+			<div class="wxaxis small num">{#each SCALES[fk] as [v]}<span>{v}</span>{/each}<span>{UNIT[fk]}</span></div>
+		{/if}
+		{#if open === l.id}
+			<div class="details">
+				<div class="muted small">{t(m.info)}</div>
+				{#if wxAbout(m)}<div class="small">{wxAbout(m)}</div>{/if}
+				<label class="ctl">
+					<span>{t('Display')}</span>
+					<select value={l.mode ?? 'static'} onchange={(e) => (l.mode = (e.target as HTMLSelectElement).value as 'static' | 'animated' | 'both')}>
+						<option value="static">{t(m.kind === 'wind' ? 'Static (barbs)' : 'Static (arrows)')}</option>
+						<option value="animated">{t('Animated (streamlines)')}</option>
+						<option value="both">{t('Both')}</option>
+					</select>
+				</label>
+				{#if m.kind === 'wind'}<label class="chk"><input type="checkbox" bind:checked={l.isobars} /> {t('Isobars (air pressure, 2 hPa)')}</label>{/if}
+				{#if !(l.on && extrasOf(l.id).length)}
+					<div class="wxscale" style="background:{scaleCss(m.kind)}"></div>
+					<div class="wxaxis small num">{#each SCALES[m.kind] as [v]}<span>{v}</span>{/each}<span>{UNIT[m.kind]}</span></div>
+				{/if}
+				{#if l.fill === 'cape'}<div class="muted small">{t('CAPE: energy available for thunderstorms. Below 100 J/kg nothing is drawn; from about 1000 J/kg thunderstorms and squalls are likely if something triggers them.')}</div>{/if}
+				{#if l.fill === 'rain'}<div class="muted small">{t('Rain: precipitation rate in mm per hour; below 0.1 mm/h nothing is drawn.')}</div>{/if}
+				<div class="muted small">{t(m.kind === 'wind' ? 'Wind barbs: half = 5 kn, full = 10 kn, flag = 50 kn; the staff points to where the wind comes from.' : m.kind === 'wave' ? 'Arrows: direction the waves travel; colour = significant wave height.' : 'Arrows: direction the current flows; length and colour = speed.')}</div>
+				{#if st?.fetched}<div class="muted small">{t('Model data from {t} ago', { t: ago(st.fetched) })}</div>{/if}
+				{#if wxErrorText(l.id)}<div class="err small">{wxErrorText(l.id)}</div>{/if}
+				{#if m.grib}<button class="mini del" onclick={() => deleteGrib(l.id, m.name)}><Icon name="trash" size={14} /> {t('Delete GRIB files')}</button>{/if}
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
 <div class="wrap scroll">
+	<section class="subtabs">
+		<div class="seg">
+			<button class:on={settings.layerSub === 'charts'} onclick={() => (settings.layerSub = 'charts')}><Icon name="map" size={14} /> {t('Charts')}</button>
+			<button class:on={settings.layerSub === 'wx'} onclick={() => (settings.layerSub = 'wx')}><Icon name="cloud" size={14} /> {t('Weather API')}</button>
+			<button class:on={settings.layerSub === 'grib'} onclick={() => (settings.layerSub = 'grib')}><Icon name="download" size={14} /> {t('PredictWind GRIB')} ({gribAll.length})</button>
+		</div>
+	</section>
+
+{#if settings.layerSub === 'wx'}
+	<section>
+		<b>{t('Weather (Open-Meteo)')}</b>
+		<div class="muted small">{t('Forecast models from Open-Meteo, fetched by the Pi and kept for offline use. Several can be stacked; a time slider appears on the radar screen.')}</div>
+		{#if wx.usage}
+			{@const u = wx.usage}
+			<div class="muted small num" class:err={u.used.day > u.limits.day * 0.8 || u.used.hour > u.limits.hour * 0.8}>
+				{t('Open-Meteo used: hour {h} / {H} · today {d} / {D}', { h: u.used.hour.toLocaleString(), H: u.limits.hour.toLocaleString(), d: u.used.day.toLocaleString(), D: u.limits.day.toLocaleString() })}
+			</div>
+			{#if u.paid?.key}
+				<div class="muted small num">{t('Paid API (only when free is used up): month {m} / {M}', { m: u.paid.used.month.toLocaleString(), M: u.paid.limits.month.toLocaleString() })}</div>
+			{/if}
+			<div class="muted small">{t('Every grid point counts (one weather picture ≈ 225). The Pi only fetches again when the weather service has published a new model run; until then everything comes from its store.')}</div>
+		{/if}
+		<div class="muted small">{t('Each active model costs about 260 of the 10 000 free requests per day and is refreshed every 6 h.')}</div>
+		<label class="ctl">
+			<span>{t('Area around the boat')}</span>
+			<select bind:value={settings.wxRadius}>
+				{#each [25, 50, 100, 200, 400] as r}<option value={r}>± {r} nm</option>{/each}
+			</select>
+		</label>
+		<div class="seg">
+			<button class:on={!settings.wxFavOnly} onclick={() => (settings.wxFavOnly = false)}>{t('All models')}</button>
+			<button class:on={settings.wxFavOnly} onclick={() => (settings.wxFavOnly = true)}><Icon name="star" size={14} /> {t('Favourites only ({n})', { n: favCount(apiAll) })}</button>
+		</div>
+		{#if settings.wxFavOnly && !wxApi.length}<div class="muted small">{t('No favourites yet – tap the star next to a model under “All models”.')}</div>{/if}
+		{#each wxApi as l (l.id)}{@render wxRow(l)}{/each}
+	</section>
+{:else if settings.layerSub === 'grib'}
+	<PwSync />
+	<section>
+		<b>{t('PredictWind models')}</b>
+		{#if !gribAll.length}<div class="muted small">{t('No GRIB files on the Pi yet. Download them in the PredictWind Offshore App; they arrive automatically from a Mac with sync set up, or upload them below.')}</div>{/if}
+		<label class="ctl">
+			<span>{t('Area around the boat')}</span>
+			<select bind:value={settings.wxRadius}>
+				{#each [25, 50, 100, 200, 400] as r}<option value={r}>± {r} nm</option>{/each}
+			</select>
+		</label>
+		<div class="seg">
+			<button class:on={!settings.wxFavOnly} onclick={() => (settings.wxFavOnly = false)}>{t('All models')}</button>
+			<button class:on={settings.wxFavOnly} onclick={() => (settings.wxFavOnly = true)}><Icon name="star" size={14} /> {t('Favourites only ({n})', { n: favCount(gribAll) })}</button>
+		</div>
+		{#if settings.wxFavOnly && !wxGrib.length}<div class="muted small">{t('No favourites yet – tap the star next to a model under “All models”.')}</div>{/if}
+		{#each wxGrib as l (l.id)}{@render wxRow(l)}{/each}
+	</section>
+{:else}
 	<section>
 		<div class="title">
 			<b>{t('Chart')}</b>
@@ -238,77 +375,14 @@
 	</section>
 
 	<section>
-		<b>{t('Weather')}</b>
-		<div class="muted small">{t('Forecast models from Open-Meteo, fetched by the Pi and kept for offline use. Several can be stacked; a time slider appears on the radar screen.')}</div>
-		{#if wx.usage}
-			{@const u = wx.usage}
-			<div class="muted small num" class:err={u.used.day > u.limits.day * 0.8 || u.used.hour > u.limits.hour * 0.8}>
-				{t('Open-Meteo used: hour {h} / {H} · today {d} / {D}', { h: u.used.hour.toLocaleString(), H: u.limits.hour.toLocaleString(), d: u.used.day.toLocaleString(), D: u.limits.day.toLocaleString() })}
-			</div>
-			<div class="muted small">{t('Every grid point counts (one weather picture ≈ 225). The Pi only fetches again when the weather service has published a new model run; until then everything comes from its store.')}</div>
-		{/if}
-		<label class="ctl">
-			<span>{t('Area around the boat')}</span>
-			<select bind:value={settings.wxRadius}>
-				{#each [25, 50, 100, 200, 400] as r}<option value={r}>± {r} nm</option>{/each}
-			</select>
-		</label>
-		<label class="chk"><input type="checkbox" bind:checked={settings.wxGustFill} /> {t('Colour wind by gusts')}</label>
-		<div class="muted small">{t('Each active model costs about 260 of the 10 000 free requests per day and is refreshed every 6 h.')}</div>
-		<div class="seg">
-			<button class:on={!settings.wxFavOnly} onclick={() => (settings.wxFavOnly = false)}>{t('All models')}</button>
-			<button class:on={settings.wxFavOnly} onclick={() => (settings.wxFavOnly = true)}><Icon name="star" size={14} /> {t('Favourites only ({n})', { n: favCount(wxAll) })}</button>
-		</div>
-		{#if settings.wxFavOnly && !wxShown.length}<div class="muted small">{t('No favourites yet – tap the star next to a model under “All models”.')}</div>{/if}
-		{#each wxShown as l (l.id)}
-			{@const m = wxModel(l.id)!}
-			{@const st = wx.status[wxId(l.id)]}
-			<div class="layer" class:off={!l.on}>
-				<div class="lrow">
-					<input type="checkbox" bind:checked={l.on} aria-label={m.name} />
-					{@render star(l.id)}
-					<button class="lname plain" title={wxAbout(m)} onclick={() => (open = open === l.id ? null : l.id)}>
-						{m.name} <span class="badge">{t(WX_KIND[m.kind])}</span>{#if wxKm(m)}<span class="resv">{wxKm(m)}</span>{/if}
-						{#if l.on && st?.loading}<span class="muted small">{t('loading…')}</span>{/if}
-						{#if l.on && wxErrorText(l.id, true)}<span class="err small">{wxErrorText(l.id, true)}</span>{/if}
-					</button>
-					<span class="num pctv">{pct(l.opacity)}</span>
-					<button class="mini" onclick={() => moveLayer(l.id, 1)} aria-label={t('Move up')}>▲</button>
-					<button class="mini" onclick={() => moveLayer(l.id, -1)} aria-label={t('Move down')}>▼</button>
-				</div>
-				{#if wxRegion(m)}<div class="muted small">{wxRegion(m)}</div>{/if}
-				{#if l.on && wxRunText(l.id)}<div class="muted small num">{wxRunText(l.id)}</div>{/if}
-				{#if l.on}<input type="range" min="0" max="1" step="0.05" bind:value={l.opacity} aria-label={t('Opacity')} />{/if}
-				{#if open === l.id}
-					<div class="details">
-						<div class="muted small">{t(m.info)}</div>
-						{#if wxAbout(m)}<div class="small">{wxAbout(m)}</div>{/if}
-						<label class="ctl">
-							<span>{t('Display')}</span>
-							<select value={l.mode ?? 'static'} onchange={(e) => (l.mode = (e.target as HTMLSelectElement).value as 'static' | 'animated' | 'both')}>
-								<option value="static">{t(m.kind === 'wind' ? 'Static (barbs)' : 'Static (arrows)')}</option>
-								<option value="animated">{t('Animated (streamlines)')}</option>
-								<option value="both">{t('Both')}</option>
-							</select>
-						</label>
-						{#if m.kind === 'wind'}<label class="chk"><input type="checkbox" bind:checked={l.isobars} /> {t('Isobars (air pressure, 2 hPa)')}</label>{/if}
-						<div class="wxscale" style="background:{scaleCss(m.kind)}"></div>
-						<div class="wxaxis small num">{#each SCALES[m.kind] as [v]}<span>{v}</span>{/each}<span>{UNIT[m.kind]}</span></div>
-						<div class="muted small">{t(m.kind === 'wind' ? 'Wind barbs: half = 5 kn, full = 10 kn, flag = 50 kn; the staff points to where the wind comes from.' : m.kind === 'wave' ? 'Arrows: direction the waves travel; colour = significant wave height.' : 'Arrows: direction the current flows; length and colour = speed.')}</div>
-						{#if st?.fetched}<div class="muted small">{t('Model data from {t} ago', { t: ago(st.fetched) })}</div>{/if}
-						{#if wxErrorText(l.id)}<div class="err small">{wxErrorText(l.id)}</div>{/if}
-					</div>
-				{/if}
-			</div>
-		{/each}
-	</section>
-
-	<section>
 		<b>{t('Presets')}</b>
 		{#each chartCfg.presets as pr (pr.name)}
 			<div class="preset">
-				<button class="plain pname" onclick={() => applyPreset(pr.name)}>{pr.name}</button>
-				<button class="mini" onclick={() => deletePreset(pr.name)} aria-label={t('Delete')}><Icon name="trash" size={14} /></button>
+				<button class="plain pname" onclick={() => applyPreset(pr.name)}>{pr.name}{#if pr.view}<span class="muted small num">{' · '}{fmtRange(pr.view.range)} · {t('Radar')} {pct(pr.view.radarOpacity)}</span>{/if}</button>
+				<div class="btns">
+					<button class="mini" onclick={() => overwrite(pr.name)} aria-label={t('Save current settings into this preset')} title={t('Save current settings into this preset')}><Icon name={savedPreset === pr.name ? 'check' : 'save'} size={14} /></button>
+					<button class="mini" onclick={() => deletePreset(pr.name)} aria-label={t('Delete')}><Icon name="trash" size={14} /></button>
+				</div>
 			</div>
 		{:else}
 			<div class="muted small">{t('Save the current layer setup, e.g. “Reef day”.')}</div>
@@ -368,6 +442,7 @@
 			{/each}
 		{/key}
 	</section>
+{/if}
 </div>
 
 <style>
@@ -398,6 +473,7 @@
 	.legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11.5px; }
 	.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 	.preset { display: flex; justify-content: space-between; align-items: center; }
+	.preset .btns { display: flex; gap: 4px; }
 	.pname { font-weight: 600; color: var(--accent); }
 	.job { display: grid; grid-template-columns: 1fr; gap: 2px; }
 	.job progress { width: 100%; accent-color: var(--accent); }
@@ -408,5 +484,10 @@
 	.fav { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; padding: 0; color: var(--muted); cursor: pointer; }
 	.fav.faved { color: #f2b705; }
 	.fav.faved :global(svg path) { fill: currentColor; }
+	.subtabs { position: sticky; top: 0; z-index: 2; background: var(--panel); }
+	.subtabs .seg { flex-wrap: wrap; }
+	.del { align-self: flex-start; display: inline-flex; gap: 4px; align-items: center; }
+	.fillsel { flex-wrap: wrap; align-self: flex-start; }
+	.fillsel button { min-height: 28px; font-size: 12px; padding: 2px 8px; }
 	.wxaxis { display: flex; justify-content: space-between; color: var(--muted); }
 </style>

@@ -4,10 +4,11 @@ export type Role = 'skipper' | 'leader' | 'crew';
 export interface Crew { id: string; name: string; color: string; role: Role }
 export interface Team { id: string; name: string; color: string; members: string[] }
 export type Mode = 'rotate' | 'fixed' | 'rolling';
-export interface Model { preset: string; mode: Mode; starts: number[]; units: Unit[]; start: string; shift?: number; on?: number }
+export interface Model { preset: string; mode: Mode; starts: number[]; units: Unit[]; start: string; shift?: number; on?: number; dayOff?: boolean }
 export interface Plan { rev: number; active?: boolean; tz: string; crew: Crew[]; teams: Team[]; model: Model; overrides: { start: number; units: Unit[] }[] }
 export interface Watch { start: number; end: number; units: Unit[]; members: string[] }
-export interface Preset { id: string; name: string; info: string; units: number; mode: Mode; starts: number[]; shift?: number; on?: number }
+export interface Preset { id: string; name: string; info: string; units: number; mode: Mode; starts: number[]; shift?: number; on?: number; dayOff?: boolean }
+export function offAt(doc: Plan, t: number): Unit | null;
 export interface NowInfo {
 	on: boolean;
 	tz?: string;
@@ -17,6 +18,7 @@ export interface NowInfo {
 	atText?: string;
 	inMin?: number | null;
 	soon?: boolean;
+	off?: string | null;
 }
 export const PRESETS: Preset[];
 export const COLORS: string[];

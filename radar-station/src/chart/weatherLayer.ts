@@ -3,8 +3,7 @@
 // Zeitwechsel: vorhandene Kacheln werden an Ort und Stelle neu gezeichnet (kein Flackern durch Neuaufbau).
 import L from 'leaflet';
 import { fields, wx, wxId } from './weather.svelte';
-import { settings } from '../lib/settings.svelte';
-import { colorAt, drawIsobars, sample, tileLatLon, timeIndex, type WxField } from './wxField';
+import { colorAt, drawIsobars, fillAlpha, sample, sampleX, tileLatLon, timeIndex, type WxExtra, type WxField } from './wxField';
 
 const CELLS = 32; // Farbfläche: 32 × 32 Stützstellen je Kachel, weich hochskaliert
 const STEP = 64; // Abstand der Fiedern/Pfeile in px (kachelübergreifend gleichmäßig)
@@ -86,6 +85,8 @@ export interface WxDraw {
 	symbols: boolean;
 	/** Isobaren (nur Wind mit Luftdruck) */
 	isobars: boolean;
+	/** Farbfläche aus Zusatzwert (fehlt er im Feld: wie gewohnt Wind/Welle) */
+	fill?: WxExtra | 'gust';
 }
 
 const ISO_N = 16; // Isobaren: 16 × 16 Zellen je Kachel
@@ -96,20 +97,32 @@ function drawTile(canvas: HTMLCanvasElement, c: L.Coords, f: WxField | undefined
 	const ti = timeIndex(f, wx.time);
 	if (ti < 0) return; // außerhalb des Modellzeitraums: nichts zeigen statt falscher Werte
 	const size = canvas.width;
-	const gust = f.kind === 'wind' && settings.wxGustFill;
+	const gust = f.kind === 'wind' && o.fill === 'gust';
+	const extra = o.fill && o.fill !== 'gust' && f.x?.[o.fill] ? o.fill : null;
 	// Farbfläche
 	const img = new ImageData(CELLS, CELLS);
 	for (let j = 0; j < CELLS; j++)
 		for (let i = 0; i < CELLS; i++) {
 			const [lat, lon] = tileLatLon(c.z, c.x + (i + 0.5) / CELLS, c.y + (j + 0.5) / CELLS);
-			const s = sample(f, ti, lat, lon);
-			if (!s) continue;
-			const [r, g, b] = colorAt(f.kind, gust && s.p != null ? s.p : s.s);
-			const o = (j * CELLS + i) * 4;
-			img.data[o] = r;
-			img.data[o + 1] = g;
-			img.data[o + 2] = b;
-			img.data[o + 3] = 255;
+			let key: Parameters<typeof colorAt>[0] = f.kind, val: number;
+			if (extra) {
+				const v = sampleX(f, extra, ti, lat, lon);
+				if (v == null) continue;
+				key = extra;
+				val = v;
+			} else {
+				const s = sample(f, ti, lat, lon);
+				if (!s) continue;
+				val = gust && s.p != null ? s.p : s.s;
+			}
+			const a = fillAlpha(key, val);
+			if (!a) continue;
+			const [r, g, b] = colorAt(key, val);
+			const px = (j * CELLS + i) * 4;
+			img.data[px] = r;
+			img.data[px + 1] = g;
+			img.data[px + 2] = b;
+			img.data[px + 3] = Math.round(a * 255);
 		}
 	const off = document.createElement('canvas');
 	off.width = off.height = CELLS;

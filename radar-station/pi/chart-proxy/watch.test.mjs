@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PRESETS, schedule, watchNow, watchList, cleanWatch, zoned, hhmm } from './watch.mjs';
+import { PRESETS, schedule, watchNow, watchList, offAt, cleanWatch, zoned, hhmm } from './watch.mjs';
 
 const TZ = 'Europe/Rome';
 const crew = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ id, name: id.toUpperCase() }));
@@ -10,7 +10,7 @@ const teams = [
 ];
 const plan = (preset, units, extra = {}) => {
 	const p = PRESETS.find((x) => x.id === preset);
-	return { tz: TZ, crew, teams, model: { preset, mode: p.mode, starts: p.starts, units, start: '2026-11-20', shift: p.shift, on: p.on }, overrides: [], ...extra };
+	return { tz: TZ, crew, teams, model: { preset, mode: p.mode, starts: p.starts, units, start: '2026-11-20', shift: p.shift, on: p.on, dayOff: p.dayOff }, overrides: [], ...extra };
 };
 const T3 = ['A', 'B', 'C'].map((id) => ({ t: 'team', id }));
 const day = (d, h = 0) => zoned(2026, 11, d, h * 60, TZ);
@@ -57,6 +57,10 @@ describe('watch planner', () => {
 		const n = watchNow(doc, day(20, 4) - 5 * 6e4);
 		expect(n).toMatchObject({ now: { label: 'Team A', names: ['A', 'B'] }, next: { label: 'Team C' }, atText: '04:00', inMin: 5, soon: true });
 	});
+	it('ignores single-watch changes left over from before the plan start', () => {
+		const doc = plan('merchant48', T3, { overrides: [{ start: day(18, 4), units: [{ t: 'team', id: 'C' }] }] });
+		expect(who(doc, 18, 4)).toBe('B'); // alte Änderung greift nicht mehr
+	});
 	it('handles DST end (25-hour day) in ship time', () => {
 		const doc = { ...plan('merchant48', T3), model: { ...plan('merchant48', T3).model, start: '2026-10-24' } };
 		const es = schedule(doc, zoned(2026, 10, 25, 0, TZ), zoned(2026, 10, 26, 0, TZ));
@@ -78,6 +82,19 @@ describe('watch planner', () => {
 		const c = watchList(plan('classic48', T3), day(20, 0), day(21, 0)).find((x) => x.s === day(20, 16));
 		expect(c).toMatchObject({ l: 'Team B', rb: 8 * 60, ra: 6 * 60 }); // B: 04–08, 16–18, nächste Nacht 00–04
 		expect(watchList({ ...plan('classic48', T3), active: false }, day(20, 0), day(21, 0))).toEqual([]);
+	});
+	it('day off: one unit free per day, rotating; the others share the watches', () => {
+		const P4 = ['a', 'b', 'c', 'd'].map((id) => ({ t: 'person', id }));
+		const doc = plan('dayoff48', P4);
+		const onDay = (d) => [0, 4, 8, 12, 16, 20].map((h) => who(doc, d, h));
+		expect(onDay(20)).toEqual(['b', 'c', 'd', 'b', 'c', 'd']); // a hat frei
+		expect(onDay(21)).toEqual(['a', 'c', 'd', 'a', 'c', 'd']); // b hat frei
+		expect(offAt(doc, day(22, 12)).id).toBe('c');
+		expect(watchNow(doc, day(20, 1)).off).toBe('A');
+		// a: 19. zuletzt 12–16, 20. frei, 21. wieder 00–04 → kommt aus 32 h Pause, danach 8 h bis 12–16
+		expect(watchList(doc, day(20, 0), day(22, 0)).find((x) => x.s === day(21, 0))).toMatchObject({ l: 'A', rb: 32 * 60, ra: 8 * 60 });
+		expect(cleanWatch(doc).model.dayOff).toBe(true);
+		expect(cleanWatch({ ...doc, model: { ...doc.model, mode: 'rolling', shift: 60, on: 2 } }).model.dayOff).toBeUndefined();
 	});
 	it('validates input from the network', () => {
 		expect(cleanWatch({ ...plan('classic48', T3), crew: Array.from({ length: 9 }, (_, i) => ({ id: 'p' + i, name: 'x' })) })).toMatch(/at most 8/);

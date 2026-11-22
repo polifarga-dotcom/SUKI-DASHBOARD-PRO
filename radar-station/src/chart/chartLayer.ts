@@ -80,7 +80,7 @@ export class ChartLayer {
 			const flow = w.id.startsWith('flow:');
 			if (!p && w.id !== 'coral' && w.id !== 'anch' && w.id !== 'coast' && !wxl && !flow) continue;
 			const lc = wxl ? chartCfg.layers.find((l) => l.id === w.id) : undefined;
-			const sig = wxl ? `${w.id}:${lc?.mode ?? 'static'}:${!!lc?.isobars}` : flow || w.id === 'anch' || w.id === 'coast' ? w.id : w.id === 'coral' ? `coral:${chartCfg.rev}` : `${p!.mode}:${p!.directUrl ?? ''}:${JSON.stringify(p!.values)}:${chartCfg.rev}`;
+			const sig = wxl ? `${w.id}:${lc?.mode ?? 'static'}:${!!lc?.isobars}:${lc?.fill ?? ''}` : flow || w.id === 'anch' || w.id === 'coast' ? w.id : w.id === 'coral' ? `coral:${chartCfg.rev}` : `${p!.mode}:${p!.directUrl ?? ''}:${JSON.stringify(p!.values)}:${chartCfg.rev}`;
 			let e = this.entries.get(w.id);
 			if (e && e.sig !== sig) {
 				this.map.removeLayer(e.layer);
@@ -91,7 +91,7 @@ export class ChartLayer {
 				const layer = flow
 					? (new FlowLayer(w.id.slice(5), wxModel(w.id.slice(5))?.kind ?? 'wind') as unknown as L.GridLayer)
 					: wxl
-					? createWeatherLayer(w.id, { maxZoom: MAX_Z }, { symbols: lc?.mode !== 'animated', isobars: !!lc?.isobars })
+					? createWeatherLayer(w.id, { maxZoom: MAX_Z }, { symbols: lc?.mode !== 'animated', isobars: !!lc?.isobars, fill: lc?.fill })
 					: w.id === 'anch'
 						? (createAnchLayer({ maxZoom: MAX_Z }) as unknown as L.GridLayer)
 						: w.id === 'coast'
@@ -169,7 +169,7 @@ export class ChartLayer {
 
 		const cosLat = Math.cos((center.lat * Math.PI) / 180);
 		const z = Math.log2(156543.03392 * cosLat * v.ppm);
-		const zi = Math.max(1, Math.min(MAX_Z, Math.round(z)));
+		const zi = Math.max(0, Math.min(MAX_Z, Math.round(z))); // 0 = ganze Welt in einer Kachel
 		const scale = 2 ** (z - zi);
 
 		// Quadrat um die Bildschirmmitte, groß genug für Drehung und Skalierung, in 256er-Schritten

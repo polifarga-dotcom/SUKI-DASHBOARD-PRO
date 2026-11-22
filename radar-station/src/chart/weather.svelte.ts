@@ -22,7 +22,7 @@ export const wx = $state({
 	version: 0,
 	status: {} as Record<string, WxStatus>,
 	/** Open-Meteo-Verbrauch laut Pi */
-	usage: null as null | { used: Record<string, number>; limits: Record<string, number> }
+	usage: null as null | { used: Record<string, number>; limits: Record<string, number>; paid?: { key: boolean; used: Record<string, number>; limits: Record<string, number> } }
 });
 
 export interface WxStatus {

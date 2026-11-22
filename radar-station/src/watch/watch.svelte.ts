@@ -7,6 +7,8 @@ export const wp = $state({ doc: null as Plan | null, err: '', loaded: false, cal
 const URL_ = '/tiles/api/watchplan';
 let timer: ReturnType<typeof setTimeout> | undefined;
 let dirty = false;
+let lastModel = ''; // Zeitmodell des gespeicherten Plans: ändert es sich, gelten Einzeländerungen nicht mehr
+const seen = (d: Plan | null) => ((lastModel = d ? JSON.stringify(d.model) : ''), d);
 
 export const deviceTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 /** Anzeigezone: Ortszeit aus GPS, sonst Gerät — nur Anzeige, der Plan bleibt in UTC */
@@ -20,7 +22,7 @@ async function load() {
 		if (!r.ok) throw new Error(String(r.status));
 		const j: Plan | null = await r.json();
 		if (dirty) return; // eigene Änderung wartet aufs Speichern
-		if (!wp.doc || (j && j.rev !== wp.doc.rev)) wp.doc = j ?? emptyPlan('UTC'); // Plan läuft in UTC, keine Verschiebung über Zeitzonen
+		if (!wp.doc || (j && j.rev !== wp.doc.rev)) wp.doc = seen(j ?? emptyPlan('UTC')); // Plan läuft in UTC, keine Verschiebung über Zeitzonen
 		wp.loaded = true;
 		wp.err = '';
 	} catch (e) {
@@ -35,17 +37,19 @@ async function save() {
 	if (!r) return (wp.err = 'Pi not reachable – plan not saved');
 	const j = await r.json().catch(() => ({}));
 	if (r.status === 409) {
-		wp.doc = j.plan;
+		wp.doc = seen(j.plan);
 		wp.err = 'The plan was changed on another device – reloaded.';
 	} else if (!r.ok) wp.err = j.error ?? String(r.status);
 	else {
-		wp.doc = j;
+		wp.doc = seen(j);
 		wp.err = '';
 	}
 }
 
 /** nach jeder Änderung am Plan aufrufen */
 export function commit() {
+	// neues Modell, neue Einteilung, neuer Start → alte Einzeländerungen verwerfen, sonst landen sie in fremden Wachen
+	if (wp.doc && lastModel && JSON.stringify(wp.doc.model) !== lastModel) wp.doc.overrides = [];
 	dirty = true;
 	clearTimeout(timer);
 	timer = setTimeout(save, 700);

@@ -1,3 +1,4 @@
+import { settings } from '../lib/settings.svelte';
 // Ebenen der Kartenunterlage: Anbieter-Katalog vom Pi (chart-proxy) + gerätelokale Auswahl, Deckkraft,
 // Reihenfolge, Ausrichtungs-Versatz und benannte Presets.
 
@@ -45,9 +46,20 @@ export interface LayerCfg {
 	mode?: 'static' | 'animated' | 'both';
 	/** Wetter (Wind): Isobaren */
 	isobars?: boolean;
+	/** Farbfläche aus einem Zusatzwert statt Wind/Welle (Regen, Wolken, CAPE, Temperatur) */
+	fill?: 'gust' | 'rain' | 'cloud' | 'cape' | 'temp';
 	/** veraltet (bis 2026-11-20): animiert zusätzlich → mode 'both' */
 	flow?: boolean;
 }
+
+/** Kartenansicht im Preset: Zoom (Bildradius in m), ob unabhängig vom Radar gezoomt wird, Radar-Deckkraft */
+export interface PresetView {
+	range: number;
+	free: boolean;
+	radarOpacity: number;
+}
+/** aktuelle Kartenansicht (schreibt RadarPane) und gewünschter Zoom aus einem Preset (liest RadarPane) */
+export const mapView = $state({ range: 0, want: 0 });
 
 export interface ChartCfg {
 	base: string; // 'osm' | 'none' | Satelliten-ID als Basis
@@ -55,7 +67,7 @@ export interface ChartCfg {
 	layers: LayerCfg[]; // unten → oben
 	seamarks: boolean;
 	seamarkOpacity: number;
-	presets: { name: string; cfg: Omit<ChartCfg, 'presets'> }[];
+	presets: { name: string; cfg: Omit<ChartCfg, 'presets'>; view?: PresetView }[];
 	/** Zähler, der bei Anbieter-Optionsänderungen hochgeht (Kacheln neu laden) */
 	rev: number;
 }
@@ -150,7 +162,7 @@ export function moveLayer(id: string, dir: 1 | -1) {
 export function savePreset(name: string) {
 	const { presets, ...cfg } = $state.snapshot(chartCfg);
 	const i = chartCfg.presets.findIndex((p) => p.name === name);
-	const entry = { name, cfg };
+	const entry = { name, cfg, view: { range: mapView.range, free: settings.chartZoomFree, radarOpacity: settings.radarOpacity } };
 	if (i >= 0) chartCfg.presets[i] = entry;
 	else chartCfg.presets.push(entry);
 }
@@ -160,6 +172,12 @@ export function applyPreset(name: string) {
 	if (!p) return;
 	const c = structuredClone($state.snapshot(p.cfg));
 	Object.assign(chartCfg, { ...c, presets: chartCfg.presets, rev: chartCfg.rev + 1 });
+	if (p.view) {
+		// ältere Presets ohne Ansicht lassen Zoom und Radar-Deckkraft unverändert
+		settings.chartZoomFree = p.view.free;
+		settings.radarOpacity = p.view.radarOpacity;
+		if (p.view.range > 0) mapView.want = p.view.range;
+	}
 }
 
 export function deletePreset(name: string) {

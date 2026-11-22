@@ -4,7 +4,7 @@
 	import { drawOverlay } from '../radar/overlay';
 	import { fromScreen, toScreen } from '../radar/view';
 	import { ChartLayer } from '../chart/chartLayer';
-	import { chartCfg, providers, activeAttributions, provider } from '../chart/layers.svelte';
+	import { chartCfg, providers, activeAttributions, provider, mapView } from '../chart/layers.svelte';
 	import { imagery, updateImageryMeta, type ImageryMeta } from '../chart/imageryMeta.svelte';
 	import { settings } from '../lib/settings.svelte';
 	import { own, ownFresh } from '../data/signalk.svelte';
@@ -13,7 +13,8 @@
 	import { alarms } from '../alarms/alarms.svelte';
 	import { tools, addMarker, markSquall, removeSquall } from '../radar/tools.svelte';
 	import { squallPos } from '../collision/squall';
-	import { bearingOf, fmtDeg, fmtDist, fmtLat, fmtLon, fmtRange, fmtSpeed, fmtTime, fromLocal, toLocal, routeLength, isNauticalRange, norm2pi, numStr, ringStep, NM, type LatLon } from '../lib/geo';
+	import { rt, saveRoute, nextColor } from '../chart/routes.svelte';
+	import { bearingOf, fmtDeg, fmtDist, fmtLat, fmtLon, fmtRange, fmtSpeed, fmtTime, fromLocal, toLocal, routeLength, routeGpx, isNauticalRange, norm2pi, numStr, ringStep, NM, type LatLon } from '../lib/geo';
 	import { unlockAudio } from '../alarms/audio';
 	import type { SpokeBatch } from '../radar/spokeDecoder';
 	import { t as tr } from '../lib/i18n.svelte';
@@ -21,9 +22,10 @@
 	import WxTimeBar from './WxTimeBar.svelte';
 	import WxPopup from './WxPopup.svelte';
 	import AnchPopup from './AnchPopup.svelte';
+	import MarkPopup from './MarkPopup.svelte';
 	import { anch, osmItems, newOwn, type OsmAnch, type OwnAnch } from '../chart/anchorages.svelte';
 	import { coast } from '../chart/coast.svelte';
-	import { wx, ensureWx, activeWx } from '../chart/weather.svelte';
+	import { wx, ensureWx } from '../chart/weather.svelte';
 	import { countryOf, shipTypeText, navStateText } from '../lib/ais';
 
 	let { radarId, pane = 0, label = '' }: { radarId: string; pane?: number; label?: string } = $props();
@@ -55,6 +57,17 @@
 	/** Zoom = Radar-Range (wie am Plotter); sonst nur Kartenmaßstab */
 	const radarZoom = $derived(!!R && rangeAllowed && tx && !settings.chartZoomFree);
 	const range = $derived(radarZoom ? radarRange(radarId) || localRange : localRange);
+	// Preset-Ansicht: aktuellen Zoom melden, gewünschten Zoom übernehmen (Radar-Range wird dabei nie verstellt)
+	// shortcut: bei mehreren Radar-Fenstern meldet das zuletzt aktualisierte, alle übernehmen denselben Zoom
+	$effect(() => {
+		mapView.range = range;
+	});
+	$effect(() => {
+		if (mapView.want > 0) {
+			localRange = mapView.want;
+			untrack(() => queueMicrotask(() => (mapView.want = 0)));
+		}
+	});
 	// nur beim Wechsel Radar-Zoom → Kartenzoom die letzte Radar-Range übernehmen (kein Sprung)
 	let prevRadarZoom = true;
 	$effect(() => {
@@ -66,13 +79,32 @@
 		prevRadarZoom = rz;
 	});
 
-	const LOCAL_STEPS = [29, 57, 115, 231, 463, 926, 1389, 1852, 2778, 3704, 5556, 7408, 11112, 14816, 22224, 29632, 44448, 66672, 88896, 118528, 177792, 355584, 711168, 1422336]; // bis 768 sm (Wetterübersicht)
+	const LOCAL_STEPS = [29, 57, 115, 231, 463, 926, 1389, 1852, 2778, 3704, 5556, 7408, 11112, 14816, 22224, 29632, 44448, 66672, 88896, 118528, 177792, 355584, 711168, 1422336, 2844672, 5689344, 11378688]; // bis 6144 sm: weiter zeigt Web-Mercator nur noch die ganze Welt
 	const steps = $derived.by(() => {
 		if (!radarZoom) return LOCAL_STEPS;
 		const all = caps?.supportedRanges ?? [57, 115, 231, 463, 926, 1389, 1852, 2778, 3704, 5556, 7408, 11112, 14816, 22224, 29632, 44448, 66672];
 		const naut = all.filter(isNauticalRange);
 		return isNauticalRange(range) || !caps ? naut : all.filter((r) => !isNauticalRange(r));
 	});
+
+	async function saveAsRoute() {
+		const old = rt.list.find((r) => r.id === rt.editing);
+		const name = old ? old.name : prompt(tr('Route name'), `${tr('Route')} ${rt.list.length + 1}`);
+		if (name == null) return;
+		const r = await saveRoute({ ...(old ?? { color: nextColor(), show: true }), name, pts: tools.measure! });
+		if (!r) return alert(tr(rt.err));
+		tools.measure = null;
+		tools.tapMode = 'select';
+		rt.editing = null;
+	}
+
+	function exportGpx() {
+		const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+		const url = URL.createObjectURL(new Blob([routeGpx(tools.measure!, `SUKI ${stamp}`)], { type: 'application/gpx+xml' }));
+		const a = Object.assign(document.createElement('a'), { href: url, download: `suki-route-${stamp.replace(/[ :]/g, '-')}.gpx` });
+		a.click();
+		setTimeout(() => URL.revokeObjectURL(url), 10e3);
+	}
 
 	function stepRange(dir: 1 | -1) {
 		const idx = steps.findIndex((r) => r >= range - 1);
@@ -222,7 +254,6 @@
 	$effect(() => {
 		wx.version;
 		wx.time;
-		settings.wxGustFill;
 		chart?.refreshWeather();
 	});
 	const attribution = $derived.by(() => {
@@ -283,6 +314,7 @@
 				alarmKeys: new Map(alarms.active.filter((a) => a.targetKey).map((a) => [a.targetKey!, !a.acked])),
 				track: settings.trackHours > 0 ? tools.track : [],
 				measure: pane === 0 ? tools.measure : null,
+				routes: rt.list.filter((r) => r.show && !(pane === 0 && r.id === rt.editing)),
 				alignFirst: pane === 0 ? (tools.align?.first ?? null) : null,
 				now: Date.now(),
 				label
@@ -337,6 +369,20 @@
 		return best;
 	}
 
+	/** gegriffener Punkt der Messstrecke/Route (Index) */
+	let dragPt: number | null = null;
+	function pickMeasure(sx: number, sy: number) {
+		if (tools.tapMode !== 'measure' || !tools.measure || !lastView || !own.pos) return null;
+		let best: number | null = null;
+		let bd = 24;
+		tools.measure.forEach((p, i) => {
+			const [x, y] = toScreen(lastView!, ...toLocal(own.pos!, p));
+			const d = Math.hypot(x - sx, y - sy);
+			if (d < bd) [bd, best] = [d, i];
+		});
+		return best;
+	}
+
 	function onDown(e: PointerEvent) {
 		markInput();
 		unlockAudio();
@@ -349,6 +395,8 @@
 			const [a, b] = [...ptrs.values()];
 			pinch0 = Math.hypot(a.x - b.x, a.y - b.y);
 			clearTimeout(longTimer);
+		} else if (ptrs.size === 1 && (dragPt = pickMeasure(x, y)) != null) {
+			clearTimeout(longTimer); // Routen-/Messpunkt greifen statt Karte schieben
 		} else if (ptrs.size === 1) {
 			if (settings.motion === 'custom' && !panAnchor) dragOffset = [...settings.offset] as [number, number];
 			else if (lastView && own.pos) dragStart = { view: lastView, pos: { ...own.pos } };
@@ -378,6 +426,11 @@
 		p.x = x;
 		p.y = y;
 		if (Math.hypot(x - p.x0, y - p.y0) > 10) clearTimeout(longTimer);
+		if (dragPt != null && ptrs.size === 1 && lastView && own.pos && tools.measure?.[dragPt]) {
+			const geo = fromLocal(own.pos, ...fromScreen(lastView, x, y));
+			tools.measure[dragPt] = { ...tools.measure[dragPt], lat: geo.lat, lon: geo.lon };
+			return;
+		}
 		if (ptrs.size === 2 && pinch0 > 0) {
 			const [a, b] = [...ptrs.values()];
 			const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -408,6 +461,10 @@
 		if (ptrs.size < 2) pinch0 = 0;
 		dragOffset = null;
 		dragStart = null;
+		if (dragPt != null) {
+			dragPt = null; // Punkt verschoben (oder nur angetippt): keinen neuen Punkt setzen
+			return;
+		}
 		if (!p || ptrs.size > 0) return;
 		const moved = Math.hypot(p.x - p.x0, p.y - p.y0);
 		if (moved > 10 || Date.now() - p.t0 > 600 || e.button === 2) return;
@@ -418,6 +475,21 @@
 	let wxPop = $state<{ sx: number; sy: number; pos: LatLon } | null>(null);
 	/** Ankerplatz-Infofenster (bleibt beim Tippen auf freie Karte offen, damit Eingaben nicht verloren gehen) */
 	let anchPop = $state<{ sx: number; sy: number; osm?: OsmAnch; own?: OwnAnch; create?: OwnAnch; key: number } | null>(null);
+
+	/** Marker-Infofenster (Name, Symbol, löschen) */
+	let mkPop = $state<{ sx: number; sy: number; id: number } | null>(null);
+	/** Marker unter dem Tipp (≤ 18 px) */
+	function pickMarker(sx: number, sy: number) {
+		if (!lastView || !own.pos) return null;
+		let best: number | null = null;
+		let bd = 18;
+		for (const m of tools.markers) {
+			const [x, y] = toScreen(lastView, ...toLocal(own.pos, m.pos));
+			const d = Math.hypot(x - sx, y - sy);
+			if (d < bd) [bd, best] = [d, m.id];
+		}
+		return best;
+	}
 
 	/** Ankerplatz unter dem Tipp (≤ 22 px), eigene vor OSM */
 	function pickAnch(sx: number, sy: number): { osm?: OsmAnch; own?: OwnAnch } | null {
@@ -442,6 +514,7 @@
 
 	function tap(sx: number, sy: number) {
 		wxPop = null;
+		mkPop = null;
 		if (!lastView) return;
 		const [x, y] = fromScreen(lastView, sx, sy);
 		const mode = tools.tapMode;
@@ -488,8 +561,11 @@
 			tools.tapMode = 'select';
 			return;
 		}
-		const k = pick(sx, sy);
-		if (k) {
+		const mk = pickMarker(sx, sy);
+		const k = mk == null ? pick(sx, sy) : null;
+		if (mk != null) {
+			mkPop = { sx, sy, id: mk };
+		} else if (k) {
 			ui.selected = k;
 			settings.sidePanel = true;
 			settings.sideTab = 'targets';
@@ -498,7 +574,8 @@
 		} else {
 			ui.selected = null;
 			tools.cursor = own.pos ? fromLocal(own.pos, x, y) : null;
-			if (tools.cursor && pane === 0 && settings.chart && activeWx().length) wxPop = { sx, sy, pos: tools.cursor };
+			// Entfernung/Kurs immer, Wetterwerte zusätzlich, wenn Wetterebenen aktiv sind
+			if (tools.cursor) wxPop = { sx, sy, pos: tools.cursor };
 		}
 	}
 
@@ -736,14 +813,19 @@
 		{/if}
 	</div>
 
+	{#if mkPop}{#key mkPop.id}<MarkPopup {...mkPop} onclose={() => (mkPop = null)} />{/key}{/if}
 	{#if wxPop}<WxPopup {...wxPop} onclose={() => (wxPop = null)} />{/if}
 	{#if anchPop}{#key anchPop.key}<AnchPopup osm={anchPop.osm} own={anchPop.own} create={anchPop.create} sx={anchPop.sx} sy={anchPop.sy} onclose={() => (anchPop = null)} />{/key}{/if}
 
 	{#if tools.tapMode !== 'select' && pane === 0}
-		<div class="modehint" onpointerdown={(e) => e.stopPropagation()} role="status">
+		<div class="modehint" class:low={!settings.alarmSound} onpointerdown={(e) => e.stopPropagation()} role="status">
 			{hint}
 			{#if tools.tapMode === 'measure' && tools.measure?.length}<button class="mini" onclick={() => (tools.measure = tools.measure!.length > 1 ? tools.measure!.slice(0, -1) : null)}>{tr('Undo point')}</button>{/if}
-			<button class="mini" onclick={() => { tools.tapMode = 'select'; tools.align = null; tools.measure = null; }}>{tools.tapMode === 'measure' ? tr('Done') : tr('Cancel')}</button>
+			{#if tools.tapMode === 'measure' && (tools.measure?.length ?? 0) > 1}
+				<button class="mini" onclick={saveAsRoute} title={tr('Save as route (Routes tab)')}><Icon name="save" size={14} /> {rt.editing ? tr('Save route') : tr('Save as route')}</button>
+				<button class="mini" onclick={exportGpx} title={tr('Export the route as a GPX file')}>GPX</button>
+			{/if}
+			<button class="mini" onclick={() => { tools.tapMode = 'select'; tools.align = null; tools.measure = null; rt.editing = null; }}>{tools.tapMode === 'measure' ? tr('Done') : tr('Cancel')}</button>
 		</div>
 	{/if}
 
@@ -874,6 +956,7 @@
 	.standby.compact .txbtn { font-size: 14px; padding: 4px 12px; min-height: 30px; }
 	.big-txt { font-size: 22px; font-weight: 800; letter-spacing: 3px; }
 	.txbtn { font-size: 16px; padding: 10px 22px; }
+	.modehint.low { top: 104px; } /* unter dem Hinweis „Alle Alarmtöne aus“ */
 	.modehint {
 		position: absolute;
 		top: 76px;

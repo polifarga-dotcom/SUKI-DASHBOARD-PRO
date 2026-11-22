@@ -13,6 +13,8 @@ import { trackStore, trackDistance } from './track.mjs';
 import { WX_MODELS, wxModel, wxStore } from './wx.mjs';
 import { anchStore, cleanOwn, coastQuery, coastConvert } from './anchorages.mjs';
 import { cleanWatch, watchNow, watchList } from './watch.mjs';
+import { cleanRoute, MAX_ROUTES } from './routes.mjs';
+import { pwStore } from './pwstore.mjs';
 
 const PORT = Number(process.env.PORT ?? 8091);
 const DATA = process.env.CHART_DATA ?? '/home/admin/chart-proxy-data';
@@ -313,7 +315,9 @@ pruneTrack();
 setInterval(pruneTrack, 6 * 3600e3);
 
 // ── Wettermodelle (Open-Meteo), auf dem Pi gespeichert ──
-const wx = wxStore(path.join(DATA, 'wx'), fetch, path.join(DATA, 'wx-usage.json'));
+// PredictWind-GRIBs und -Routen, vom Mac per rsync nach DATA/pw synchronisiert
+const pw = pwStore(path.join(DATA, 'pw'), { read: () => readJson('routes.json', []), write: (l) => writeJson('routes.json', l) });
+const wx = wxStore(path.join(DATA, 'wx'), fetch, path.join(DATA, 'wx-usage.json'), () => keys.openmeteo);
 const anch = anchStore(path.join(DATA, 'anchorages'));
 const coast = anchStore(path.join(DATA, 'coast'), fetch, coastQuery, coastConvert);
 setInterval(() => wx.prune(3).catch(() => {}), 6 * 3600e3);
@@ -522,13 +526,13 @@ const server = http.createServer(async (req, res) => {
 
 		if (what === 'keys' && req.method === 'PUT') {
 			const { id, key } = JSON.parse((await body(req)).toString());
-			if (!byId(id)) return json(res, 404, { error: 'unknown provider' });
+			if (!byId(id) && id !== 'openmeteo') return json(res, 404, { error: 'unknown provider' }); // openmeteo = kostenpflichtige Wetter-API (Fallback)
 			if (key && String(key).length > 1024) return json(res, 400, { error: 'key too long' });
 			if (key) keys[id] = String(key).trim();
 			else delete keys[id];
 			if (id === 'google') Object.assign(googleSession, { token: '', fail: '' });
 			await writeJson('keys.json', keys, 0o600);
-			return json(res, 200, publicProvider(byId(id)));
+			return json(res, 200, byId(id) ? publicProvider(byId(id)) : { keySet: !!keys[id] });
 		}
 
 		if (what === 'config' && req.method === 'PUT') {
@@ -741,6 +745,51 @@ const server = http.createServer(async (req, res) => {
 			return json(res, 200, cur ? { ...watchNow(cur, t), list: watchList(cur, t - 864e5, t + 3 * 864e5) } : { on: false });
 		}
 
+		if (what === 'pw') {
+			// PredictWind: PUT /pw/upload/<datei> (roh, X-Sync-Host, X-Sync-Auto), POST /pw/report {host, error}, GET /pw/status
+			try {
+				if (a1 === 'upload' && req.method === 'PUT') {
+					const name = decodeURIComponent(a2 ?? '');
+					await pw.upload(name, await body(req, 60e6), req.headers['x-sync-host'], req.headers['x-sync-auto'] === '1');
+					return json(res, 200, { ok: true });
+				}
+				if (a1 === 'report' && req.method === 'POST') {
+					const r = JSON.parse((await body(req, 1e4)).toString() || '{}');
+					await pw.report(r.host, r.error);
+					return json(res, 200, { ok: true });
+				}
+				if (a1 === 'status' && req.method === 'GET') return json(res, 200, await pw.status());
+				// Ordner neu einlesen (Taste „Aktualisieren“) und löschen: DELETE /pw/all bzw. /pw/model/<id>
+				if (a1 === 'scan' && req.method === 'POST') {
+					await pw.scan();
+					return json(res, 200, await pw.status());
+				}
+				if (req.method === 'DELETE' && (a1 === 'all' || (a1 === 'model' && /^pw_[\w-]{1,80}$/.test(a2 ?? '')))) {
+					return json(res, 200, { deleted: await pw.remove(a1 === 'all' ? 'all' : a2) });
+				}
+			} catch (e) {
+				return json(res, e.code === 'name' ? 400 : 500, { error: String(e.message ?? e) });
+			}
+		}
+
+		if (what === 'routes') {
+			// Routen für alle Geräte: GET Liste, PUT = eine anlegen/ändern, DELETE /<id>
+			const list = await readJson('routes.json', []);
+			if (req.method === 'GET') return json(res, 200, list);
+			if (req.method === 'PUT') {
+				const r = cleanRoute(JSON.parse((await body(req, 5e5)).toString() || '{}'));
+				if (!r) return json(res, 400, { error: 'bad route' });
+				const rest = list.filter((x) => x.id !== r.id);
+				if (rest.length >= MAX_ROUTES) return json(res, 400, { error: 'too many routes' });
+				await writeJson('routes.json', [...rest, r]);
+				return json(res, 200, r);
+			}
+			if (req.method === 'DELETE' && a1) {
+				await writeJson('routes.json', list.filter((x) => x.id !== a1));
+				return json(res, 200, { ok: true });
+			}
+		}
+
 		if (what === 'myanchorages') {
 			// eigene Ankerplätze: GET Liste, PUT = einen anlegen/ändern, DELETE /<id>
 			const list = await readJson('my-anchorages.json', []);
@@ -759,13 +808,22 @@ const server = http.createServer(async (req, res) => {
 		}
 
 		if (what === 'wx' && req.method === 'GET') {
-			if (a1 === 'models') return json(res, 200, WX_MODELS);
+			if (a1 === 'models') return json(res, 200, [...(await pw.models().catch(() => [])), ...WX_MODELS]);
 			if (a1 === 'usage') return json(res, 200, wx.usage());
 			// /tiles/api/wx?model=ecmwf_ifs&lat=..&lon=..&r=100 (Halbseite in sm)
 			const m = wxModel(u.searchParams.get('model'));
 			const lat = Number(u.searchParams.get('lat'));
 			const lon = Number(u.searchParams.get('lon'));
 			const r = Number(u.searchParams.get('r') ?? 100);
+			const pid = u.searchParams.get('model') ?? '';
+			if (pid.startsWith('pw_')) {
+				if (!(Math.abs(lat) <= 85) || !(Math.abs(lon) <= 180) || !(r >= 10 && r <= 1600)) return json(res, 400, { error: 'bad request' });
+				try {
+					return json(res, 200, await pw.get(pid, lat, lon, r));
+				} catch (e) {
+					return json(res, e.code === 'outside' ? 404 : 502, { error: String(e.message ?? e), code: e.code ?? 'api' });
+				}
+			}
 			if (!m || !(Math.abs(lat) <= 85) || !(Math.abs(lon) <= 180) || !(r >= 10 && r <= 1600)) return json(res, 400, { error: 'bad request' });
 			try {
 				// Warteschlange (Minutenlimit) kann länger dauern als nginx wartet: nach 20 s „pending“, der Pi lädt weiter
