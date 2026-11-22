@@ -852,6 +852,31 @@ const server = http.createServer(async (req, res) => {
 
 		if (what === 'status' && req.method === 'GET') return json(res, 200, { status, lastPt, lastFix });
 
+		// Steuerstand-Taster (Dienst suki-button, gleicher Benutzer): Status lesen, Anlernen auslösen, Taster entfernen
+		if (what === 'button') {
+			const dir = path.join(process.env.HOME ?? '/home/admin', 'suki-button');
+			const rd = (f, d) => fs.readFile(path.join(dir, f), 'utf8').then(JSON.parse, () => d);
+			if (req.method === 'GET') {
+				const st = await rd('status.json', null);
+				return json(res, 200, { ...(st ?? {}), alive: !!st && Date.now() - st.at < 90e3, macs: (await rd('config.json', {})).macs ?? [] });
+			}
+			if (req.method === 'POST' && a1 === 'learn') {
+				await fs.mkdir(dir, { recursive: true });
+				const until = Date.now() + 60e3;
+				await fs.writeFile(path.join(dir, 'learn'), String(until));
+				return json(res, 200, { ok: true, until });
+			}
+			if (req.method === 'POST' && a1 === 'forget') {
+				const { mac } = JSON.parse(String(await body(req, 1e3)));
+				const cfg = await rd('config.json', {});
+				cfg.macs = mac === 'all' ? [] : (cfg.macs ?? []).filter((m) => m !== mac);
+				const p = path.join(dir, 'config.json');
+				await fs.writeFile(`${p}.tmp`, JSON.stringify(cfg, null, 2));
+				await fs.rename(`${p}.tmp`, p);
+				return json(res, 200, { ok: true, macs: cfg.macs });
+			}
+		}
+
 		// Herunterfahren (Einstellungen → System): OpenCPN-Pi per SSH-Schlüssel, der dort nur „poweroff“ darf; dieser Pi per sudo
 		if (what === 'power') {
 			if (req.method === 'GET') return json(res, 200, { opencpn: await reachable(OPENCPN_HOST, 22), keyReady: await fs.access(OPENCPN_KEY).then(() => true, () => false) });

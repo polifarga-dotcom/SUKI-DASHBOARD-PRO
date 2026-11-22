@@ -8,6 +8,7 @@
 	import { providers, putKey, testProvider } from '../chart/layers.svelte';
 	import { wx, loadUsage } from '../chart/weather.svelte';
 	import Icon from './Icon.svelte';
+	import HelmButton from './HelmButton.svelte';
 
 	// Kielspur: Anzeige-Länge in Stufen, Speicherung auf dem Pi (Tage, Größe, Löschen)
 	const TRACK_STEPS = [0, 1, 2, 3, 6, 12, 24, 48, 72, 168, 336, 720, 2160, 8760];
@@ -217,6 +218,7 @@
 		</div>
 	</section>
 
+	<HelmButton />
 
 	<section>
 		<b>{t('System')}</b>
