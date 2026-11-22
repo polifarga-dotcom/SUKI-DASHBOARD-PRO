@@ -169,6 +169,8 @@ export class ChartLayer {
 
 		const cosLat = Math.cos((center.lat * Math.PI) / 180);
 		const z = Math.log2(156543.03392 * cosLat * v.ppm);
+		// Ansicht noch ohne Größe (Pane versteckt, ppm 0) oder Position ungültig → Leaflet wirft sonst „Invalid LatLng (NaN, NaN)“
+		if (![center.lat, center.lon, z].every(Number.isFinite)) return;
 		const zi = Math.max(0, Math.min(MAX_Z, Math.round(z))); // 0 = ganze Welt in einer Kachel
 		const scale = 2 ** (z - zi);
 

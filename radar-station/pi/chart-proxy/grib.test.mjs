@@ -33,6 +33,11 @@ describe('grib1', () => {
 		const f = gribField(b, gribSummary(b), 37.5, 15, 120);
 		expect(f.s.map((v) => v != null)).toEqual([true, true, false, true, false, true]); // Süd: 4,5,6(fehlt) · Nord: 1,2(fehlt),3
 	});
+	it('survives broken files (truncated, wind without matching v)', () => {
+		expect(gribSummary(buf.subarray(0, buf.length - 10)).groups.q.size).toBe(0); // letzte Meldung (Druck) abgeschnitten → übersprungen
+		expect(gribSummary(Buffer.from([...msg({ param: 33, values: u }), ...msg({ param: 34, hour: 3, values: z })]))).toBeNull();
+		expect(gribIndex(Buffer.from(msg({ param: 33, values: u }).slice(0, 30)))).toEqual([]);
+	});
 	it('rejects non-GRIB1 files and parses PredictWind names', () => {
 		expect(gribSummary(Buffer.from('PW01 encrypted'))).toBeNull();
 		expect(pwFileInfo('20261121_0545_PWG_All_8km_3h_37.250_14.291__14.291_37.250_.040.grb')).toEqual({ stamp: '20261121_0545', model: 'PWG', variant: 'All', res: '8km' });

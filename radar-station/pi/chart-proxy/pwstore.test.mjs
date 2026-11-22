@@ -11,7 +11,7 @@ describe('pwStore route import', () => {
 	it('same file name with new content overwrites the route instead of adding one', async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pw-'));
 		let list = [];
-		const pw = pwStore(dir, { read: async () => list, write: async (l) => (list = l) });
+		const pw = pwStore(dir, { update: async (fn) => (list = await fn(list)) });
 		const f = path.join(dir, 'routes', 'Offshore_Route_PWG_20261121_1048Z.gpx');
 		await fs.mkdir(path.dirname(f));
 		await fs.writeFile(f, gpx(15.1));
@@ -29,7 +29,7 @@ describe('pwStore route import', () => {
 	});
 	it('deletes GRIB files whose last forecast time has passed', async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pw-'));
-		const pw = pwStore(dir, { read: async () => [], write: async () => {} });
+		const pw = pwStore(dir, { update: async (fn) => fn([]) });
 		// Lauf 21.11.2026 00 UTC, letzter Schritt +3 h → abgelaufen
 		const u = [1, 2, 3, 4, 5, 6], z = [0, 0, 0, 0, 0, 0];
 		const buf = Buffer.from([...msg({ param: 33, values: u }), ...msg({ param: 34, values: z }), ...msg({ param: 33, hour: 3, values: u }), ...msg({ param: 34, hour: 3, values: z })]);
@@ -41,7 +41,7 @@ describe('pwStore route import', () => {
 	});
 	it('removes one model or all GRIB files', async () => {
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pw-'));
-		const pw = pwStore(dir, { read: async () => [], write: async () => {} });
+		const pw = pwStore(dir, { update: async (fn) => fn([]) });
 		const u = [1, 2, 3, 4, 5, 6], z = [0, 0, 0, 0, 0, 0];
 		const buf = Buffer.from([...msg({ param: 33, values: u }), ...msg({ param: 34, values: z })]);
 		const a = path.join(dir, '20261121_0545_PWG_All_8km_3h_37.250_14.291__14.291_37.250_.040.grb');

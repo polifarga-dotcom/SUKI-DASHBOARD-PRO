@@ -35,7 +35,7 @@ const bboxOf = (g) => [Math.min(g.la1, g.la2), Math.min(g.lo1, g.lo2), Math.max(
 
 /**
  * @param dir   Ordner mit den synchronisierten Dateien
- * @param routesIo { read(): Promise<route[]>, write(list) } – gleiche routes.json wie /tiles/api/routes
+ * @param routesIo { update(fn: (list) => list) } – gleiche routes.json wie /tiles/api/routes, nacheinander geändert
  */
 export function pwStore(dir, routesIo) {
 	/** Datei → { mtime, buf, sum, info, bbox } */
@@ -55,33 +55,37 @@ export function pwStore(dir, routesIo) {
 		}
 		const todo = keyed.filter(([, key]) => !done.has(key));
 		if (!todo.length) return;
-		const list = await routesIo.read();
 		const same = (a, b) => a.length === b.length && a.every((p, i) => Math.abs(p.lat - b[i].lat) < 1e-5 && Math.abs(p.lon - b[i].lon) < 1e-5);
+		const texts = [];
 		for (const [p, key] of todo) {
-			const base = path.basename(p);
-			try {
-				const found = parseRoutes(await fs.readFile(p, 'utf8'), base);
-				const m = base.match(/^(?:PredictWind|Offshore)_Route_(\w+?)_(\d{4})(\d\d)(\d\d)_(\d\d)(\d\d)Z/i);
-				found.forEach((r, k) => {
-					const name = m ? `PW ${m[1]} ${m[4]}.${m[3]}. ${m[5]}:${m[6]}Z` : r.name;
-					const id = 'pw' + crypto.createHash('sha1').update(base + k).digest('hex').slice(0, 10);
-					const at = list.findIndex((x) => x.id === id);
-					if (at >= 0) {
-						// gleiche Datei neu geladen → überschreiben, Farbe/Sichtbarkeit bleiben
-						const doc = cleanRoute({ ...list[at], name, pts: r.pts });
-						if (doc) list[at] = doc;
-						return;
-					}
-					if (list.some((x) => same(x.pts, r.pts)) || list.length >= MAX_ROUTES) return; // identische Route schon (von Hand) importiert
-					const doc = cleanRoute({ id, name, color: ROUTE_COLORS[list.length % ROUTE_COLORS.length], show: true, pts: r.pts });
-					if (doc) list.push(doc);
-				});
-			} catch {
-				/* kaputte Datei: Schlüssel trotzdem merken, nicht bei jedem Scan neu versuchen */
-			}
-			done.add(key);
+			texts.push([path.basename(p), await fs.readFile(p, 'utf8').catch(() => '')]);
+			done.add(key); // kaputte Datei: Schlüssel trotzdem merken, nicht bei jedem Scan neu versuchen
 		}
-		await routesIo.write(list);
+		await routesIo.update((list) => {
+			for (const [base, text] of texts) {
+				try {
+					const found = parseRoutes(text, base);
+					const m = base.match(/^(?:PredictWind|Offshore)_Route_(\w+?)_(\d{4})(\d\d)(\d\d)_(\d\d)(\d\d)Z/i);
+					found.forEach((r, k) => {
+						const name = m ? `PW ${m[1]} ${m[4]}.${m[3]}. ${m[5]}:${m[6]}Z` : r.name;
+						const id = 'pw' + crypto.createHash('sha1').update(base + k).digest('hex').slice(0, 10);
+						const at = list.findIndex((x) => x.id === id);
+						if (at >= 0) {
+							// gleiche Datei neu geladen → überschreiben, Farbe/Sichtbarkeit bleiben
+							const doc = cleanRoute({ ...list[at], name, pts: r.pts });
+							if (doc) list[at] = doc;
+							return;
+						}
+						if (list.some((x) => same(x.pts, r.pts)) || list.length >= MAX_ROUTES) return; // identische Route schon (von Hand) importiert
+						const doc = cleanRoute({ id, name, color: ROUTE_COLORS[list.length % ROUTE_COLORS.length], show: true, pts: r.pts });
+						if (doc) list.push(doc);
+					});
+				} catch {
+					/* kaputte Datei */
+				}
+			}
+			return list;
+		});
 		await fs.writeFile(doneFile, JSON.stringify([...done]));
 	}
 
@@ -111,7 +115,12 @@ export function pwStore(dir, routesIo) {
 			const old = files.get(p);
 			if (!(old && old.mtime === st.mtimeMs)) {
 				const buf = await fs.readFile(p);
-				const sum = gribSummary(buf);
+				let sum = null;
+				try {
+					sum = gribSummary(buf);
+				} catch {
+					/* kaputte Datei darf den Scan (und damit alle Modelle und Routen) nicht abbrechen */
+				}
 				files.set(p, { mtime: st.mtimeMs, buf: sum ? buf : null, sum, info, bbox: sum ? bboxOf(sum.geo) : null, enc: buf.subarray(0, 4).toString('latin1') !== 'GRIB' });
 			}
 			// Vorhersage vorbei (letzter Zeitpunkt liegt in der Vergangenheit) → Datei weg, Modell verschwindet aus der Liste

@@ -33,13 +33,6 @@ export function routeLength(pts: LatLon[]) {
 	return d;
 }
 
-/** Messstrecke als GPX-Route (für Plotter, OpenCPN, Navionics …) */
-export function routeGpx(pts: LatLon[], name: string) {
-	const esc = (s: string) => s.replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
-	const p = pts.map((q, i) => `<rtept lat="${q.lat.toFixed(6)}" lon="${q.lon.toFixed(6)}"><name>WP${String(i + 1).padStart(2, '0')}</name></rtept>`).join('\n');
-	return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="SUKI Radar Station" xmlns="http://www.topografix.com/GPX/1/1">\n<rte><name>${esc(name)}</name>\n${p}\n</rte>\n</gpx>\n`;
-}
-
 export function fromLocal(o: LatLon, x: number, y: number): LatLon {
 	const lat0 = o.lat * D2R;
 	return { lat: o.lat + (y / EARTH_R) * R2D, lon: o.lon + (x / (EARTH_R * Math.cos(lat0))) * R2D };

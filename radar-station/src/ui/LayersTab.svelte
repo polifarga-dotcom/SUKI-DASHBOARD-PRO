@@ -485,8 +485,8 @@
 	.fav.faved { color: #f2b705; }
 	.fav.faved :global(svg path) { fill: currentColor; }
 	.subtabs { position: sticky; top: 0; z-index: 2; background: var(--panel); }
-	.subtabs .seg { flex-wrap: nowrap; }
-	.subtabs .seg button { white-space: nowrap; }
+	.subtabs .seg { display: flex; flex-wrap: nowrap; }
+	.subtabs .seg button { white-space: nowrap; flex: 1; justify-content: center; }
 	.del { align-self: flex-start; display: inline-flex; gap: 4px; align-items: center; }
 	.fillsel { flex-wrap: wrap; align-self: flex-start; }
 	.fillsel button { min-height: 28px; font-size: 12px; padding: 2px 8px; }

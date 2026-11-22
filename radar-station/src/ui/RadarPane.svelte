@@ -14,7 +14,8 @@
 	import { tools, addMarker, markSquall, removeSquall } from '../radar/tools.svelte';
 	import { squallPos } from '../collision/squall';
 	import { rt, saveRoute, nextColor } from '../chart/routes.svelte';
-	import { bearingOf, fmtDeg, fmtDist, fmtLat, fmtLon, fmtRange, fmtSpeed, fmtTime, fromLocal, toLocal, routeLength, routeGpx, isNauticalRange, norm2pi, numStr, ringStep, NM, type LatLon } from '../lib/geo';
+	import { toGpx } from '../../pi/chart-proxy/routes.mjs';
+	import { bearingOf, fmtDeg, fmtDist, fmtLat, fmtLon, fmtRange, fmtSpeed, fmtTime, fromLocal, toLocal, routeLength, isNauticalRange, norm2pi, numStr, ringStep, NM, type LatLon } from '../lib/geo';
 	import { unlockAudio } from '../alarms/audio';
 	import type { SpokeBatch } from '../radar/spokeDecoder';
 	import { t as tr } from '../lib/i18n.svelte';
@@ -100,7 +101,7 @@
 
 	function exportGpx() {
 		const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
-		const url = URL.createObjectURL(new Blob([routeGpx(tools.measure!, `SUKI ${stamp}`)], { type: 'application/gpx+xml' }));
+		const url = URL.createObjectURL(new Blob([toGpx([{ name: `SUKI ${stamp}`, pts: tools.measure! }])], { type: 'application/gpx+xml' }));
 		const a = Object.assign(document.createElement('a'), { href: url, download: `suki-route-${stamp.replace(/[ :]/g, '-')}.gpx` });
 		a.click();
 		setTimeout(() => URL.revokeObjectURL(url), 10e3);

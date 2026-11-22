@@ -35,8 +35,19 @@ async function readJson(file, def) {
 }
 async function writeJson(file, obj, mode = 0o644) {
 	const p = path.join(DATA, file);
-	await fs.writeFile(p + '.tmp', JSON.stringify(obj), { mode });
-	await fs.rename(p + '.tmp', p);
+	// eigener Temp-Name je Schreibvorgang: zwei gleichzeitige Schreiber dürfen sich die Datei nicht zerstückeln
+	const tmp = `${p}.${crypto.randomUUID().slice(0, 8)}.tmp`;
+	await fs.writeFile(tmp, JSON.stringify(obj), { mode });
+	await fs.rename(tmp, p);
+}
+/** Lesen → ändern → schreiben einer JSON-Datei nacheinander (App-PUT und PredictWind-Import teilen sich routes.json) */
+const locks = new Map();
+function locked(file, fn) {
+	const run = (locks.get(file) ?? Promise.resolve()).then(fn, fn);
+	const tail = run.catch(() => {});
+	locks.set(file, tail);
+	tail.then(() => locks.get(file) === tail && locks.delete(file));
+	return run;
 }
 
 // ── Herunterfahren der Pis ───────────────────────────────────────────────────
@@ -316,7 +327,7 @@ setInterval(pruneTrack, 6 * 3600e3);
 
 // ── Wettermodelle (Open-Meteo), auf dem Pi gespeichert ──
 // PredictWind-GRIBs und -Routen, vom Mac per rsync nach DATA/pw synchronisiert
-const pw = pwStore(path.join(DATA, 'pw'), { read: () => readJson('routes.json', []), write: (l) => writeJson('routes.json', l) });
+const pw = pwStore(path.join(DATA, 'pw'), { update: (fn) => locked('routes.json', async () => writeJson('routes.json', await fn(await readJson('routes.json', [])))) });
 const wx = wxStore(path.join(DATA, 'wx'), fetch, path.join(DATA, 'wx-usage.json'), () => keys.openmeteo);
 const anch = anchStore(path.join(DATA, 'anchorages'));
 const coast = anchStore(path.join(DATA, 'coast'), fetch, coastQuery, coastConvert);
@@ -640,7 +651,7 @@ const server = http.createServer(async (req, res) => {
 			if (req.method === 'GET') {
 				// ?since=<ms>: nur neue Punkte (die App hängt an) – sonst ganze Spur der letzten ?hours
 				const after = Number(u.searchParams.get('since') ?? 0);
-				let pts = await trk.read(after || Date.now() - Number(u.searchParams.get('hours') ?? 6) * 3600e3);
+				let pts = await trk.read(after || Date.now() - (Number(u.searchParams.get('hours')) || 6) * 3600e3);
 				// lange Zeiträume ausdünnen, damit die Antwort klein bleibt (Overlay dünnt ohnehin weiter aus)
 				if (pts.length > 20000) {
 					const k = Math.ceil(pts.length / 20000);
@@ -728,15 +739,18 @@ const server = http.createServer(async (req, res) => {
 
 		// Wachplaner: nur die Radar-App ändert (PUT, ganzes Dokument mit rev); MFD/Node-RED lesen /watch/now
 		if (what === 'watchplan') {
-			const cur = await readJson('watchplan.json', null);
-			if (req.method === 'GET') return json(res, 200, cur);
+			if (req.method === 'GET') return json(res, 200, await readJson('watchplan.json', null));
 			if (req.method === 'PUT') {
 				const d = cleanWatch(JSON.parse((await body(req, 2e5)).toString() || '{}'));
 				if (typeof d === 'string') return json(res, 400, { error: d });
-				if (cur && d.rev !== cur.rev) return json(res, 409, { error: 'plan was changed on another device', plan: cur });
-				d.rev = (cur?.rev ?? 0) + 1;
-				await writeJson('watchplan.json', d);
-				return json(res, 200, d);
+				// rev-Vergleich und Schreiben ohne Lücke, sonst gewinnen zwei gleichzeitige Geräte beide
+				return locked('watchplan.json', async () => {
+					const cur = await readJson('watchplan.json', null);
+					if (cur && d.rev !== cur.rev) return json(res, 409, { error: 'plan was changed on another device', plan: cur });
+					d.rev = (cur?.rev ?? 0) + 1;
+					await writeJson('watchplan.json', d);
+					return json(res, 200, d);
+				});
 			}
 		}
 		if (what === 'watch' && a1 === 'now' && req.method === 'GET') {
@@ -774,35 +788,35 @@ const server = http.createServer(async (req, res) => {
 
 		if (what === 'routes') {
 			// Routen für alle Geräte: GET Liste, PUT = eine anlegen/ändern, DELETE /<id>
-			const list = await readJson('routes.json', []);
-			if (req.method === 'GET') return json(res, 200, list);
+			if (req.method === 'GET') return json(res, 200, await readJson('routes.json', []));
 			if (req.method === 'PUT') {
 				const r = cleanRoute(JSON.parse((await body(req, 5e5)).toString() || '{}'));
 				if (!r) return json(res, 400, { error: 'bad route' });
-				const rest = list.filter((x) => x.id !== r.id);
-				if (rest.length >= MAX_ROUTES) return json(res, 400, { error: 'too many routes' });
-				await writeJson('routes.json', [...rest, r]);
-				return json(res, 200, r);
+				return locked('routes.json', async () => {
+					const rest = (await readJson('routes.json', [])).filter((x) => x.id !== r.id);
+					if (rest.length >= MAX_ROUTES) return json(res, 400, { error: 'too many routes' });
+					await writeJson('routes.json', [...rest, r]);
+					return json(res, 200, r);
+				});
 			}
 			if (req.method === 'DELETE' && a1) {
-				await writeJson('routes.json', list.filter((x) => x.id !== a1));
+				await locked('routes.json', async () => writeJson('routes.json', (await readJson('routes.json', [])).filter((x) => x.id !== a1)));
 				return json(res, 200, { ok: true });
 			}
 		}
 
 		if (what === 'myanchorages') {
 			// eigene Ankerplätze: GET Liste, PUT = einen anlegen/ändern, DELETE /<id>
-			const list = await readJson('my-anchorages.json', []);
-			if (req.method === 'GET') return json(res, 200, list);
+			const F = 'my-anchorages.json';
+			if (req.method === 'GET') return json(res, 200, await readJson(F, []));
 			if (req.method === 'PUT') {
 				const a = cleanOwn(JSON.parse((await body(req, 1e5)).toString() || '{}'));
 				if (!a) return json(res, 400, { error: 'bad anchorage' });
-				const out = [...list.filter((x) => x.id !== a.id), a];
-				await writeJson('my-anchorages.json', out);
+				await locked(F, async () => writeJson(F, [...(await readJson(F, [])).filter((x) => x.id !== a.id), a]));
 				return json(res, 200, a);
 			}
 			if (req.method === 'DELETE' && a1) {
-				await writeJson('my-anchorages.json', list.filter((x) => x.id !== a1));
+				await locked(F, async () => writeJson(F, (await readJson(F, [])).filter((x) => x.id !== a1)));
 				return json(res, 200, { ok: true });
 			}
 		}
@@ -853,7 +867,8 @@ const server = http.createServer(async (req, res) => {
 
 		return json(res, 404, { error: 'not found' });
 	} catch (e) {
-		json(res, e.code === 413 ? 413 : 500, { error: String(e.message ?? e) });
+		// kaputtes JSON / falsch kodierter Dateiname vom Client = 400, nicht Serverfehler
+		json(res, e.code === 413 ? 413 : e instanceof SyntaxError || e instanceof URIError ? 400 : 500, { error: String(e.message ?? e) });
 	}
 });
 

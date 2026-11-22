@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { antennaToRadar, toLocal, routeLength, routeGpx } from './geo';
+import { antennaToRadar, toLocal, routeLength } from './geo';
+import { toGpx } from '../../pi/chart-proxy/routes.mjs';
 
 const gps = { lat: 36, lon: 14 };
 const off = (hdgDeg: number, fwd: number, stbd: number) => toLocal(gps, antennaToRadar(gps, (hdgDeg * Math.PI) / 180, fwd, stbd)).map((v) => Math.round(v * 100) / 100);
@@ -20,7 +21,7 @@ describe('routeLength', () => {
 		expect(routeLength([a, b, c]) / 1852).toBeCloseTo(2, 2); // 1 sm Nord + 1 sm Ost
 	});
 	it('exports a measured route as GPX', () => {
-		const g = routeGpx([{ lat: 36.1, lon: 14.25 }, { lat: -1, lon: -2.5 }], 'A & B');
+		const g = toGpx([{ name: 'A & B', pts: [{ lat: 36.1, lon: 14.25 }, { lat: -1, lon: -2.5 }] }]);
 		expect(g).toContain('<rte><name>A &#38; B</name>');
 		expect(g).toContain('<rtept lat="36.100000" lon="14.250000"><name>WP01</name></rtept>');
 		expect(g).toContain('<rtept lat="-1.000000" lon="-2.500000"><name>WP02</name></rtept>');

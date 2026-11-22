@@ -28,7 +28,7 @@ export function gribIndex(buf) {
 			continue;
 		}
 		const len = u24(buf, o + 4);
-		if (buf[o + 7] !== 1 || len < 40) break; // nur Edition 1
+		if (buf[o + 7] !== 1 || len < 40 || o + len > buf.length) break; // nur Edition 1, abgeschnittene Meldung = Ende
 		const pds = o + 8;
 		const pl = u24(buf, pds);
 		const flag = buf[pds + 7];
@@ -62,7 +62,9 @@ export function gribIndex(buf) {
 			p += u24(buf, p);
 		}
 		rec.bds = p;
-		if (rec.grid && !(buf[p + 3] & 0xf0)) out.push(rec); // nur Gitterpunkte, einfache Packung, Gleitkomma
+		// nur Gitterpunkte, einfache Packung, Gleitkomma; Gittergröße plausibel (Schutz vor Riesen-Arrays bei kaputten Dateien)
+		const gr = rec.grid;
+		if (gr && gr.ni >= 2 && gr.nj >= 2 && gr.ni * gr.nj <= 4e6 && p < o + len && !(buf[p + 3] & 0xf0)) out.push(rec);
 		o += len;
 	}
 	return out;
@@ -169,6 +171,7 @@ export function gribSummary(buf) {
 		}
 	groups.x = extra;
 	const times = [...groups.a.keys()].filter((t) => groups.b.has(t)).sort((x, y) => x - y);
+	if (!times.length) return null;
 	// gleichmäßige Zeitachse: häufigster Abstand, ab dem ersten Zeitpunkt lückenlos
 	const diffs = new Map();
 	for (let i = 1; i < times.length; i++) diffs.set(times[i] - times[i - 1], (diffs.get(times[i] - times[i - 1]) ?? 0) + 1);
@@ -238,8 +241,7 @@ export function gribField(buf, sum, lat, lon, rNm, maxN = 41) {
 					s[o] = d[o] = null;
 					continue;
 				}
-				const k2 = sum.kind === 'wind' ? MS2KN : MS2KN;
-				s[o] = Math.round(Math.hypot(u, v) * k2 * 100) / 100;
+				s[o] = Math.round(Math.hypot(u, v) * MS2KN * 100) / 100; // Wind und Strom: m/s → kn
 				// wind: „woher“; current: „wohin“
 				const to = (Math.atan2(u, v) * 180) / Math.PI;
 				d[o] = r1(((sum.kind === 'wind' ? to + 180 : to) + 360) % 360);
